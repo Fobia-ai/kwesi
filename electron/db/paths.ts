@@ -21,6 +21,10 @@ export function modelsRootDir(): string {
   return modelsRoot;
 }
 
+export function workspacesRootDir(): string {
+  return workspacesRoot;
+}
+
 export function venvsRootDir(): string {
   return venvsRoot;
 }

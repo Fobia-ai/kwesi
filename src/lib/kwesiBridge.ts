@@ -43,6 +43,21 @@ declare global {
         serverStatus: (modelId: string) => Promise<string>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
+      audio: {
+        stat: (filePath: string) => Promise<{ exists: boolean; sizeBytes: number }>;
+        read: (filePath: string) => Promise<{
+          ok: boolean;
+          bytes?: Uint8Array;
+          mimeType?: string;
+          reason?: string;
+        }>;
+        save: (
+          filePath: string,
+          suggestedName: string,
+          kind: "export" | "download",
+        ) => Promise<{ ok: boolean; path?: string; reason?: string }>;
+        reveal: (filePath: string) => Promise<{ ok: boolean }>;
+      };
     };
   }
 }

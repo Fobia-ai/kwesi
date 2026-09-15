@@ -32,7 +32,13 @@ per workspace (e.g. different songs/sessions using the same model).
 
 **Generation** — a single output produced inside a project (one piece of
 music, one take). A project can hold many generations. Generations can be
-played, saved, exported, downloaded, and shared.
+played, exported, downloaded, and shared. **Implementation note (Phase 6):**
+"export" and "download" are the same real mechanism on a local desktop app
+with no server round-trip — copy the file to a user-chosen destination via
+the native save dialog — differing only in which folder the dialog opens to
+by default (`KWESI_EXPORTS_DIR` vs. the OS Downloads folder). "Share" is
+"reveal in folder" (no OS share sheet, no cloud upload), matching the
+no-cloud-sync stance below.
 
 Hierarchy: `Workspace (1 model) → Project → Generation (audio and/or MIDI)`
 
@@ -51,7 +57,7 @@ manifest* — not hand-built per model. See
 renderer/viewer design.
 
 Two output viewer families are needed at minimum:
-- **Audio viewer**: waveform, transport controls, save/export/download, matches the bottom mini-player pattern in the Voicebox references.
+- **Audio viewer**: waveform, transport controls, export/download, matches the bottom mini-player pattern in the Voicebox references. **Built in Phase 6** (`src/components/audio/WaveformPlayer.tsx` per-generation, `src/components/audio/MiniPlayer.tsx` as the persistent bottom-docked player).
 - **Symbolic/MIDI viewer**: piano-roll or notation display, for models that only output MIDI (MuseCoco, Museformer) with no audio rendering.
 
 Some models need both simultaneously (YuE2 outputs audio + ABC notation/MIDI +

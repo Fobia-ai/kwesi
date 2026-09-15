@@ -17,6 +17,8 @@ import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation
 import { getManifest, outputKindOf } from "../data/manifests";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../components/generation/OutputViewerPlaceholder";
+import { WaveformPlayer } from "../components/audio/WaveformPlayer";
+import { findAudioFile, parseOutputFiles } from "../lib/audioFiles";
 
 function NewProjectModal({
   onClose,
@@ -79,7 +81,15 @@ function NewGenerationModal({
   );
 }
 
-function GenerationListItem({ generation, onDeleted }: { generation: GenerationRow; onDeleted: () => void }) {
+function GenerationListItem({
+  generation,
+  projectName,
+  onDeleted,
+}: {
+  generation: GenerationRow;
+  projectName: string;
+  onDeleted: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
 
@@ -92,6 +102,14 @@ function GenerationListItem({ generation, onDeleted }: { generation: GenerationR
     return unsubscribe;
   }, [generation.id]);
 
+  const done = generation.status === "done";
+  const outputKind = generation.output_kind as "audio" | "midi" | "audio+midi" | null;
+  const outputFiles = useMemo(() => parseOutputFiles(generation.output_files), [generation.output_files]);
+  const audioFile = useMemo(() => findAudioFile(outputFiles), [outputFiles]);
+  const showAudioPlayer = done && (outputKind === "audio" || outputKind === "audio+midi") && Boolean(audioFile);
+  const showMidiSlot = done && (outputKind === "midi" || outputKind === "audio+midi");
+  const title = `${projectName} — ${generation.checkpoint_variant ?? "generation"}`;
+
   return (
     <li className="rounded-[8px] bg-ink/[0.03] px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
@@ -101,7 +119,7 @@ function GenerationListItem({ generation, onDeleted }: { generation: GenerationR
         </button>
         <div className="flex items-center gap-2">
           <button onClick={() => setExpanded((v) => !v)} className="text-ink-muted hover:text-ink">
-            {expanded ? "Hide" : "View"}
+            {expanded ? "Less" : "More"}
           </button>
           <button
             onClick={() => onDeleted()}
@@ -111,15 +129,37 @@ function GenerationListItem({ generation, onDeleted }: { generation: GenerationR
           </button>
         </div>
       </div>
-      {expanded && (
+
+      {!done && expanded && (
         <div className="mt-2">
           <OutputViewerPlaceholder
-            outputKind={(generation.output_kind as "audio" | "midi" | "audio+midi") ?? "audio"}
+            outputKind={outputKind ?? "audio"}
             status={generation.status as GenerationStatus}
             progressPct={progressPct}
             error={generation.error}
           />
         </div>
+      )}
+
+      {showAudioPlayer && (
+        <div className="mt-2">
+          <WaveformPlayer
+            generationId={generation.id}
+            filePath={audioFile as string}
+            title={title}
+            compact={!expanded}
+          />
+        </div>
+      )}
+
+      {showMidiSlot && expanded && (
+        <div className="mt-2">
+          <OutputViewerPlaceholder outputKind="midi" status="done" />
+        </div>
+      )}
+
+      {done && !showAudioPlayer && !showMidiSlot && expanded && (
+        <p className="mt-2 text-ink-muted">No output files for this generation.</p>
       )}
     </li>
   );
@@ -222,7 +262,12 @@ function ProjectCard({
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
               {generations.map((g) => (
-                <GenerationListItem key={g.id} generation={g} onDeleted={() => removeGeneration(g.id)} />
+                <GenerationListItem
+                  key={g.id}
+                  generation={g}
+                  projectName={project.name}
+                  onDeleted={() => removeGeneration(g.id)}
+                />
               ))}
             </ul>
           )}

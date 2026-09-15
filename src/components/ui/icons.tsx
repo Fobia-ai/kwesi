@@ -82,6 +82,55 @@ export function PianoRollIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function PlayIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M7 4.5v15l13-7.5-13-7.5Z" fill="currentColor" stroke="none" />
+    </Base>
+  );
+}
+
+export function PauseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M7 4h3.2v16H7zM13.8 4H17v16h-3.2z" fill="currentColor" stroke="none" />
+    </Base>
+  );
+}
+
+export function DownloadIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M12 3v12M7 11l5 5 5-5M4 20h16" />
+    </Base>
+  );
+}
+
+export function ExportIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M12 15V3M8 7l4-4 4 4M4 20h16" />
+    </Base>
+  );
+}
+
+export function FolderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    </Base>
+  );
+}
+
+export function VolumeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M4 9v6h4l5 4V5L8 9H4Z" fill="currentColor" stroke="none" />
+      <path d="M16.5 8a5 5 0 0 1 0 8" />
+    </Base>
+  );
+}
+
 export function GitHubIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" {...props}>

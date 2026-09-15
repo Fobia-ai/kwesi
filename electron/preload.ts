@@ -58,4 +58,11 @@ contextBridge.exposeInMainWorld("kwesi", {
       return () => ipcRenderer.removeListener("kwesi:generation:progress", listener);
     },
   },
+  audio: {
+    stat: (filePath: string) => ipcRenderer.invoke("kwesi:audio:stat", filePath),
+    read: (filePath: string) => ipcRenderer.invoke("kwesi:audio:read", filePath),
+    save: (filePath: string, suggestedName: string, kind: "export" | "download") =>
+      ipcRenderer.invoke("kwesi:audio:save", filePath, suggestedName, kind),
+    reveal: (filePath: string) => ipcRenderer.invoke("kwesi:audio:reveal", filePath),
+  },
 });

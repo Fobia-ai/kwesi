@@ -376,6 +376,19 @@ training and with what input kind, and
 - Generation requests go: Renderer → Electron main (IPC) → local HTTP call
   to the model's own server → SSE progress events relayed back to the
   renderer → final artifact path(s) written under the project's folder.
+- **Phase 6** adds a narrow, purpose-built IPC channel for the output side
+  (`electron/ipc/audio.ts`, exposed as `window.kwesi.audio`) rather than
+  loosening the renderer's `contextIsolation`/`nodeIntegration: false`
+  sandbox to grant direct filesystem/`file://` access: `stat`/`read` let
+  the renderer check and load a generation's audio bytes for playback
+  (returned as a `Uint8Array` and played via a `Blob`/`URL.createObjectURL`
+  in `src/lib/playerStore.tsx`, since an arbitrary absolute path isn't
+  usable as an `<audio src>` under this sandbox), and `save`/`reveal`
+  implement Export/Download (native save dialog + file copy) and Share
+  (`shell.showItemInFolder`). Every path this channel touches is checked
+  against `workspacesRootDir()` before any filesystem call, the same
+  allowlisting posture `allowedExternalLinks.ts` uses for the external-link
+  channel.
 
 ## Configuration & environment variables
 
@@ -408,7 +421,7 @@ about who owns the value.
 | `KWESI_MODELS_DIR` | Downloaded model weights, one subfolder per `<model_id>/<variant>` | `$KWESI_HOME/models` |
 | `KWESI_VENVS_DIR` | Per-model isolated Python environments — kept **separate from weights** deliberately: venvs are cheap/disposable (rebuildable via pip install), weights are expensive multi-GB downloads worth backing up separately | `$KWESI_HOME/venvs` |
 | `KWESI_WORKSPACES_DIR` | Workspace/project/generation working files (internal, app-managed) | `$KWESI_HOME/workspaces` |
-| `KWESI_EXPORTS_DIR` | Default destination offered by the "export/download" action — a user-facing location, distinct from the internal workspaces dir | OS Music folder, e.g. `~/Music/Kwesi` |
+| `KWESI_EXPORTS_DIR` | Default destination offered by the "export/download" action — a user-facing location, distinct from the internal workspaces dir. First read in Phase 6 by `electron/ipc/audio.ts`'s `kwesi:audio:save` handler as the default folder the native save dialog opens to for Export (Download opens to the OS Downloads folder instead, resolved via Electron's `app.getPath("downloads")`, not a separate `KWESI_*` var) | OS Music folder, e.g. `~/Music/Kwesi` |
 | `KWESI_CACHE_DIR` | In-progress/partial downloads, temp files | `$KWESI_HOME/cache` |
 | `KWESI_LOGS_DIR` | App and model-server logs | `$KWESI_HOME/logs` |
 | `KWESI_TRAINED_MODELS_DIR` | Default starting location for the per-training-run output picker (always user-editable per run, same pattern as `KWESI_EXPORTS_DIR` — this is not a locked structural dir) | `$KWESI_MODELS_DIR/custom` |

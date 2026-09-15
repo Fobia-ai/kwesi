@@ -268,22 +268,81 @@ variant, short (6s) durations, text-prompt-only generation.
 
 ---
 
-## Phase 6 — Audio Output Experience
+## Phase 6 — Audio Output Experience ✅ complete
 **Objective:** make the audio side of the app actually pleasant to use,
 matching the reference apps' bottom mini-player and per-item playback.
 
-- Waveform player component (per-generation and a persistent bottom mini-
-  player like the Voicebox reference), transport controls, seek.
-- Save/export flow: export to a user-chosen location, with format options
-  if relevant (e.g. WAV as generated, or a convenience MP3/FLAC export).
-- Download and share actions (share = OS-native share sheet or "reveal in
-  folder" + copy, no cloud upload involved unless later requested).
-- Project-level audio library view: list of a project's generations with
-  inline playback.
+- Waveform player component (`src/components/audio/WaveformPlayer.tsx`):
+  play/pause, a seek/scrubber bar, current-time/duration display, and a
+  volume slider, backed by a single native `<audio>` element. Mounted
+  directly inline per generation in `WorkspaceDetail.tsx`'s generation list
+  — not gated behind an expand toggle — so a project's audio generations are
+  individually playable straight from the list (the "library view" exit
+  criterion). A `compact` mode collapses to just play/seek/time for the
+  list row; expanding a row (the "More" toggle) reveals volume plus the
+  Export/Download/Share actions.
+- A single shared player: `src/lib/playerStore.tsx` (`PlayerProvider` +
+  `usePlayer()`, a plain React Context/reducer store — no new dependency,
+  consistent with the codebase's minimal-deps style so far) owns the one
+  real `<audio>` element for the whole app, mounted once in `main.tsx`
+  outside the router. `src/components/audio/MiniPlayer.tsx` is a bottom-
+  docked bar (mounted in `AppShell.tsx`, below the routed `<Outlet>`) that
+  reflects and controls whatever track is currently loaded in that shared
+  player, so navigating away from a workspace (e.g. to Settings) does not
+  stop playback — the same `<audio>` element and Context state survive the
+  route change since `AppShell` isn't remounted by nested-route navigation.
+  Renders nothing (no dead space) when nothing is playing.
+- Empty-vs-real-audio detection: before showing a player, `WaveformPlayer`
+  calls a new stat IPC (`kwesi:audio:stat`) and only renders playable
+  controls for a non-empty file; a 0-byte file (any model still on the
+  Phase 4 mock) or a missing file shows a clear "No audio yet for this
+  generation." state instead of a broken/silent player. Pure logic in
+  `src/lib/audioFiles.ts` (`classifyAudioStat`, `findAudioFile`,
+  `parseOutputFiles`, `suggestedExportName`) is unit-tested directly.
+- Export and Download: implemented as **one real mechanism**, not two —
+  `electron/ipc/audio.ts`'s `kwesi:audio:save` copies the real file to a
+  user-chosen destination via `dialog.showSaveDialog`, differing only in
+  which folder the dialog opens to (`KWESI_EXPORTS_DIR` for Export, the OS
+  Downloads folder via `app.getPath("downloads")` for Download). This is
+  the first real consumer of `KWESI_EXPORTS_DIR` (previously resolved but
+  unread). A local desktop app has no meaningful difference between
+  "export a copy" and "download a copy" once there's no server in the
+  loop, so collapsing them to one code path (documented inline in
+  `electron/ipc/audio.ts`) was a deliberate simplification rather than an
+  oversight — see 01-overview.md's updated wording.
+- Share: implemented for real as "reveal in folder"
+  (`shell.showItemInFolder` via `kwesi:audio:reveal`) — no OS share sheet,
+  no cloud upload, consistent with the no-cloud-sync stance.
+- New IPC surface follows the existing house quadruplet: `electron/ipc/
+  audio.ts` (registration; every path is checked against
+  `workspacesRootDir()` before touching the filesystem, mirroring
+  `allowedExternalLinks.ts`'s allowlisting posture) → `electron/preload.ts`
+  (`window.kwesi.audio`) → `src/lib/kwesiBridge.ts` (types) →
+  `src/lib/audio.ts` (real client + a localStorage-era mock that serves an
+  in-memory-generated silent WAV via `buildSilentWav()` so the player is
+  fully exercisable in a plain browser preview with no Electron/real files
+  involved).
+
+**Simplifications made (v1, noted as acceptable scope calls):**
+- **Export/Download collapsed to one mechanism** (see above) rather than
+  building two separate flows or adding MP3/FLAC transcoding — the roadmap
+  called format conversion "if relevant"; nothing in the catalog needs it
+  yet since every real output today is the WAV MusicGen already writes, so
+  no transcoding was added in v1.
+- **Audio bytes cross IPC as a `Uint8Array`, not a streamed read.** Fine at
+  the durations Phase 5 proves (short MusicGen clips); a much larger file
+  would want a streamed/range-request approach instead of one `readFile`
+  call, not attempted here.
+- **The MIDI half of an `audio+midi` generation still renders through the
+  old `OutputViewerPlaceholder` dashed placeholder** (unchanged, per this
+  phase's explicit scope) — only the audio side was replaced with a real
+  player; no catalog model produces real `audio+midi` output yet (YuE2 is
+  Phase 8), so this is untested against real files, only against the
+  Phase 4 mock's empty placeholders.
 
 **Exit criteria:** MusicGen generations from Phase 5 can be played, saved,
 exported, and downloaded through a polished UI — this phase is the
-reference bar for "beautiful audio UI" the rest of the app is held to.
+reference bar for "beautiful audio UI" the rest of the app is held to. ✅
 
 ---
 
