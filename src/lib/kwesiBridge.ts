@@ -88,6 +88,7 @@ declare global {
           allowedExtensions: string[];
           hyperparams: Record<string, unknown>;
           outputDir: string;
+          datasetCaptions?: Record<string, string>;
         }) => Promise<{ ok: boolean; reason?: string; trainingRun?: TrainingRunRow }>;
         list: (modelId?: string) => Promise<TrainingRunRow[]>;
         get: (runId: string) => Promise<TrainingRunRow | null>;
@@ -95,6 +96,7 @@ declare global {
         listTrainedModels: (modelId?: string) => Promise<TrainedModelRow[]>;
         pickOutputDir: (modelId: string, runName: string) => Promise<{ ok: boolean; path?: string }>;
         defaultOutputDir: (modelId: string, runName: string) => Promise<string>;
+        pickDatasetDir: () => Promise<{ ok: boolean; path?: string }>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
     };

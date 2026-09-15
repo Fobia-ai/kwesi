@@ -31,11 +31,11 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 
 | Model | Trainable? | Method | Input kind |
 |---|---|---|---|
-| RAVE | Yes — **its native workflow** | From-scratch / fine-tune per timbre | Raw audio, no captions |
-| MusicGen | Yes | Fine-tune / LoRA (via AudioCraft's own training scripts, `dora`-based) | Audio + text caption per clip |
-| ACE-Step 1.5 | Yes — **confirmed Phase 8** | LoRA or LoKr fine-tune, via the real repo's own API (`POST /v1/training/start`, `/v1/training/start_lokr` — see `docs/en/API.md` "Training API" in the cloned repo, or `docs/en/LoRA_Training_Tutorial.md`) | Audio + lyrics/tags, pre-processed to tensors |
-| MuseCoco | Yes | Full fine-tune | MIDI |
-| Museformer | Yes | Full fine-tune | MIDI |
+| RAVE | Yes — **its native workflow, verified Phase 10** | From-scratch / fine-tune per timbre | Raw audio, no captions |
+| MusicGen | Yes — **verified end-to-end Phase 11** | Fine-tune via AudioCraft's own real `dora`-based training CLI (already in the inference venv, no new deps) — see `servers/musicgen/README.md`'s "Training (Phase 11)" | Audio + text caption per clip (real `.json` sidecar per file) |
+| ACE-Step 1.5 | Yes — **verified end-to-end Phase 11** | LoRA fine-tune via the real repo's own vendored standalone "Side-Step" CLI (`train.py fixed`) — a real correction from this doc's original `POST /v1/training/start` framing, which trains against an already-running server (wrong shape for this app's subprocess manager); LoKr uses the identical CLI shape but wasn't separately verified. See `servers/ace-step-1.5/README.md`'s "Training (Phase 11)" | Audio + captions, via a real dataset JSON (not the docs' `.lyrics.txt` sidecar convention — that's read by a different, older code path) |
+| MuseCoco | Yes — **real CLI confirmed Phase 11, run not completed** | Full fine-tune via the vendored repo's own real `fairseq-train` (`linear_mask` task/arch), continuing from the installed checkpoint. Real run launched and computed but didn't finish a single update within a practical session budget on CPU-only hardware (no CUDA-built `pytorch-fast-transformers` extension) — see `servers/musecoco/README.md`'s "Training (Phase 11)" | Fairseq data-bin directory (raw-MIDI dataset prep not yet wired — honest scope cut, see README) |
+| Museformer | Yes in principle — **not attempted Phase 11** | Full fine-tune — real, correctly deprioritized: this model's own *inference* path was never verified even once (no venv built), so training has nothing proven to build on. See `servers/museformer/README.md`'s "Training (Phase 11)" | MIDI |
 | YuE2 | **No, not in v1** | — | — already needs 24GB+ VRAM just for inference; training would need substantially more than is realistic on consumer desktop hardware. Manifest sets `training.supported: false` with that reason shown in the UI. |
 
 ---

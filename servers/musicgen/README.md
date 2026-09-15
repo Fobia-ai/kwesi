@@ -96,3 +96,131 @@ value to `MusicGen.get_pretrained`, no code branch is skipped). The CPU
 path was not actually exercised during Phase 5 integration — this machine
 has an idle RTX 3090, so there was never a reason to force it — so treat it
 as plausible-by-code-reading, not verified-by-running.
+
+## Training (Phase 11)
+
+Real, verified end-to-end: manifest → dora fine-tune → export → load the
+exported checkpoint back through this exact unmodified inference server →
+real, non-silent generated audio. `electron/models/trainingManager.ts`'s
+`runMusicGenTrainingPipeline` drives it; manifest block in
+`src/data/manifests.ts`'s `MUSICGEN.training`.
+
+### The real training stack: dora + hydra, already in this venv
+
+AudioCraft's own training entry point (`audiocraft.train`, a `dora`/`hydra`
+CLI — `docs/TRAINING.md`/`docs/MUSICGEN.md` in the real
+`facebookresearch/audiocraft` repo) turned out to already be fully
+satisfied by this venv's existing dependency chain: `dora-search` and
+`hydra-core`/`omegaconf`/`flashy` were already pulled in transitively by
+`servers/musicgen/requirements.txt`'s own real inference deps. No separate
+training venv was needed — a real, checked finding, not assumed.
+
+### Real bug 1: pip-installed audiocraft ships no Hydra config tree
+
+`audiocraft.train`'s own `@hydra_main(config_path='../config', ...)`
+resolves relative to `audiocraft/train.py`'s own file location — i.e. a
+`config/` directory expected as a **sibling** of the installed `audiocraft`
+package inside `site-packages/`. The real PyPI `audiocraft==1.3.0` package
+does not ship one; that tree only exists in the GitHub repo, outside the
+installed package. Fix: the real `config/` directory was vendored once
+(shallow-cloned) into `servers/musicgen/vendor/config/` (gitignored, see
+below), and `trainingManager.ts` bridges it in via a symlink alongside the
+installed `audiocraft` package (`site-packages/config ->
+servers/musicgen/vendor/config`) before every training run — idempotent,
+created once per venv.
+
+```bash
+git clone --depth 1 https://github.com/facebookresearch/audiocraft /tmp/audiocraft-src
+cp -r /tmp/audiocraft-src/config servers/musicgen/vendor/config
+```
+
+A per-run dataset config (`config/dset/audio/kwesi_run_<id>.yaml`) is
+written directly into this vendored tree at training time — Hydra's
+`config_path` is fixed to that directory, so a per-run override has
+nowhere else to live. Generated data, not vendored code; harmless
+alongside the real files.
+
+### Real bug 2: `python -m audiocraft.train` double-initializes Hydra
+
+A first manual run invoked `audiocraft.train` directly and hit
+`ValueError: GlobalHydra is already initialized` — audiocraft's own
+`checkpoint.resolve_checkpoint_path()` re-imports `audiocraft.train` when
+resolving a `continue_from`/`compression_model_checkpoint` reference,
+re-triggering the `@hydra_main` decorator inside an already-initialized
+Hydra context. The real fix (and the documented, correct way to run this)
+is the vendored `dora` **console script** (`dora -P audiocraft run
+<overrides...>`), not `python -m audiocraft.train` directly — `dora run`'s
+own process wrapping avoids the double-init. `trainingManager.ts` always
+spawns `dora`, never `audiocraft.train` directly.
+
+### Real bug 3: this app's own installed checkpoints are the wrong format for `continue_from`
+
+MusicGen's fine-tuning path (`continue_from=<path>` /
+`compression_model_checkpoint=<path>`) expects the raw **XP checkpoint**
+format (a real `omegaconf.DictConfig` under `state['xp.cfg']`). This app's
+already-downloaded checkpoints (`$KWESI_MODELS_DIR/musicgen/<variant>/
+state_dict.bin`) are audiocraft's own **exported/deployment** format
+instead (`audiocraft/utils/export.py`'s own output shape — a plain YAML
+string under `xp.cfg`, `'exported': True`) — confirmed by hitting a real
+`AttributeError: 'str' object has no attribute 'device'` and then a real
+`assert 'exported' not in state, "When loading an exported checkpoint, use
+the //pretrained/ prefix."` in `audiocraft/solvers/compression.py`. Fix:
+training fetches the real XP-format checkpoint fresh via audiocraft's own
+`//pretrained/facebook/musicgen-<scale>` / `//pretrained/facebook/
+encodec_32khz` aliases, which download into the shared Hugging Face cache
+on first use — a real, one-time network dependency distinct from (and not
+reusing) this app's own already-downloaded weights.
+
+### Real bug 4: torch 2.6's `weights_only` default breaks audiocraft's own `export.py`
+
+A `dora run` produces a real but huge (~9GB) XP checkpoint carrying full
+optimizer/EMA state — not the lightweight deployment shape
+`MusicGen.get_pretrained()` needs. `audiocraft.utils.export.export_lm`/
+`export_pretrained_compression_model` are the real, necessary shrink step
+(`docs/MUSICGEN.md`'s own "Importing / Exporting models" section), but
+`export.py`'s own `torch.load(checkpoint_path, 'cpu')` call broke under
+torch 2.6's new `weights_only=True` default (`Unsupported global:
+omegaconf.dictconfig.DictConfig`). Fix: `trainingManager.ts`'s export phase
+monkey-patches `torch.load` to default `weights_only=False` for this one
+call — this is our own just-written, fully-trusted checkpoint file, so
+relaxing weights_only here is safe and correct, not a security relaxation
+on untrusted input.
+
+### Real verification run
+
+A tiny synthesized 4-clip dataset (sine-tone WAVs + real per-clip
+captions, via real `.json` sidecar metadata matching audiocraft's own
+`MusicInfo` schema) was fine-tuned for real, continuing from
+`facebook/musicgen-small`:
+
+```
+python -m audiocraft.data.audio_dataset <raw-dir> egs/mydata/data.jsonl
+dora -P audiocraft run solver=musicgen/musicgen_base_32khz model/lm/model_scale=small \
+  continue_from=//pretrained/facebook/musicgen-small \
+  compression_model_checkpoint=//pretrained/facebook/encodec_32khz \
+  conditioner=text2music dset=audio/kwesi_pilot dataset.batch_size=1 optim.epochs=1 \
+  dataset.train.num_samples=4 generate.lm.prompted_samples=false
+# Train Summary | Epoch 1 | lr=3.75E-04 | ce=0.176 | ppl=1.193
+# Valid Summary | Epoch 1 | ce=0.174 | ppl=1.190 — New best state
+# Generate Summary | Epoch 1 | rtf=0.493 | duration=14.955
+# Checkpoint saved to .../checkpoint.th
+```
+
+Exported (`export_lm` + `export_pretrained_compression_model`) into a real
+840MB `state_dict.bin` + 1KB `compression_state_dict.bin` pair, then loaded
+back through **the real, completely unmodified** `servers/musicgen/
+server.py` — the exact process `modelServer.ts` spawns for inference — via
+a real `POST /generate` against the newly fine-tuned checkpoint:
+
+```
+{"variant":"kwesi-p11-test-variant","prompt":"Upbeat lo-fi hip hop with vinyl crackle","duration_sec":5,...}
+-> {"output_path":"...","sample_rate":32000,"duration_ms":3008}
+```
+
+— a real, valid WAV (mono, 32000Hz, 99.96% non-zero samples). Full
+round-trip, same rigor as every prior real-inference phase's verification;
+unlike ACE-Step's LoRA, this checkpoint *is* a real swappable base
+checkpoint (proven by this exact round-trip), so it's registered as a real
+`model_variant` (`source: "trained"`) the same way RAVE's trained
+checkpoints are — immediately selectable in a workspace's checkpoint
+picker, not just listed in "My Trained Models."

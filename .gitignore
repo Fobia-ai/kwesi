@@ -34,5 +34,11 @@ servers/museformer/vendor
 servers/ace-step-1.5/vendor
 servers/yue2/vendor
 
+# Phase 11: audiocraft's own real Hydra config/ tree (not shipped in the
+# pip package — see servers/musicgen/README.md's "Training (Phase 11)"
+# section), vendored just for training, plus per-run dset yaml files
+# trainingManager.ts writes into config/dset/audio/ at training time.
+servers/musicgen/vendor
+
 # Claude Code harness internals, not project state.
 .claude/

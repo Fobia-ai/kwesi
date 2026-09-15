@@ -112,3 +112,24 @@ is informational only, logged but not translated into a hard constraint --
 Museformer's real length control is `--min-len`/`--max-len-b` token budgets,
 not a bar count, mirroring the same reality MuseCoco's `bar_count` field
 ran into (see `servers/musecoco/README.md`).
+
+## Training (Phase 11) — re-confirmed still blocked, not attempted
+
+Phase 11's roadmap explicitly prioritized ACE-Step 1.5/MusicGen/MuseCoco
+above Museformer and allowed "a quick honest re-confirmation that it's
+still blocked" as a legitimate result for this model. That's what happened
+here: no venv was built, no training code was written, and the "Status:
+code-complete, not verified end-to-end" line at the top of this README is
+unchanged from Phase 7.
+
+The reasoning: training needs a real base to fine-tune from, and this
+model's own *inference* path was never actually run even once — no venv
+exists, and the real risk this file already documents above (Triton/
+`blocksparse` having no CPU backend at all, confirmed not-yet-resolved) is
+a genuine blocker for either inference or training, not something training
+work could route around. Attempting training integration before inference
+itself is proven would mean guessing at a real dependency problem twice
+instead of once. Building the Python 3.8 venv and running the standalone
+`fairseq-interactive` smoke test this README's "What would need to happen
+to actually verify this" section already prescribes remains the correct
+next step — for inference first, training after.

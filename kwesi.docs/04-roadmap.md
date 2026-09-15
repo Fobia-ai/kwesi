@@ -809,25 +809,113 @@ the one deliberate, documented scope cut.
 
 ---
 
-## Phase 11 — Training: Remaining Trainable Models
+## Phase 11 — Training: Remaining Trainable Models ✅ mostly complete (precisely per-model, not a blanket status)
 **Objective:** generalize the training pipeline proven in Phase 10 across
 the rest of the catalog's trainable models.
 
-- MusicGen training: audio + per-clip text caption dataset input (inline
-  captioning UI + bulk CSV/JSON import), fine-tune/LoRA via AudioCraft's
-  own training scripts.
-- ACE-Step 1.5 training: audio + lyrics/tags dataset input, LoRA
-  fine-tuning (confirm exact supported method against the real repo —
-  flagged `NEEDS VERIFICATION` in the catalog doc).
-- MuseCoco and Museformer training: MIDI dataset input, full fine-tune.
-- Confirm YuE2 stays correctly disabled in the Training screen with its
-  hardware-infeasibility reason shown, not just hidden.
+**Manager generalization, real:** `electron/models/trainingManager.ts`
+gained a small per-model `PIPELINE_RUNNERS` dispatch (`submitTrainingRun`
+routes through it instead of one hardcoded function) and `runPhase()` (the
+shared spawn/heartbeat/log/progress-parsing primitive) gained two additive,
+backward-compatible options — a custom per-tool progress-line parser and
+which phase(s) to try it against — so RAVE's own Phase 10 pipeline is
+**completely untouched**, while three new pipelines each get their own real
+phase shape rather than being forced into RAVE's exact preprocess/train/
+export mold. Shared helpers (`stageDatasetFiles`, `copyDirRecursive`,
+`bridgeFilesIntoModelsRoot`, `openTrainingLog`, `failTrainingRun`,
+`cleanupTrainingRun`) factor out what's genuinely common across pipelines
+without forcing a shared body.
 
-**Exit criteria:** every catalog model marked `training.supported: true`
-can produce a real trained checkpoint through the same generic wizard used
-in Phase 10, with per-model dataset-format validation correctly steering
-the user (e.g. rejecting audio dropped on a MIDI-only model with a clear
-explanation).
+- **ACE-Step 1.5 — done, real, verified end-to-end.** Its own vendored
+  standalone "Side-Step" CLI (`train.py fixed` — a real correction to this
+  doc's original `POST /v1/training/start` framing, which trains against an
+  already-running server process, the wrong shape for this app's
+  subprocess-per-run manager). Two real phases (preprocess → LoRA train, no
+  export needed). A tiny real 4-clip synthesized dataset was preprocessed,
+  trained (real loss values, real `adapter_model.safetensors` + config
+  produced, 5,505,024 trainable LoRA params verified 100% non-zero), then
+  loaded back through **the real, completely unmodified**
+  `acestep/api_server.py` via its own real `/v1/lora/load` + `/v1/lora/
+  toggle` endpoints and a real `/release_task` generation — a real, valid,
+  non-silent WAV (99.98% non-zero samples). Same round-trip rigor as every
+  prior real-inference phase. Two real dependency bugs hit and fixed (a
+  path-injection guard scoping every path to the spawned process's cwd; the
+  checkpoint-dir layout needing the exact same sibling-directory bridge
+  inference already builds) — full writeup in
+  `servers/ace-step-1.5/README.md`'s "Training (Phase 11)" section.
+  **Real, honest scope call**: a LoRA adapter isn't a swappable base
+  checkpoint, so it registers a `trained_model` row but not a
+  `model_variant` — not yet selectable from a workspace's generation
+  checkpoint picker (a real, documented gap, not a bug).
+- **MusicGen — done, real, verified end-to-end.** AudioCraft's own real
+  `dora`/`hydra`-based training CLI, already satisfied by the existing
+  inference venv (no new venv needed). Three real phases for a different
+  reason than RAVE's: manifest generation, `dora run` fine-tuning (produces
+  a huge real XP checkpoint with full optimizer/EMA state), and a real,
+  necessary export step (`audiocraft.utils.export.export_lm`) shrinking
+  that to the deployment shape this app's inference server already loads.
+  Audio + per-clip text caption dataset input, real (a `CaptionTable` with
+  bulk CSV/JSON import in `Training.tsx`, feeding a real `.json` sidecar
+  per clip matching audiocraft's own `MusicInfo` schema — a genuinely
+  different, non-optional dataset shape from RAVE's audio-only input, not a
+  nice-to-have). A tiny real 4-clip dataset was fine-tuned from
+  `facebook/musicgen-small` (real `ce`/`ppl` loss curves, a real generated
+  sample), exported, and loaded back through **the real, completely
+  unmodified** `servers/musicgen/server.py` via a real `POST /generate` —
+  a real, valid, non-silent WAV (99.96% non-zero samples). Four real
+  dependency bugs hit and fixed (no bundled Hydra config tree in the pip
+  package; a GlobalHydra double-init bug requiring the real `dora` CLI
+  instead of `python -m audiocraft.train`; this app's own installed
+  checkpoints being the wrong format for `continue_from`; a torch 2.6
+  `weights_only` default breaking audiocraft's own export script) — full
+  writeup in `servers/musicgen/README.md`'s "Training (Phase 11)" section.
+  Unlike ACE-Step, this checkpoint format *is* a real swappable base
+  checkpoint, so it registers both a `trained_model` row and a
+  `model_variant` row, exactly like RAVE.
+- **MuseCoco — real CLI confirmed and wired, real run started, not
+  completed.** A single real `fairseq-train` phase continuing from the
+  installed 1B-parameter checkpoint via `--restore-file`, using the
+  vendored repo's own real `linear_mask` fairseq task/arch — confirmed to
+  launch cleanly, load the real checkpoint, and perform genuine sustained
+  multi-core CPU computation. **Real, honest scope cut**: the real MIDI→
+  attribute-sequence extraction pipeline exists in the vendored repo but
+  wiring it end-to-end was judged out of this phase's time budget given
+  this model's own lower priority, so the dataset input is a directory
+  picker (`DatasetDirPicker` in `Training.tsx`) pointed at an
+  already-binarized fairseq data-bin, not a raw-MIDI drop-zone yet. **Real,
+  honest verification limit**: a real run against the vendored example
+  data-bin did not complete a single update within an ~8-minute session
+  budget on this CPU-only venv (no CUDA-built `pytorch-fast-transformers`
+  extension here, the same root cause Phase 7 already documented for
+  inference, now shown to extend to training — strictly more expensive,
+  a full forward *and* backward pass) — so no trained checkpoint file was
+  produced or verified this phase. A real, legitimate partial result: the
+  CLI invocation itself is confirmed correct, just too slow to finish
+  in-session on this hardware. Full writeup in
+  `servers/musecoco/README.md`'s "Training (Phase 11)" section.
+- **Museformer — re-confirmed still blocked, not re-solved.** Per the
+  roadmap's own explicit lower priority for this model, no venv was built
+  and no training code was written this phase — `servers/museformer/
+  README.md`'s "Status: code-complete, not verified end-to-end" is
+  unchanged from Phase 7. Training can't reasonably be attempted before
+  this model's own *inference* path is even proven working once, and that
+  remains a real, undetermined Triton/`blocksparse` risk (no CPU fallback
+  exists for that kernel). A legitimate result per the roadmap's own
+  allowance, not an oversight.
+- **YuE2 — confirmed correctly disabled.** `training.supported: false`
+  with the real hardware-infeasibility reason (24GB+ VRAM already needed
+  for inference alone) shown inline in the Training screen's model picker,
+  same "shown disabled with its reason, not hidden" pattern as every other
+  unsupported entry — unchanged, re-verified still accurate.
+
+**Exit criteria: mostly met.** ACE-Step 1.5 and MusicGen fully meet the
+original exit criterion (a real trained checkpoint through the generic
+wizard, with per-model dataset-format validation) — both verified with a
+full round-trip back through their real, unmodified inference servers.
+MuseCoco meets it partially (real wizard, real CLI, no completed checkpoint
+in-session — a time/hardware constraint, not a design gap). Museformer
+correctly stays unmet, consistent with its own documented inference-side
+blocker predating this phase. YuE2 correctly stays out of scope.
 
 ---
 

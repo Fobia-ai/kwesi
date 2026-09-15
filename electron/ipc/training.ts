@@ -21,8 +21,25 @@ async function pickOutputDir(modelId: string, runName: string): Promise<{ ok: bo
   return { ok: true, path: result.filePaths[0] };
 }
 
+/**
+ * Phase 11: MuseCoco's real dataset input is a pre-binarized fairseq
+ * data-bin *directory* (dict.txt + .bin/.idx files — see
+ * trainingManager.ts's runMuseCocoTrainingPipeline's honest scope-cut
+ * comment), not individual audio/MIDI files the way every other trainable
+ * model's dataset is — so it needs a directory picker instead of
+ * Training.tsx's usual multi-file drop-zone.
+ */
+async function pickDatasetDir(): Promise<{ ok: boolean; path?: string }> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
+  const opts = { title: "Choose a dataset directory", properties: ["openDirectory"] as Array<"openDirectory"> };
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+  if (result.canceled || result.filePaths.length === 0) return { ok: false };
+  return { ok: true, path: result.filePaths[0] };
+}
+
 export function registerTrainingIpcHandlers() {
   ipcMain.handle("kwesi:training:submit", (_e, params: SubmitTrainingRunParams) => submitTrainingRun(params));
+  ipcMain.handle("kwesi:training:pickDatasetDir", () => pickDatasetDir());
   ipcMain.handle("kwesi:training:list", (_e, modelId?: string) => repo.listTrainingRuns(modelId));
   ipcMain.handle("kwesi:training:get", (_e, runId: string) => repo.getTrainingRunById(runId) ?? null);
   ipcMain.handle("kwesi:training:cancel", (_e, runId: string) => cancelTrainingRun(runId));

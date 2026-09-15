@@ -326,10 +326,15 @@ For a model with `"training": { "supported": false, "reason": "..." }`,
 the Training screen lists it but disables it with that reason shown
 inline (e.g. YuE2 — see [03-model-catalog.md](03-model-catalog.md)) rather
 than hiding it, so the user understands why it's absent instead of
-wondering if it was forgotten. **Phase 10**: every catalog model except
-RAVE declares `supported: false` — they're real trainable models in
-principle (see 03-model-catalog.md's training-feasibility table), just not
-wired into this app's Training pipeline yet (Phase 11's job).
+wondering if it was forgotten. **Phase 10**: only RAVE declared
+`supported: true`. **Phase 11 update**: ACE-Step 1.5 and MusicGen now also
+declare `supported: true` (both real, verified end-to-end — see the "Phase
+11 update" note below "Training pipeline architecture"); MuseCoco's real
+`fairseq-train` CLI is wired up too, though a full run wasn't verified to
+completion in-session. Museformer and YuE2 still declare `supported:
+false`, for two different real reasons (Museformer's own inference path
+was never verified; YuE2 is a genuine hardware-infeasibility call, not a
+scope cut).
 
 A completed training run's checkpoint is registered two ways, not one:
 a `trained_model` row (the user-facing "My Trained Models" record) **and**
@@ -448,6 +453,58 @@ any one workspace/project, so it shouldn't be scoped like a generation is.
     remain available for diagnosis; the run itself is marked
     failed/cancelled, never silently discarded. `cancelTrainingRun` sends
     the active phase's subprocess a real `SIGTERM`.
+
+**Phase 11 update — generalized to three more real models, each with its
+own real phase shape rather than forced into RAVE's exact
+preprocess/train/export mold** (see `electron/models/trainingManager.ts`'s
+file-header comment and each `servers/<model>/README.md`'s "Training (Phase
+11)" section for the full per-model writeup):
+- **ACE-Step 1.5** (real, verified end-to-end): its own vendored standalone
+  "Side-Step" CLI (`train.py fixed`), two phases (preprocess → LoRA train,
+  no export — a PEFT adapter directory is already the final checkpoint).
+  Real, honest scope call: a LoRA adapter isn't a swappable base checkpoint
+  the way RAVE's/MusicGen's exports are, so it registers only a
+  `trained_model` row, not a `model_variant` — not yet selectable from a
+  workspace's checkpoint picker (using it today means the real
+  `/v1/lora/load` call this app's generation screen doesn't expose a
+  control for).
+- **MusicGen** (real, verified end-to-end): a real three-phase shape
+  (manifest → `dora` fine-tune → export) for a different reason than
+  RAVE's — audiocraft's own training produces a huge XP checkpoint
+  carrying optimizer/EMA state, and `audiocraft.utils.export.export_lm` is
+  a real, necessary shrink step to the deployment shape this app's own
+  inference server already loads. *This* checkpoint format **is** a real
+  swappable base checkpoint, so it registers both a `trained_model` row and
+  a `model_variant` row, same as RAVE.
+- **MuseCoco** (real CLI confirmed, real run started, not completed): a
+  single `fairseq-train` phase continuing from the installed checkpoint via
+  `--restore-file`. Real, honest scope cut: raw-MIDI dataset prep isn't
+  wired up (the dataset input is a pre-binarized fairseq data-bin directory,
+  picked via a directory-picker UI, not a MIDI drop-zone) — and a real
+  verification run confirmed the checkpoint loads and genuine CPU
+  computation begins, but did not complete a single update within a
+  practical session time budget (CPU-only, no CUDA-built
+  `pytorch-fast-transformers` extension on this machine, same constraint
+  Phase 7 already documented for inference).
+- **Museformer**: unchanged — its own *inference* path was never verified
+  even once (no venv built), so training work had nothing proven to extend;
+  re-confirmed, not re-solved, per the roadmap's own explicit lower priority
+  for this model.
+- **UI**: `Training.tsx`'s dataset drop-zone gained two real, model-driven
+  extensions — a per-file caption table (`CaptionTable`, shown when
+  `training.inputKind === "audio_captioned"`, with a bulk CSV/JSON import)
+  for ACE-Step/MusicGen's real audio+caption dataset shape, and a directory
+  picker (`DatasetDirPicker`, shown when `datasetRequirements.fileTypes` is
+  empty) for MuseCoco's data-bin input.
+- **Manager generalization**: `runPhase()` (the shared spawn/heartbeat/log/
+  progress-parsing primitive) gained two additive, backward-compatible
+  options — a custom progress-line parser and which phase(s) to try it
+  against — so each new pipeline can parse its own tool's real log format
+  (Side-Step's `Epoch N/M, Step S, Loss: L`, dora/flashy's `Train Summary |
+  Epoch N |`, fairseq's `epoch N: S / T loss=L`) without changing RAVE's
+  own default behavior at all. `submitTrainingRun` dispatches through a
+  small per-model `PIPELINE_RUNNERS` map instead of calling one hardcoded
+  function.
 
 See [03-model-catalog.md](03-model-catalog.md) for which models support
 training and with what input kind, and

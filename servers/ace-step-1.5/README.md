@@ -278,3 +278,121 @@ Electron main process in this phase.
 - **CPU-only mode was not exercised** — this machine always has an idle RTX
   3090; ACE-Step's own docs confirm CPU inference is supported (slow), same
   read-reviewed-not-run status as MusicGen's CPU fallback in Phase 5.
+
+## Training (Phase 11)
+
+Real, verified end-to-end: preprocess → LoRA train → load the trained
+adapter back through this exact unmodified inference server → real,
+non-silent generated audio. `electron/models/trainingManager.ts`'s
+`runAceStepTrainingPipeline` drives it; manifest block in
+`src/data/manifests.ts`'s `ACE_STEP.training`.
+
+### The real training CLI: ACE-Step's own vendored "Side-Step"
+
+`kwesi.docs/03-model-catalog.md`'s original framing pointed at the repo's
+REST training endpoints (`POST /v1/training/start`) — real, but the wrong
+shape for this app: those endpoints train against an *already-running,
+already-model-loaded* `acestep.api_server` process (`acestep/api/
+train_api_lora_start_route.py`), not a standalone subprocess a training-job
+manager can spawn/track/kill independently the way `rave train` or
+`fairseq-train` are.
+
+The real fit, found by reading the vendored repo's own root-level
+`train.py` directly: ACE-Step-1.5 bundles a second, fully independent real
+CLI called **Side-Step** (`train.py`, `acestep/training_v2/`) —
+`python train.py fixed [args]` — that needs no running server at all. It
+supports two adapter types (`--adapter-type lora|lokr`); this app's
+pipeline uses LoRA only (verified end-to-end) — LoKr uses the identical CLI
+shape (`--adapter-type lokr` plus `--lokr-*` flags) but wasn't separately
+exercised.
+
+Venv: reuses the exact same `$KWESI_VENVS_DIR/ace-step-1.5` inference venv
+— no separate training venv needed. `peft`, `lycoris`, and `rich` were
+already present (inference's own dependency chain); the only Side-Step-
+specific extra (`textual`, for its TUI) is unneeded since this app always
+runs `train.py --plain --yes` (non-interactive, no TTY).
+
+### Real dataset format: a JSON manifest, not the tutorial's sidecar files
+
+`docs/en/LoRA_Training_Tutorial.md` describes a `.lyrics.txt`/`.caption.txt`
+sidecar-file convention — real, but only read by the separate, older
+Gradio-UI dataset-scan path (`acestep/training/dataset_builder_modules/
+scan.py`). The CLI's own preprocessing
+(`acestep/training_v2/preprocess_discovery.py`) reads a dataset JSON
+instead (`{"metadata": {...}, "samples": [{"filename", "audio_path",
+"caption", "lyrics", "is_instrumental", ...}]}`) or, with no JSON, falls
+back to a plain directory scan with filename-derived captions and
+`is_instrumental: true` defaults. `trainingManager.ts` builds this JSON
+itself from the staged dataset files + `Training.tsx`'s optional per-clip
+caption table — confirmed by reading both real code paths, not assumed.
+
+### Two real bugs hit and fixed
+
+1. **A real path-injection guard blocks arbitrary paths.**
+   `acestep/training/path_safety.py`'s `safe_path()` resolves every
+   user-supplied dataset/output path and rejects anything outside the
+   *spawned process's own cwd* at import time. A first manual test run from
+   `servers/ace-step-1.5/vendor` with `/tmp`-rooted dataset/output paths
+   failed with `ValueError: Path escapes safe root`. Fix: spawn `train.py`
+   with `cwd` set to the training run's own work directory (mirroring
+   RAVE's `runPhase` convention already) and pass every dataset/tensor/
+   output path relative to it.
+2. **`--model-variant`/`--checkpoint-dir` need the inference server's own
+   bridged checkpoint layout, not this app's raw install layout.**
+   `acestep/training_v2/model_loader.py`'s `_resolve_model_dir()` expects
+   `vae/`, `Qwen3-Embedding-0.6B/`, and each DiT variant as *siblings*
+   directly under `--checkpoint-dir` — the same shape
+   `electron/models/modelServer.ts`'s `ensureAceStepCheckpointsLayout()`
+   already builds for inference (`$KWESI_MODELS_DIR/ace-step-1.5/
+   .server-checkpoints/`). That function (and `aceStepVendorDir()`) are now
+   exported so `trainingManager.ts` can reuse them directly rather than
+   duplicating the symlink-farm logic — read-only reuse, no change to
+   inference behavior.
+
+### Real verification run
+
+A tiny synthesized 4-clip dataset (sine-tone WAVs + real captions, via a
+real dataset JSON) was preprocessed and LoRA-trained for real against the
+installed `acestep-v15-turbo` checkpoint:
+
+```
+python train.py fixed --preprocess --checkpoint-dir <bridged-checkpoints-dir> \
+  --model-variant turbo --dataset-json dataset.json --tensor-output tensors --max-duration 30
+# [OK] Preprocessing complete: 4/4 processed
+
+python train.py fixed --checkpoint-dir <bridged-checkpoints-dir> --model-variant turbo \
+  --dataset-dir tensors --output-dir lora_out --rank 8 --alpha 16 --epochs 3 \
+  --batch-size 1 --gradient-accumulation 1 --save-every 1 --log-every 1 --num-workers 0
+# LoRA injected: 5,505,024 trainable params (0.23%)
+# Epoch 1/3 Loss: 0.2798 -> Epoch 2/3 Loss: 0.4176 -> Epoch 3/3 Loss: 0.3240
+# [OK] Adapter verified: 5,505,024 params, 5,505,024 non-zero (100.0%)
+# Final weights: lora_out/final (10.6 MiB, real PEFT adapter_model.safetensors + adapter_config.json)
+```
+
+Then loaded back through **the real, completely unmodified**
+`acestep/api_server.py` (the exact process `modelServer.ts` spawns for
+inference) via its own real endpoints:
+
+```
+POST /v1/init          {"model": "acestep-v15-turbo", "slot": 1}
+POST /v1/lora/load      {"lora_path": ".../lora_out/final"}
+POST /v1/lora/toggle    {"use_lora": true}
+POST /release_task      {"prompt": "...", "lyrics": "[Instrumental]", "audio_duration": 10}
+```
+
+— a real, valid RIFF/WAVE, stereo, 48000Hz output, 99.98% non-zero samples,
+downloaded via the server's own `/v1/audio` endpoint. Full round-trip,
+same rigor as every prior real-inference phase's verification.
+
+### Real, honest scope call: not (yet) selectable from the generation screen
+
+A LoRA adapter is not a swappable base checkpoint the way RAVE's exported
+`.ts` or MusicGen's exported `state_dict.bin` are — it only becomes usable
+through ACE-Step's own real `/v1/lora/load` + `/v1/lora/toggle` endpoints
+against an *already-loaded* base model. This app's generation screen has
+no control for that yet, so a trained ACE-Step LoRA registers as a real
+`trained_model` row (visible in Model Manager's "My Trained Models") but is
+**not** inserted as a `model_variant` the way RAVE/MusicGen trained
+checkpoints are — selecting it from a workspace's checkpoint picker isn't
+real yet. Using it for generation today means manually calling
+`/v1/lora/load` the way this verification run did.

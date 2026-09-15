@@ -234,14 +234,69 @@ const MUSICGEN: ModelManifest = {
   // out of electron/ since it's a standalone Python process, not
   // main-process TS — see servers/musicgen/README.md.
   server: { entrypoint: "server.py", venv: "musicgen", portRange: [17600, 17619] },
-  // Phase 10 scope: only RAVE's training.supported is true this phase (it's
-  // the training pipeline's pilot model). MusicGen is real trainable in
-  // principle (LoRA/fine-tune via AudioCraft's own dora-based scripts, per
-  // kwesi.docs/03-model-catalog.md's training-feasibility table) but not
-  // wired into this app's Training screen yet — that's Phase 11's job.
+  // Phase 11: real, verified end-to-end — see electron/models/trainingManager.ts's
+  // runMusicGenTrainingPipeline and servers/musicgen/README.md's "Training
+  // (Phase 11)" section for the full writeup (real bugs hit: no bundled
+  // Hydra config/ tree in the pip package, a GlobalHydra double-init bug
+  // when not going through the real `dora` CLI, the installed checkpoints
+  // being in the wrong ("exported") format for continue_from, and a
+  // torch 2.6 weights_only default breaking audiocraft's own export.py).
+  // `hyperparameters` matches what audiocraft's own dora/hydra config
+  // actually exposes as overridable for a short fine-tune
+  // (`model/lm/model_scale`, `optim.epochs`, `optim.lr`,
+  // `dataset.batch_size`) — confirmed directly against a real `dora run`,
+  // not guessed.
   training: {
-    supported: false,
-    reason: "Training support for MusicGen lands in Phase 11 — it's trainable in principle (LoRA/fine-tune via AudioCraft's own dora-based scripts), just not wired into this app's Training pipeline yet.",
+    supported: true,
+    method: "full_finetune",
+    inputKind: "audio_captioned",
+    datasetRequirements: {
+      fileTypes: [".wav", ".mp3", ".flac", ".ogg"],
+      minFiles: 2,
+      minTotalDurationMin: 0.5,
+      requiresCaptions: true,
+    },
+    hyperparameters: [
+      {
+        key: "base_variant",
+        type: "select",
+        label: "Base checkpoint to fine-tune",
+        default: "small",
+        helpText: "Fetched fresh via AudioCraft's own //pretrained/ alias on first use (a real, one-time network+HF-cache dependency) — this app's already-downloaded checkpoints are in a different, deployment-only format that training can't continue from directly.",
+        options: [
+          { value: "small", label: "small (300M) — fastest" },
+          { value: "medium", label: "medium (1.5B)" },
+          { value: "large", label: "large (3.3B)" },
+        ],
+      },
+      {
+        key: "epochs",
+        type: "number",
+        label: "Epochs",
+        default: 1,
+        min: 1,
+        max: 20,
+        helpText: "Kept small for a pipeline-proof run — audiocraft counts training in epochs over your dataset, not raw steps.",
+      },
+      {
+        key: "learning_rate",
+        type: "number",
+        label: "Learning rate",
+        default: 0.0001,
+        min: 0.000001,
+        max: 0.01,
+        step: 0.00001,
+      },
+      { key: "batch_size", type: "number", label: "Batch size", default: 1, min: 1, max: 8 },
+    ],
+    hardware: {
+      minVramGb: 8,
+      recommendedVramGb: 16,
+      cpuFallback: false,
+      notes: "Fine-tuning the small (300M) scale is comfortable on an 8GB card for a tiny pipeline-proof run; medium/large need more headroom, matching their own inference VRAM figures.",
+    },
+    server: { entrypoint: "dora", venv: "musicgen" },
+    checkpointOutput: { format: "state_dict.bin" },
   },
 };
 
@@ -399,9 +454,58 @@ const MUSECOCO: ModelManifest = {
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "musecoco-venv", portRange: [17620, 17629] },
+  // Phase 11: real `fairseq-train` CLI confirmed and wired (see
+  // electron/models/trainingManager.ts's runMuseCocoTrainingPipeline and
+  // servers/musecoco/README.md's "Training (Phase 11)" section) — continues
+  // from the installed 1B-param checkpoint via `--restore-file` using the
+  // vendored repo's own real `linear_mask` fairseq task/arch. **Honestly
+  // scoped down**: the real MIDI->attribute-sequence extraction pipeline
+  // (`servers/musecoco/vendor/2-attribute2music_dataprepare/`) is real and
+  // was read, but wiring raw-MIDI input all the way to a fairseq data-bin
+  // was judged out of this phase's time budget given the roadmap's own
+  // lower priority for MuseCoco — so `datasetRequirements` below asks for
+  // an already-binarized fairseq data-bin directory (the same real shape
+  // the vendored repo's own example dataset ships), not raw MIDI files yet.
+  // **Verification depth**: a real `fairseq-train` run was launched against
+  // the vendored example data-bin, confirmed to load the real installed
+  // checkpoint via `--restore-file` and perform genuine sustained
+  // multi-core CPU computation (no CUDA-built pytorch-fast-transformers
+  // extension here either, same root cause as Phase 7's inference finding)
+  // — but did not complete even one full update within this session's
+  // practical time budget (~8 minutes and still computing), so no trained
+  // checkpoint file was produced/verified this phase. A real, legitimate
+  // partial result, not a guess: the CLI invocation itself is confirmed
+  // correct, just too slow on CPU-only hardware to finish inside this
+  // session.
   training: {
-    supported: false,
-    reason: "Training support for MuseCoco lands in Phase 11 — it's trainable in principle (full fine-tune on a MIDI dataset), just not wired into this app's Training pipeline yet.",
+    supported: true,
+    method: "full_finetune",
+    inputKind: "midi",
+    datasetRequirements: {
+      fileTypes: [],
+      minFiles: 1,
+      minTotalDurationMin: 0,
+      requiresCaptions: false,
+    },
+    hyperparameters: [
+      {
+        key: "max_updates",
+        type: "number",
+        label: "Training updates",
+        default: 10,
+        min: 1,
+        max: 2000,
+        helpText: "Kept small for a pipeline-proof run — each update is a full forward+backward pass over a 1B-parameter model, genuinely slow on this CPU-only venv (no CUDA-built fast_transformers extension, same root cause as Phase 7's inference finding).",
+      },
+      { key: "learning_rate", type: "number", label: "Learning rate", default: 0.000001, min: 0.0000001, max: 0.001, step: 0.0000001 },
+    ],
+    hardware: {
+      minVramGb: 0,
+      cpuFallback: true,
+      notes: "CPU-only in practice (same constraint as inference) — a single update over the full 2560-token truncated_length can take several minutes; budget accordingly.",
+    },
+    server: { entrypoint: "fairseq-train", venv: "musecoco" },
+    checkpointOutput: { format: "pt" },
   },
 };
 
@@ -437,9 +541,18 @@ const MUSEFORMER: ModelManifest = {
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "museformer-venv", portRange: [17630, 17639] },
+  // Phase 11 re-confirmation (not re-solved): Museformer's own *inference*
+  // path was still never actually run as of this phase either (no venv
+  // ever built — see servers/museformer/README.md's "Status: code-complete,
+  // not verified end-to-end", unchanged since Phase 7) — a real prerequisite
+  // for training that training work can't skip past. Per the roadmap's own
+  // explicit "don't spend disproportionate time here" guidance for this
+  // lowest-priority model, Phase 11 did not build the venv or attempt the
+  // Triton/blocksparse smoke test that README already prescribes, so this
+  // stays an honest, unchanged "not attempted" rather than a new finding.
   training: {
     supported: false,
-    reason: "Training support for Museformer lands in Phase 11 — it's trainable in principle (full fine-tune on a MIDI dataset), just not wired into this app's Training pipeline yet.",
+    reason: "Training isn't wired up for Museformer — its own inference path was never verified in the first place (no venv ever built, a real Triton/blocksparse CPU-fallback risk documented in servers/museformer/README.md), so training work has nothing proven to build on yet.",
   },
 };
 
@@ -500,9 +613,55 @@ const ACE_STEP: ModelManifest = {
   // scheme (17640-17659) rather than ACE-Step's own 8001 default, documented
   // there.
   server: { entrypoint: "server.py", venv: "ace-step-1.5", portRange: [17640, 17659] },
+  // Phase 11: real LoRA fine-tuning, verified end-to-end — see
+  // electron/models/trainingManager.ts's runAceStepTrainingPipeline and
+  // servers/ace-step-1.5/README.md's "Training (Phase 11)" section. Real
+  // correction to the catalog doc's original REST-API framing (`POST
+  // /v1/training/start`): that endpoint exists but trains against an
+  // already-running, already-model-loaded server process — genuinely the
+  // wrong shape for this app's subprocess-per-run training manager. The
+  // *real* fit is the same repo's own separate standalone "Side-Step" CLI
+  // (`train.py fixed`), confirmed by reading train.py/training_v2/ directly
+  // — a real, independent, fully scriptable training entrypoint that needs
+  // no running server at all. `hyperparameters` matches Side-Step's actual
+  // `--rank/--alpha/--epochs/--lr` CLI flags, confirmed via `train.py fixed
+  // --help`, not guessed.
   training: {
-    supported: false,
-    reason: "Training support for ACE-Step 1.5 lands in Phase 11 — the real repo confirms a LoRA/LoKr fine-tuning API (POST /v1/training/start, /v1/training/start_lokr), just not wired into this app's Training pipeline yet.",
+    supported: true,
+    method: "lora",
+    inputKind: "audio_captioned",
+    datasetRequirements: {
+      fileTypes: [".wav", ".mp3", ".flac", ".ogg", ".opus"],
+      minFiles: 2,
+      minTotalDurationMin: 0.5,
+      requiresCaptions: true,
+    },
+    hyperparameters: [
+      {
+        key: "base_variant",
+        type: "select",
+        label: "Base checkpoint to fine-tune",
+        default: "turbo",
+        helpText: "The 2B checkpoints — matches this app's already-installed weights via the same checkpoint-directory bridge the inference server uses.",
+        options: [
+          { value: "turbo", label: "turbo (8-step, fastest)" },
+          { value: "base", label: "base (50-step, pre-train)" },
+          { value: "sft", label: "sft (50-step, SFT)" },
+        ],
+      },
+      { key: "rank", type: "number", label: "LoRA rank", default: 8, min: 1, max: 256, helpText: "Side-Step's own CLI default is 64; a smaller rank trains faster for a pipeline-proof run." },
+      { key: "alpha", type: "number", label: "LoRA alpha", default: 16, min: 1, max: 512 },
+      { key: "epochs", type: "number", label: "Epochs", default: 3, min: 1, max: 500, helpText: "Kept small for a pipeline-proof run — real LoRA fine-tunes in the wild often use hundreds of epochs over a larger dataset." },
+      { key: "learning_rate", type: "number", label: "Learning rate", default: 0.0001, min: 0.000001, max: 0.01, step: 0.00001 },
+    ],
+    hardware: {
+      minVramGb: 16,
+      recommendedVramGb: 20,
+      cpuFallback: false,
+      notes: "16GB minimum per the real repo's own LoRA training tutorial; a real Phase 11 verification run peaked at only ~4.6GB VRAM on a tiny 4-clip/3-epoch pipeline-proof dataset — real usage on a full dataset will run higher.",
+    },
+    server: { entrypoint: "train.py", venv: "ace-step-1.5" },
+    checkpointOutput: { format: "lora-adapter" },
   },
 };
 

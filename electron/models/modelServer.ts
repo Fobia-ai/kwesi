@@ -182,7 +182,15 @@ async function waitForHealthy(port: number, timeoutMs: number): Promise<boolean>
 
 // <projectRoot>/servers/ace-step-1.5/vendor — the cloned ace-step/ACE-Step-1.5
 // repo (see servers/ace-step-1.5/README.md for the exact clone command).
-function aceStepVendorDir(): string {
+// Exported (Phase 11) so trainingManager.ts's ACE-Step LoRA training
+// pipeline can point the real `train.py`'s `--checkpoint-dir` at the exact
+// same bridged layout the inference server already builds/uses — training's
+// own `_resolve_model_dir()` (acestep/training_v2/model_loader.py) expects
+// the identical "vae/Qwen3-Embedding-0.6B/<variant> as siblings" shape this
+// function produces, confirmed directly by reading that file rather than
+// guessed. Read-only reuse of inference-side path logic, not a change to
+// the inference server's own behavior.
+export function aceStepVendorDir(): string {
   return path.join(projectRootDir(), "servers", ACE_STEP_MODEL_ID, ACE_STEP_VENDOR_DIRNAME);
 }
 
@@ -208,7 +216,7 @@ function aceStepVendorDir(): string {
  * Symlinking `checkpoints` itself (rather than only relying on the env var)
  * makes the real code path find our farm regardless of that.
  */
-function ensureAceStepCheckpointsLayout(vendorDir: string): string {
+export function ensureAceStepCheckpointsLayout(vendorDir: string): string {
   const modelRoot = path.join(modelsRootDir(), ACE_STEP_MODEL_ID);
   const checkpointsDir = path.join(modelRoot, ".server-checkpoints");
   ensureDir(checkpointsDir);
