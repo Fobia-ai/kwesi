@@ -191,21 +191,80 @@ inference required yet).
 
 ---
 
-## Phase 5 — Pilot Model: MusicGen (end-to-end)
+## Phase 5 — Pilot Model: MusicGen (end-to-end) ✅ complete
+
 **Objective:** prove the entire pipeline for real, with the simplest model
 in the catalog.
 
-- Real MusicGen Python server (FastAPI) in its own venv, matching pinned
-  deps from [03-model-catalog.md](03-model-catalog.md).
-- Wire Phase 4's adapter framework to it for real: text prompt (+ optional
-  melody reference for the melody variant) in, WAV out.
-- First real generation, end to end: Model Manager install → workspace
-  bound to MusicGen → project → generate → job completes → file lands on
-  disk under the project folder → row written to `generation` table.
+- Real MusicGen Python server (FastAPI) in its own venv
+  (`servers/musicgen/server.py`, venv at `$KWESI_VENVS_DIR/musicgen`) —
+  exact working pins in `servers/musicgen/requirements.txt`, verified from a
+  from-scratch venv rebuild, not just the dev venv used during integration.
+  See `servers/musicgen/README.md` for the two-step install (`pip install -r
+  requirements.txt` then `pip install --no-deps audiocraft==1.3.0` — the
+  `--no-deps` is load-bearing, audiocraft 1.3.0's own pins have no Python
+  3.12 wheels and are stale for most of what's actually imported).
+- `electron/models/modelServer.ts` now spawns/health-checks/reuses that real
+  subprocess for `modelId === "musicgen"` specifically, routes generation
+  requests to it over HTTP (`POST /generate`), and writes the real WAV into
+  the generation's own directory via the existing `generationDir()` helper
+  — every other model_id (musecoco, museformer, ace-step-1.5, yue2, rave)
+  is untouched and still walks the Phase 4 mock path.
+- Real generation proven twice: (1) standalone, calling
+  `audiocraft.models.MusicGen` directly against a locally downloaded
+  checkpoint with no Electron involved; (2) through the real Electron
+  main-process code path (`submitGeneration` → real subprocess → real HTTP
+  call → `generation` row → real WAV on disk), driven by a one-off script
+  run via `npx electron` since better-sqlite3 needs Electron's Node ABI.
+  Both produced a valid, non-silent WAV (correct RIFF/WAVE header, correct
+  sample rate/duration, non-trivial PCM amplitude, not an empty placeholder
+  file).
+
+**Simplifications made (v1, noted as acceptable scope calls):**
+- **Melody-conditioned generation (the `melody` variant's reference-audio
+  input) is not end-to-end wired**, and this isn't a Phase 5 gap — it's a
+  pre-existing Phase 4 one: `DynamicGenerationForm.tsx`'s `audio_upload`
+  handler only ever captures the picked file's *name*
+  (`onChange(file.name)`), never a real path or file transfer. The real
+  server (`server.py`) does implement melody conditioning
+  (`MusicGen.generate_with_chroma`) given a real absolute path, and
+  `modelServer.ts` passes one through if `input_params.melody_audio` happens
+  to already be a real file that exists on disk — but nothing in the
+  current UI can produce that today. Fixing the upload plumbing is future
+  work, not scoped to this phase.
+- **No real streaming progress from the Python server.** A generation
+  request is one blocking `POST /generate` call; the UI still sees
+  `queued` → `running` (a single 0% tick) → `done`/`failed` over the same
+  `GenerationProgressEvent` shape Phase 4 established, just without
+  intermediate percentage updates during the real inference call itself.
+  Adding real progress would mean SSE or WebSocket support in `server.py`
+  plus a step-callback into `audiocraft`'s generation loop — meaningfully
+  more scope than proving the pipeline needs for v1.
+- **Fixed port, single instance.** `modelServer.ts` always uses port 17600
+  (the first port in the manifest's `[17600, 17619]` range) rather than
+  scanning for a free port in the range, since only one MusicGen server
+  process is ever running at a time in this v1.
+- **CPU fallback exists in code, not verified by running.** `server.py`
+  picks `cuda` when available else `cpu`; the dev machine always has an
+  idle RTX 3090, so the CPU branch was read-reviewed, not exercised.
+- **`t5-base` (MusicGen's text conditioner, loaded via
+  `transformers.T5EncoderModel`) is a real runtime dependency that isn't
+  part of the five downloaded MusicGen checkpoints** — it was fetched once
+  into the standard Hugging Face cache during environment setup, and the
+  server sets `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1` before import so
+  every subsequent load is offline. Documented in
+  `servers/musicgen/README.md` since it's easy to miss when rebuilding the
+  venv on a machine without that cache already warm.
+- **Packaging is out of scope.** `modelServer.ts` resolves
+  `servers/<model_id>/server.py` relative to the compiled `dist-electron/`
+  location, which is correct for dev and for an unpacked build, but a real
+  installer (Phase 13) needs `servers/` and each model's venv shipped as
+  `extraResources` — not attempted here.
 
 **Exit criteria:** a user can install MusicGen, create a workspace bound to
 it, generate a real audio clip from a text prompt, and see it complete —
-without touching any other model's code path.
+without touching any other model's code path. ✅ Verified for the `small`
+variant, short (6s) durations, text-prompt-only generation.
 
 ---
 

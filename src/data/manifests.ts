@@ -140,7 +140,14 @@ const MUSICGEN: ModelManifest = {
     { key: "duration_sec", type: "number", label: "Duration (sec)", min: 1, max: 30, default: 8 },
   ],
   outputs: [{ kind: "audio", format: "wav", sampleRate: 32000 }],
-  server: { entrypoint: "server.py", venv: "musicgen-venv", portRange: [17600, 17619] },
+  // Phase 5 reality check: `venv` is the bare model id, joined onto
+  // KWESI_VENVS_DIR by electron/models/modelServer.ts, matching the
+  // `venvs/<model_id>/` layout in kwesi.docs/02-architecture.md (not
+  // "musicgen-venv" as this field originally sketched pre-Phase-5).
+  // `entrypoint` is real: servers/musicgen/server.py at the repo root, kept
+  // out of electron/ since it's a standalone Python process, not
+  // main-process TS — see servers/musicgen/README.md.
+  server: { entrypoint: "server.py", venv: "musicgen", portRange: [17600, 17619] },
 };
 
 const MUSECOCO: ModelManifest = {

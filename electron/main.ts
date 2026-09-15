@@ -4,11 +4,12 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { resolveKwesiEnv } from "./kwesiEnv.js";
 import { openDatabase } from "./db/database.js";
-import { initPaths, initModelsPaths } from "./db/paths.js";
+import { initPaths, initModelsPaths, initVenvsPaths } from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
 import { registerModelsIpcHandlers } from "./ipc/models.js";
 import { registerGenerationIpcHandlers } from "./ipc/generation.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
+import { shutdownAllRealServers } from "./models/modelServer.js";
 
 // Loads .env from the project root in dev (electron launched via `electron .`,
 // so process.cwd() is the project root); silently a no-op if no .env exists
@@ -27,6 +28,7 @@ const kwesiEnv = resolveKwesiEnv(app.getPath("userData"), app.getPath("music"));
 openDatabase(kwesiEnv.KWESI_DB_PATH);
 initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
 initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
+initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 registerDbIpcHandlers();
 registerModelsIpcHandlers();
 registerGenerationIpcHandlers();
@@ -87,6 +89,12 @@ app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// Tears down any real model-server subprocess (currently just MusicGen's)
+// so it doesn't linger holding GPU memory after the app closes.
+app.on("before-quit", () => {
+  void shutdownAllRealServers();
 });
 
 app.on("activate", () => {

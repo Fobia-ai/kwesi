@@ -1,18 +1,20 @@
-// Phase 4 Model Server Manager. Per kwesi.docs/02-architecture.md
-// "Process/sandboxing model", this is meant to start/health-check/stop a
-// model's local Python subprocess server and relay its progress to the
-// renderer. Phase 4's own exit criteria explicitly allows (and expects)
-// "fake/mocked server responses (no real model inference required yet)" —
-// this file is that mock: no Python process is spawned anywhere here. A
-// "server" is just an in-memory status per model_id, and a "generation" is
-// a timed status walk (queued -> running -> done, occasionally failed) that
-// writes empty placeholder output files so the on-disk/output_files
-// plumbing is exercised end to end. Real process spawning is Phase 5's job.
+// Phase 4 built this as a mock Model Server Manager (see the block comment
+// that used to sit here, now split out below) — every model_id walked a
+// timed queued -> running -> done/failed status loop with no real Python
+// process. Phase 5 replaces that mock body for `modelId === "musicgen"`
+// only: a real child_process spawns servers/musicgen/server.py in its own
+// venv, is health-checked over HTTP, and a submitted generation becomes a
+// real POST /generate call that writes a real WAV file. Every other
+// model_id (musecoco, museformer, ace-step-1.5, yue2, rave) is completely
+// untouched and still walks the Phase 4 mock path below — this is
+// intentionally MusicGen-only per kwesi.docs/04-roadmap.md Phase 5.
 import { BrowserWindow } from "electron";
+import { ChildProcess, spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import * as repo from "../db/repositories.js";
-import { generationDir, ensureDir } from "../db/paths.js";
+import { generationDir, ensureDir, modelsRootDir, venvDir } from "../db/paths.js";
 
 const PROGRESS_CHANNEL = "kwesi:generation:progress";
 
@@ -47,7 +49,153 @@ export function getServerStatus(modelId: string): ServerStatusValue {
   return serverStatus.get(modelId) ?? "stopped";
 }
 
+// --- Phase 5: real MusicGen server lifecycle --------------------------------
+// Mirrors src/data/manifests.ts's MUSICGEN.server block rather than importing
+// it directly — electron/tsconfig.json's rootDir is scoped to electron/, so
+// it can't compile a file under src/, same reason electron/db/seedModels.ts
+// already duplicates-with-a-comment instead of importing
+// src/data/modelVariants.ts. Keep these two in sync by hand if either changes.
+const MUSICGEN_MODEL_ID = "musicgen";
+const MUSICGEN_ENTRYPOINT = "server.py";
+const MUSICGEN_PORT = 17600; // first port in the manifest's [17600, 17619] range
+
+interface RealServerHandle {
+  proc: ChildProcess;
+  port: number;
+}
+
+const realServers = new Map<string, RealServerHandle>();
+// Coalesces concurrent submissions that race to start the same real server —
+// without this, two generations submitted back-to-back before the first
+// health check resolves would each spawn their own subprocess.
+const startingPromises = new Map<string, Promise<RealServerHandle>>();
+
+function isRealServerModel(modelId: string): boolean {
+  return modelId === MUSICGEN_MODEL_ID;
+}
+
+// dist-electron/models/modelServer.js -> dist-electron -> project root.
+function projectRootDir(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.join(here, "..", "..");
+}
+
+function venvPythonPath(modelId: string): string {
+  const dir = venvDir(modelId);
+  return process.platform === "win32"
+    ? path.join(dir, "Scripts", "python.exe")
+    : path.join(dir, "bin", "python");
+}
+
+async function healthCheck(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForHealthy(port: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await healthCheck(port)) return true;
+    await delay(500);
+  }
+  return false;
+}
+
+async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
+  const python = venvPythonPath(modelId);
+  if (!fs.existsSync(python)) {
+    throw new Error(
+      `MusicGen venv not found at ${venvDir(modelId)} (expected interpreter at ${python}). ` +
+        `See servers/musicgen/README.md to create it.`,
+    );
+  }
+  const entrypoint = path.join(projectRootDir(), "servers", modelId, MUSICGEN_ENTRYPOINT);
+  if (!fs.existsSync(entrypoint)) {
+    throw new Error(`MusicGen server entrypoint not found at ${entrypoint}`);
+  }
+
+  const port = MUSICGEN_PORT;
+  const proc = spawn(python, [entrypoint, "--port", String(port)], {
+    env: { ...process.env, KWESI_MODELS_DIR: modelsRootDir() },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  proc.stdout?.on("data", (chunk) => console.log(`[${modelId}-server] ${chunk.toString().trimEnd()}`));
+  proc.stderr?.on("data", (chunk) => console.error(`[${modelId}-server] ${chunk.toString().trimEnd()}`));
+  proc.on("exit", (code) => {
+    console.log(`[${modelId}-server] exited with code ${code}`);
+    realServers.delete(modelId);
+    serverStatus.set(modelId, "stopped");
+    broadcast({ type: "server_status", modelId, status: "stopped" });
+  });
+
+  const healthy = await waitForHealthy(port, 60_000);
+  if (!healthy) {
+    proc.kill("SIGTERM");
+    throw new Error(`MusicGen server did not become healthy on port ${port} within 60s`);
+  }
+
+  return { proc, port };
+}
+
+async function ensureRealServerRunning(modelId: string): Promise<RealServerHandle> {
+  const existing = realServers.get(modelId);
+  if (existing && (await healthCheck(existing.port))) return existing;
+  if (existing) realServers.delete(modelId);
+
+  const inFlight = startingPromises.get(modelId);
+  if (inFlight) return inFlight;
+
+  serverStatus.set(modelId, "starting");
+  broadcast({ type: "server_status", modelId, status: "starting" });
+
+  const promise = spawnRealServer(modelId)
+    .then((handle) => {
+      realServers.set(modelId, handle);
+      serverStatus.set(modelId, "running");
+      broadcast({ type: "server_status", modelId, status: "running" });
+      return handle;
+    })
+    .catch((err) => {
+      serverStatus.set(modelId, "stopped");
+      broadcast({ type: "server_status", modelId, status: "stopped" });
+      throw err;
+    })
+    .finally(() => {
+      startingPromises.delete(modelId);
+    });
+
+  startingPromises.set(modelId, promise);
+  return promise;
+}
+
+async function stopRealServer(modelId: string): Promise<void> {
+  const existing = realServers.get(modelId);
+  if (!existing) return;
+  serverStatus.set(modelId, "stopping");
+  broadcast({ type: "server_status", modelId, status: "stopping" });
+  existing.proc.kill("SIGTERM");
+  realServers.delete(modelId);
+  // The process's own "exit" handler broadcasts the final "stopped" status.
+}
+
+/** Called from main.ts on app quit so no orphaned Python process is left running. */
+export async function shutdownAllRealServers(): Promise<void> {
+  await Promise.all([...realServers.keys()].map((modelId) => stopRealServer(modelId)));
+}
+
+// --- Public server lifecycle (mock for every model except musicgen) --------
+
 export async function startServer(modelId: string): Promise<void> {
+  if (isRealServerModel(modelId)) {
+    await ensureRealServerRunning(modelId);
+    return;
+  }
+
   const current = getServerStatus(modelId);
   if (current === "running" || current === "starting") return;
   serverStatus.set(modelId, "starting");
@@ -58,6 +206,11 @@ export async function startServer(modelId: string): Promise<void> {
 }
 
 export async function stopServer(modelId: string): Promise<void> {
+  if (isRealServerModel(modelId)) {
+    await stopRealServer(modelId);
+    return;
+  }
+
   const current = getServerStatus(modelId);
   if (current === "stopped" || current === "stopping") return;
   serverStatus.set(modelId, "stopping");
@@ -82,12 +235,101 @@ export function submitGeneration(
   return { ok: true, generation };
 }
 
+async function runJob(
+  workspaceId: string,
+  modelId: string,
+  generation: repo.GenerationRow,
+): Promise<void> {
+  if (isRealServerModel(modelId)) {
+    await runRealMusicGenJob(workspaceId, generation);
+    return;
+  }
+  await runMockJob(workspaceId, modelId, generation);
+}
+
+// --- Phase 5: real MusicGen generation ---------------------------------------
+
+/**
+ * The Phase 4 form only ever stores an uploaded file's *name*
+ * (DynamicGenerationForm's audio_upload handler is `onChange(file.name)`,
+ * not a real path or file transfer — that plumbing was never built). So a
+ * melody reference is only usable here if input_params.melody_audio happens
+ * to already be a real absolute path that exists on disk; otherwise it's
+ * dropped with a log line rather than sent to the server as a bogus path.
+ * The real-inference server itself (servers/musicgen/server.py) does support
+ * melody conditioning given a real path — this gap is purely on the
+ * renderer's upload-capture side, a pre-existing Phase 4 simplification, not
+ * something Phase 5 introduced.
+ */
+function resolveMelodyAudioPath(inputParams: Record<string, unknown>): string | undefined {
+  const value = inputParams.melody_audio;
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  if (path.isAbsolute(value) && fs.existsSync(value)) return value;
+  console.warn(`[musicgen-server] melody_audio "${value}" is not a real file path on disk — ignoring it`);
+  return undefined;
+}
+
+async function runRealMusicGenJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+
+  try {
+    const { port } = await ensureRealServerRunning(MUSICGEN_MODEL_ID);
+
+    repo.updateGenerationStatus(generationId, "running");
+    broadcast({ type: "running", generationId, projectId, progressPct: 0 });
+
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const prompt = typeof inputParams.prompt === "string" ? inputParams.prompt : "";
+    const durationSec = typeof inputParams.duration_sec === "number" ? inputParams.duration_sec : 8;
+    const melodyAudioPath = resolveMelodyAudioPath(inputParams);
+
+    const dir = generationDir(workspaceId, projectId, generationId);
+    ensureDir(dir);
+    const outputPath = path.join(dir, "output.wav");
+
+    const res = await fetch(`http://127.0.0.1:${port}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // A real generation call can legitimately take a while for a long
+      // duration_sec, but must not hang forever if the Python process dies
+      // mid-request without cleanly closing the connection.
+      signal: AbortSignal.timeout(5 * 60 * 1000),
+      body: JSON.stringify({
+        variant: generation.checkpoint_variant ?? "small",
+        prompt,
+        duration_sec: durationSec,
+        melody_audio_path: melodyAudioPath,
+        output_path: outputPath,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`MusicGen server returned ${res.status}: ${text}`);
+    }
+
+    const data = (await res.json()) as { output_path: string; duration_ms: number };
+    repo.updateGenerationStatus(generationId, "done", {
+      outputFiles: [data.output_path],
+      durationMs: data.duration_ms,
+    });
+    broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    repo.updateGenerationStatus(generationId, "failed", { error });
+    broadcast({ type: "failed", generationId, projectId, error });
+  }
+}
+
+// --- Phase 4 mock generation (every model except musicgen) -------------------
+
 const PROGRESS_STEPS = 5;
 // Small, fixed chance of a simulated failure so the error-handling UI has
 // something real to exercise, per the Phase 4 roadmap spec.
 const FAILURE_RATE = 0.12;
 
-async function runJob(
+async function runMockJob(
   workspaceId: string,
   modelId: string,
   generation: repo.GenerationRow,

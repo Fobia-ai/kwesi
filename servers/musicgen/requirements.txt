@@ -1,0 +1,29 @@
+# Everything audiocraft 1.3.0 actually needs at import/inference time,
+# pinned to versions that resolve together on Python 3.12 + an RTX 3090
+# (driver CUDA 13.0, torch built for cu124). Deliberately does NOT include
+# audiocraft itself — audiocraft's own pyproject.toml pins are stale
+# (torch==2.1.0, av==11.0.0, xformers<0.0.23, plus torchvision/torchtext
+# which nothing in the real inference import path touches) and none of
+# those old pins have cp312 wheels, so a plain `pip install audiocraft`
+# here would drag in an unbuildable/incompatible stack. Install this file
+# first, then install audiocraft itself with --no-deps — see README.md for
+# the exact two-step command sequence.
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+xformers==0.0.29.post3
+av==12.3.0
+transformers>=4.31.0
+flashy
+librosa
+spacy
+soundfile
+torchmetrics
+einops
+julius
+num2words
+sentencepiece
+fastapi
+uvicorn[standard]
+python-multipart

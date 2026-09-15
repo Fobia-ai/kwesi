@@ -346,13 +346,24 @@ training and with what input kind, and
   eagerly if the user pins a workspace's model), health-checks it, tears it
   down on app quit or workspace switch to free VRAM/RAM. **Phase 4 status:**
   implemented as `electron/models/modelServer.ts` with the real start/stop/
-  status/generate shape described here, but its actual body is a mock — no
-  Python process is spawned, "starting"/"running" are timed in-memory
-  status transitions and a submitted generation is a timed
-  queued → running → done/failed walk (with a small simulated-failure
-  chance) that writes empty placeholder output files. This proves the
-  queue/IPC/UI plumbing described below; Phase 5 replaces the mock body
-  with a real MusicGen subprocess without changing the IPC surface.
+  status/generate shape described here, but its actual body was a mock — no
+  Python process spawned, "starting"/"running" were timed in-memory status
+  transitions and a submitted generation was a timed queued → running →
+  done/failed walk (with a small simulated-failure chance) that wrote empty
+  placeholder output files. This proved the queue/IPC/UI plumbing described
+  below. **Phase 5 status:** for `modelId === "musicgen"` specifically, this
+  is now real — `modelServer.ts` spawns `servers/musicgen/server.py`
+  (its own venv at `$KWESI_VENVS_DIR/musicgen`) as a child process on first
+  use, health-checks `GET /health` on `127.0.0.1:17600` (the manifest's
+  `portRange[0]`), keeps it alive across subsequent generations in the same
+  app session, and routes a submitted generation to a real
+  `POST /generate` call that runs actual `audiocraft.models.MusicGen`
+  inference and writes a real WAV under the generation's own directory. The
+  IPC surface/event shape (`GenerationProgressEvent`) is unchanged from
+  Phase 4 — real progress just doesn't stream sub-steps mid-inference (see
+  `kwesi.docs/04-roadmap.md` Phase 5's simplifications). Every other
+  model_id still walks the exact Phase 4 mock path described above,
+  unmodified.
 - A sibling **Training Job Manager** handles the training side (see
   "Training pipeline architecture" above): same venv/subprocess pattern,
   but for long-running `train.py` jobs that must survive app restarts via

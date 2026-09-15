@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 let workspacesRoot = "";
 let modelsRoot = "";
+let venvsRoot = "";
 
 export function initPaths(kwesiWorkspacesDir: string) {
   workspacesRoot = kwesiWorkspacesDir;
@@ -12,8 +13,20 @@ export function initModelsPaths(kwesiModelsDir: string) {
   modelsRoot = kwesiModelsDir;
 }
 
+export function initVenvsPaths(kwesiVenvsDir: string) {
+  venvsRoot = kwesiVenvsDir;
+}
+
 export function modelsRootDir(): string {
   return modelsRoot;
+}
+
+export function venvsRootDir(): string {
+  return venvsRoot;
+}
+
+export function venvDir(modelId: string): string {
+  return path.join(venvsRoot, modelId);
 }
 
 export function modelVariantDir(modelId: string, variantName: string): string {

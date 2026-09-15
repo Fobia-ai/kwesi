@@ -13,5 +13,10 @@ release
 scripts/.venv
 scripts/__pycache__
 
+# Per-model Python virtual environments (KWESI_VENVS_DIR) -- large,
+# machine-specific, reinstallable from servers/<model_id>/requirements.txt.
+/venvs
+**/__pycache__
+
 # Claude Code harness internals, not project state.
 .claude/
