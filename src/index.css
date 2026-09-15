@@ -166,3 +166,31 @@ body {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+
+/* Small self-contained scroll regions nested inside a modal/slide-over —
+   e.g. ChipMultiSelect's option list — get their own thinner scrollbar
+   than the page-level default above, sized so it doesn't visually dominate
+   a compact box of small chips, with a hover state since these are short,
+   frequently-grabbed scroll areas rather than a whole page. */
+.kwesi-scroll-inset {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--kwesi-ink) / 0.18) transparent;
+}
+
+.kwesi-scroll-inset::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.kwesi-scroll-inset::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kwesi-scroll-inset::-webkit-scrollbar-thumb {
+  background: rgb(var(--kwesi-ink) / 0.18);
+  border-radius: 999px;
+}
+
+.kwesi-scroll-inset::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--kwesi-ink) / 0.32);
+}

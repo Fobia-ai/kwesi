@@ -22,10 +22,16 @@ function normalize(options: ChipMultiSelectProps["options"]): ChipOption[] {
  * fixed list of options": an artist profile's genre and language sets
  * (Settings > Artists, chosen from the full catalog), a generation's own
  * genre selection scoped to that artist's subset (DynamicGenerationForm),
- * and a model's own fixed-vocabulary genre field (MuseCoco). */
+ * and a model's own fixed-vocabulary genre field (MuseCoco).
+ *
+ * Height-capped with its own internal scroll rather than left to grow
+ * freely: a long catalog (the 51-entry language list is the extreme case)
+ * must never be what forces an enclosing Modal/SlideOver past the
+ * viewport — the option list scrolls in its own small box instead, so the
+ * container around it stays a fixed, predictable size. */
 export function ChipMultiSelect({ options, selected, onToggle }: ChipMultiSelectProps) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="kwesi-scroll-inset flex max-h-44 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
       {normalize(options).map((option) => {
         const active = selected.includes(option.value);
         return (
