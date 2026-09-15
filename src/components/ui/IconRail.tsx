@@ -17,7 +17,7 @@ const ITEMS: RailItem[] = [
 
 export function IconRail() {
   return (
-    <nav className="kwesi-glass relative z-10 flex h-full w-[76px] flex-col items-center gap-2 rounded-none border-y-0 border-l-0 py-5">
+    <nav className="kwesi-glass relative z-10 flex w-[76px] shrink-0 flex-col items-center gap-2 self-start rounded-panel py-5 shadow-glass-sm">
       <div className="mb-4 h-8 w-8 rounded-[9px] bg-accent" aria-hidden />
       {ITEMS.map((item) => (
         <NavLink
@@ -35,7 +35,7 @@ export function IconRail() {
           {item.icon}
         </NavLink>
       ))}
-      <div className="mt-auto text-[10px] text-ink-muted/70">v0.1.0</div>
+      <div className="mt-2 text-[10px] text-ink-muted/70">v0.1.0</div>
     </nav>
   );
 }
