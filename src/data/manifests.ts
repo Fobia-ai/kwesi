@@ -92,6 +92,16 @@ export interface ModelHardware {
   notes?: string;
 }
 
+// Phase 8: a few catalog entries (ACE-Step 1.5 most notably) span a wide
+// VRAM range across their own checkpoint variants — its 2B checkpoints need
+// ~4-8GB, its XL (4B) checkpoints ~12-24GB, more spread than one
+// model-level minVramGb can represent without being wrong for half the
+// variants. Optional and per-variant on purpose: most models (MusicGen,
+// MuseCoco, RAVE) have roughly uniform variant hardware needs, so
+// hardware.minVramGb alone stays an acceptable simplification for them —
+// only models that actually need it declare this.
+export type VariantHardwareOverrides = Record<string, { minVramGb: number }>;
+
 export interface ModelServerConfig {
   entrypoint: string;
   venv: string;
@@ -110,6 +120,7 @@ export interface ModelManifest {
   // trained_model rows.
   checkpointVariants: string[];
   hardware: ModelHardware;
+  variantHardware?: VariantHardwareOverrides;
   inputs: ManifestInput[];
   outputs: ManifestOutput[];
   server: ModelServerConfig;
@@ -120,6 +131,16 @@ export function outputKindOf(manifest: ModelManifest): "audio" | "midi" | "audio
   const hasMidi = manifest.outputs.some((o) => o.kind === "midi");
   if (hasAudio && hasMidi) return "audio+midi";
   return hasAudio ? "audio" : "midi";
+}
+
+/** The effective minimum VRAM for a manifest, given an optional selected
+ * checkpoint variant — falls back to the model-level hardware.minVramGb
+ * when the variant has no override or none was selected. */
+export function minVramGbFor(manifest: ModelManifest, variant: string | null): number {
+  if (variant && manifest.variantHardware?.[variant]) {
+    return manifest.variantHardware[variant].minVramGb;
+  }
+  return manifest.hardware.minVramGb;
 }
 
 const MUSICGEN: ModelManifest = {
@@ -355,7 +376,22 @@ const ACE_STEP: ModelManifest = {
     "acestep-v15-xl-sft",
     "acestep-v15-xl-turbo",
   ],
-  hardware: { minVramGb: 4, cpuFallback: true, notes: "4GB (2B turbo) up to 24GB (XL) depending on checkpoint. CPU supported but slow." },
+  hardware: { minVramGb: 4, cpuFallback: true, notes: "4GB (2B turbo) up to 24GB (XL) depending on checkpoint. CPU supported but slow — model-level minimum is the lightest 2B-turbo case; see variantHardware for the real per-checkpoint spread." },
+  // Real per-checkpoint minimums, transcribed from the real repo's own GPU
+  // tier table (docs/en/INSTALL.md "Which Model Should I Choose?", verified
+  // 2026-09-15 against the cloned ACE-Step-1.5 repo, not guessed): DiT-only
+  // inference needs >=4GB regardless of checkpoint, but the 2B non-turbo
+  // (base/sft) checkpoints run two conditioning passes per step (guidance)
+  // and the real table only lists them starting at the 6-8GB tier, one tier
+  // above turbo's 2B; XL (4B) needs >=12GB even with CPU offload enabled.
+  variantHardware: {
+    "acestep-v15-base": { minVramGb: 6 },
+    "acestep-v15-sft": { minVramGb: 6 },
+    "acestep-v15-turbo": { minVramGb: 4 },
+    "acestep-v15-xl-base": { minVramGb: 12 },
+    "acestep-v15-xl-sft": { minVramGb: 12 },
+    "acestep-v15-xl-turbo": { minVramGb: 12 },
+  },
   inputs: [
     { key: "prompt", type: "text", label: "Text prompt", required: true, placeholder: "Anthemic stadium rock, driving drums" },
     { key: "lyrics", type: "textarea", label: "Lyrics (structured, optional)" },
@@ -372,10 +408,16 @@ const ACE_STEP: ModelManifest = {
     {
       kind: "audio",
       format: "wav",
-      notes: "Output format NEEDS VERIFICATION against the real repo (likely WAV/FLAC) — see kwesi.docs/03-model-catalog.md.",
+      notes:
+        "Phase 8: format resolved against the real API (docs/en/API.md in the cloned repo) — ACE-Step's own server supports flac/mp3/opus/aac/wav/wav32 via its audio_format request param and defaults to mp3, but this app always requests wav explicitly to match every other real model's own.wav convention.",
     },
   ],
-  server: { entrypoint: "server.py", venv: "ace-step-1.5-venv", portRange: [17640, 17659] },
+  // ACE-Step's own real REST server is spawned directly (not a
+  // servers/ace-step-1.5/server.py wrapper) — see electron/models/modelServer.ts's
+  // spawnAceStepServer. portRange kept in the app's own per-model port
+  // scheme (17640-17659) rather than ACE-Step's own 8001 default, documented
+  // there.
+  server: { entrypoint: "server.py", venv: "ace-step-1.5", portRange: [17640, 17659] },
 };
 
 const YUE2: ModelManifest = {
@@ -388,7 +430,12 @@ const YUE2: ModelManifest = {
   // checkpoint-variant axis, since the app's data model has exactly one
   // checkpoint_variant column per generation.
   checkpointVariants: ["yue2-3b"],
-  hardware: { minVramGb: 24, cpuFallback: false, notes: "Heaviest model in the catalog — 24GB+ NVIDIA VRAM (BF16), Linux, batch only." },
+  hardware: {
+    minVramGb: 24,
+    cpuFallback: false,
+    notes:
+      "Heaviest model in the catalog — 24GB+ NVIDIA VRAM (BF16), Linux, batch only, per the real repo's own documented requirement (kept as the manifest minimum). A real Phase 8 standalone run of a single ~60s song peaked at only ~3-4GB observed VRAM on an RTX 3090 — the documented 24GB figure is presumably for longer/heavier generations or larger batch sizes than this app's smoke test used, not a correction to the published minimum.",
+  },
   inputs: [
     { key: "lyrics", type: "textarea", label: "Lyrics", required: true },
     { key: "style_genre", type: "tags", label: "Style / genre" },
@@ -406,14 +453,20 @@ const YUE2: ModelManifest = {
     },
   ],
   outputs: [
-    { kind: "audio", format: "wav" },
+    {
+      kind: "audio",
+      format: "flac",
+      notes:
+        "Phase 8 (standalone, not yet wired into modelServer.ts — see servers/yue2/README.md): the real pipeline's own save_artifacts() writes audio.flac (24-bit, 48000Hz, stereo), not .wav — corrected from the v1 guess after a real generation run. This app's audio IPC already has a .flac mimeType case from Phase 6, so no new plumbing would be needed to play it.",
+    },
     {
       kind: "midi",
-      format: "mid",
-      notes: "Also includes ABC notation and LAB beat/key/chord/structure annotations alongside MIDI — the symbolic viewer placeholder stands in for this whole bundle.",
+      format: "abc",
+      notes:
+        "Phase 8 correction: the real symbolic output is ABC notation text (score.abc — real staff notation with vocal/instrumental voices, verified against a real generation run), not a binary Standard MIDI File — there is no .mid byte output anywhere in the real pipeline and no ABC->MIDI conversion utility in the repo. This app's real PianoRollViewer (src/components/midi/PianoRollViewer.tsx) only parses real SMF .mid bytes, so it cannot render this as-is — the \"midi\" kind is kept here as the closest existing manifest slot/viewer placeholder rather than invented as a new output kind, but a real ABC-notation viewer (or a real ABC->MIDI conversion step) is unbuilt. See servers/yue2/README.md's 'What's not done' section.",
     },
   ],
-  server: { entrypoint: "server.py", venv: "yue2-venv", portRange: [17660, 17679] },
+  server: { entrypoint: "server.py", venv: "yue2", portRange: [17660, 17679] },
 };
 
 const RAVE: ModelManifest = {

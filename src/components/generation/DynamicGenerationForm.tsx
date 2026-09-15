@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ManifestInput, ModelManifest } from "../../data/manifests";
+import { minVramGbFor, type ManifestInput, type ModelManifest } from "../../data/manifests";
+import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
 import { PillButton } from "../ui/PillButton";
 import { EmptyState } from "../ui/EmptyState";
 import { ModelsIcon } from "../ui/icons";
@@ -112,6 +113,68 @@ function FieldControl({
   }
 }
 
+type HardwareGateStatus =
+  | { level: "ok" }
+  | { level: "warn"; message: string }
+  | { level: "block"; message: string };
+
+/**
+ * Phase 8 hardware-gating: compares the selected variant's real VRAM
+ * requirement against this machine's live free VRAM (queried once per
+ * mount, not re-queried per keystroke — free VRAM doesn't change from
+ * typing in a text field). A hard block is reserved for the one case a
+ * generation is *guaranteed* to fail outright — no GPU detected at all and
+ * the model has no CPU fallback path — since every other shortfall is only
+ * an estimate: `minVramGb` is a documented minimum, not a live guarantee,
+ * and other GPU memory can free up between now and when the job actually
+ * runs. Warning (not blocking) in the uncertain cases respects the user's
+ * own judgment about their hardware, per the roadmap's explicit guidance.
+ */
+function evaluateHardwareGate(manifest: ModelManifest, requiredVramGb: number, gpu: GpuVramInfo | null): HardwareGateStatus {
+  if (!gpu) return { level: "ok" };
+  if (requiredVramGb <= 0) return { level: "ok" };
+
+  if (!gpu.available) {
+    if (!manifest.hardware.cpuFallback) {
+      return {
+        level: "block",
+        message: `${manifest.displayName} requires an NVIDIA GPU with ~${requiredVramGb}GB+ VRAM and has no CPU fallback — no GPU was detected on this machine.`,
+      };
+    }
+    return {
+      level: "warn",
+      message: "No GPU detected — generation will run on CPU, which is much slower than the GPU path this model normally uses.",
+    };
+  }
+
+  if (gpu.freeVramGb < requiredVramGb) {
+    return {
+      level: "warn",
+      message: `This checkpoint needs about ${requiredVramGb}GB of VRAM; only ~${gpu.freeVramGb.toFixed(1)}GB is currently free on your GPU (${gpu.gpuName ?? "detected GPU"}). Generation may fail or run much slower than expected.`,
+    };
+  }
+
+  return { level: "ok" };
+}
+
+function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
+  if (status.level === "ok") return null;
+  const isBlock = status.level === "block";
+  return (
+    <div
+      role="alert"
+      className={`rounded-[10px] border px-3 py-2 text-xs ${
+        isBlock
+          ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      }`}
+    >
+      {isBlock ? "Hardware requirement not met: " : "Hardware warning: "}
+      {status.message}
+    </div>
+  );
+}
+
 export function DynamicGenerationForm({
   manifest,
   installedVariantNames,
@@ -131,6 +194,21 @@ export function DynamicGenerationForm({
     for (const input of manifest.inputs) initial[input.key] = defaultValueFor(input);
     return initial;
   });
+  const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    kwesiHardware.gpuVram().then((info) => {
+      if (!cancelled) setGpu(info);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Queried once per mount — free VRAM doesn't meaningfully change while
+    // this form is open, and re-querying per variant/field change would
+    // just be extra nvidia-smi calls for no real benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (manifest.checkpointVariants.length === 0) {
     return (
@@ -153,6 +231,8 @@ export function DynamicGenerationForm({
 
   const shown = visibleInputs(manifest.inputs, selectedVariant);
   const missingRequired = shown.some((input) => !isSatisfied(input, values[input.key]));
+  const requiredVramGb = minVramGbFor(manifest, selectedVariant || null);
+  const hardwareGate = evaluateHardwareGate(manifest, requiredVramGb, gpu);
 
   function setValue(key: string, value: unknown) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -186,9 +266,11 @@ export function DynamicGenerationForm({
         </label>
       ))}
 
+      <HardwareGateBanner status={hardwareGate} />
+
       <div className="mt-2 flex justify-end">
         <PillButton
-          disabled={disabled || missingRequired}
+          disabled={disabled || missingRequired || hardwareGate.level === "block"}
           onClick={() => onSubmit(selectedVariant || null, values)}
         >
           Generate

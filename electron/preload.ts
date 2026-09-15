@@ -65,4 +65,7 @@ contextBridge.exposeInMainWorld("kwesi", {
       ipcRenderer.invoke("kwesi:audio:save", filePath, suggestedName, kind),
     reveal: (filePath: string) => ipcRenderer.invoke("kwesi:audio:reveal", filePath),
   },
+  hardware: {
+    gpuVram: () => ipcRenderer.invoke("kwesi:hardware:gpuVram"),
+  },
 });

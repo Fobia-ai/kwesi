@@ -8,9 +8,14 @@
 // `musecoco` and `museformer` alongside it, each with its own venv/port and
 // its own runReal<Model>Job — MuseCoco's real path is proven (see
 // servers/musecoco/README.md); Museformer's is wired the same way but
-// unverified (see servers/museformer/README.md). Every other model_id
-// (ace-step-1.5, yue2, rave) is untouched and still walks the Phase 4 mock
-// path below.
+// unverified (see servers/museformer/README.md). Phase 8 adds
+// `ace-step-1.5`, proven real (see servers/ace-step-1.5/README.md) but
+// spawning ACE-Step's *own* REST API server rather than a hand-written
+// wrapper — see the real-server-vs-wrapper writeup there. `yue2` and `rave`
+// are still untouched and walk the Phase 4 mock path below; YuE2's real
+// generation was proven standalone (servers/yue2/README.md) but
+// deliberately not wired into modelServer.ts yet, so don't assume its
+// model_id is in REAL_SERVER_PORTS just because a README exists for it.
 import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -61,16 +66,61 @@ export function getServerStatus(modelId: string): ServerStatusValue {
 const MUSICGEN_MODEL_ID = "musicgen";
 const MUSECOCO_MODEL_ID = "musecoco";
 const MUSEFORMER_MODEL_ID = "museformer";
-const REAL_SERVER_ENTRYPOINT = "server.py"; // same bare filename under servers/<model_id>/ for every real model
+const ACE_STEP_MODEL_ID = "ace-step-1.5";
+const REAL_SERVER_ENTRYPOINT = "server.py"; // same bare filename under servers/<model_id>/ for every real model *except* ace-step-1.5 (see spawnAceStepServer)
 
 // First port in each model's manifest portRange (src/data/manifests.ts) —
 // mirrors that file rather than importing it, same reason MusicGen's port
 // constant already does (electron/tsconfig.json's rootDir can't reach
 // src/); keep these in sync by hand if either changes.
+//
+// ACE-Step's own real REST server (see spawnAceStepServer) defaults to port
+// 8001 by its own convention (ACESTEP_API_PORT/--port, verified current
+// against the cloned repo's docs/en/API.md and start_api_server.sh, not a
+// stale detail). Deliberately *not* used here: this app already gives every
+// real model its own port slice from its own manifest range so a workspace
+// switch or multiple installed real servers never collide, and there's no
+// reason to special-case ACE-Step into the one model that instead competes
+// for 8001 with any standalone ACE-Step install the user might also run on
+// this machine. 17640 (the first port in the manifest's [17640, 17659]
+// range) is passed to ACE-Step's own server explicitly via --port instead.
 const REAL_SERVER_PORTS: Record<string, number> = {
   [MUSICGEN_MODEL_ID]: 17600,
   [MUSECOCO_MODEL_ID]: 17620,
   [MUSEFORMER_MODEL_ID]: 17630,
+  [ACE_STEP_MODEL_ID]: 17640,
+};
+
+// ACE-Step ships its own real REST API server (acestep.api_server, cloned
+// into servers/ace-step-1.5/vendor/ — see servers/ace-step-1.5/README.md)
+// rather than needing a hand-written FastAPI wrapper the way MusicGen/
+// MuseCoco/Museformer do — its own server is genuinely more correct to run
+// as-is than reimplementing a third wrapper around the bare model classes.
+const ACE_STEP_VENDOR_DIRNAME = "vendor";
+const DEFAULT_ACE_STEP_VARIANT = "acestep-v15-turbo";
+// Real ACE-Step checkpoints_dir layout (acestep/model_downloader.py's
+// MAIN_MODEL_COMPONENTS/VAE_REGISTRY, read directly from the cloned repo)
+// expects "vae", "Qwen3-Embedding-0.6B", "acestep-5Hz-lm-1.7B", and each DiT
+// checkpoint as *siblings* directly under one checkpoints_dir. This app's
+// own installed layout (electron/db/seedModels.ts / scripts/download_models.py)
+// nests the first three one level deeper, inside the "acestep-v15-turbo"
+// variant folder, because that variant's real HF repo (ACE-Step/Ace-Step1.5)
+// bundles them together. Rather than duplicate tens of GB reshuffling files
+// on disk, a small symlink farm (ensureAceStepCheckpointsLayout) bridges the
+// two layouts — same "symlink, not copy" precedent as
+// servers/musecoco/README.md's checkpoint layout section.
+const ACE_STEP_CHECKPOINTS_LINK_MAP: Record<string, string> = {
+  "acestep-v15-turbo": "acestep-v15-turbo/acestep-v15-turbo",
+  vae: "acestep-v15-turbo/vae",
+  "Qwen3-Embedding-0.6B": "acestep-v15-turbo/Qwen3-Embedding-0.6B",
+  "acestep-5Hz-lm-1.7B": "acestep-v15-turbo/acestep-5Hz-lm-1.7B",
+  "acestep-v15-base": "acestep-v15-base",
+  "acestep-v15-sft": "acestep-v15-sft",
+  "acestep-v15-xl-base": "acestep-v15-xl-base",
+  "acestep-v15-xl-sft": "acestep-v15-xl-sft",
+  "acestep-v15-xl-turbo": "acestep-v15-xl-turbo",
+  "acestep-5Hz-lm-0.6B": "acestep-5hz-lm-0.6b",
+  "acestep-5Hz-lm-4B": "acestep-5hz-lm-4b",
 };
 
 interface RealServerHandle {
@@ -79,6 +129,11 @@ interface RealServerHandle {
 }
 
 const realServers = new Map<string, RealServerHandle>();
+// Which DiT checkpoint ACE-Step's server currently has loaded into slot 1 —
+// null until the first successful spawn/switch. Its own server can hold
+// exactly one model per slot at a time; switching requires a real
+// POST /v1/init call (see ensureAceStepModelLoaded), not free.
+let aceStepLoadedVariant: string | null = null;
 // Coalesces concurrent submissions that race to start the same real server —
 // without this, two generations submitted back-to-back before the first
 // health check resolves would each spawn their own subprocess.
@@ -119,6 +174,127 @@ async function waitForHealthy(port: number, timeoutMs: number): Promise<boolean>
   return false;
 }
 
+// <projectRoot>/servers/ace-step-1.5/vendor — the cloned ace-step/ACE-Step-1.5
+// repo (see servers/ace-step-1.5/README.md for the exact clone command).
+function aceStepVendorDir(): string {
+  return path.join(projectRootDir(), "servers", ACE_STEP_MODEL_ID, ACE_STEP_VENDOR_DIRNAME);
+}
+
+/**
+ * Builds (idempotently) the symlink farm bridging this app's installed
+ * ACE-Step layout onto the sibling-directory layout ACE-Step's own code
+ * expects — see ACE_STEP_CHECKPOINTS_LINK_MAP. Only links variants that are
+ * actually installed on disk, so a partial install (e.g. XL checkpoints
+ * never downloaded) doesn't break startup — ACE-Step's own server 404s a
+ * specific model request instead, same as every other "not installed" case
+ * in this app.
+ *
+ * Also symlinks `<vendorDir>/checkpoints` to this farm. This is load-
+ * bearing, not cosmetic: `ACESTEP_CHECKPOINTS_DIR` is only read by
+ * `acestep/model_downloader.py`'s own `get_checkpoints_dir()` — the actual
+ * API-server startup path (`acestep/api/startup_model_init.py` and
+ * `acestep_v15_pipeline.py`) hardcodes `checkpoint_dir =
+ * os.path.join(project_root, "checkpoints")` and never calls
+ * `get_checkpoints_dir()` at all, confirmed by reading the cloned repo
+ * directly after a first real run silently ignored the env var and
+ * re-downloaded the ~9.4GB main model bundle from Hugging Face into
+ * `vendor/checkpoints/` instead of using the already-installed weights.
+ * Symlinking `checkpoints` itself (rather than only relying on the env var)
+ * makes the real code path find our farm regardless of that.
+ */
+function ensureAceStepCheckpointsLayout(vendorDir: string): string {
+  const modelRoot = path.join(modelsRootDir(), ACE_STEP_MODEL_ID);
+  const checkpointsDir = path.join(modelRoot, ".server-checkpoints");
+  ensureDir(checkpointsDir);
+  for (const [linkName, relativeTarget] of Object.entries(ACE_STEP_CHECKPOINTS_LINK_MAP)) {
+    const targetPath = path.join(modelRoot, relativeTarget);
+    const linkPath = path.join(checkpointsDir, linkName);
+    if (!fs.existsSync(targetPath) || fs.existsSync(linkPath)) continue;
+    try {
+      fs.symlinkSync(targetPath, linkPath, "dir");
+    } catch (err) {
+      console.warn(`[ace-step-1.5] failed to symlink ${linkPath} -> ${targetPath}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  const vendorCheckpointsLink = path.join(vendorDir, "checkpoints");
+  if (!fs.existsSync(vendorCheckpointsLink)) {
+    try {
+      fs.symlinkSync(checkpointsDir, vendorCheckpointsLink, "dir");
+    } catch (err) {
+      console.warn(
+        `[ace-step-1.5] failed to symlink ${vendorCheckpointsLink} -> ${checkpointsDir}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  return checkpointsDir;
+}
+
+function wireRealServerProcess(modelId: string, proc: ChildProcess): void {
+  proc.stdout?.on("data", (chunk) => console.log(`[${modelId}-server] ${chunk.toString().trimEnd()}`));
+  proc.stderr?.on("data", (chunk) => console.error(`[${modelId}-server] ${chunk.toString().trimEnd()}`));
+  proc.on("exit", (code) => {
+    console.log(`[${modelId}-server] exited with code ${code}`);
+    realServers.delete(modelId);
+    if (modelId === ACE_STEP_MODEL_ID) aceStepLoadedVariant = null;
+    serverStatus.set(modelId, "stopped");
+    broadcast({ type: "server_status", modelId, status: "stopped" });
+  });
+}
+
+/**
+ * ACE-Step's own server (acestep.api_server) is spawned directly — a
+ * different shape from spawnRealServer's generic servers/<model_id>/server.py
+ * convention, since there's no hand-written wrapper here at all (see the
+ * comment above ACE_STEP_VENDOR_DIRNAME). Still participates in the same
+ * health-check/lifecycle bookkeeping as every other real server.
+ */
+async function spawnAceStepServer(python: string): Promise<RealServerHandle> {
+  const vendorDir = aceStepVendorDir();
+  const entrypoint = path.join(vendorDir, "acestep", "api_server.py");
+  if (!fs.existsSync(entrypoint)) {
+    throw new Error(
+      `ace-step-1.5 server entrypoint not found at ${entrypoint} — see servers/ace-step-1.5/README.md to clone the vendored ACE-Step-1.5 repo.`,
+    );
+  }
+
+  const checkpointsDir = ensureAceStepCheckpointsLayout(vendorDir);
+  const port = REAL_SERVER_PORTS[ACE_STEP_MODEL_ID];
+
+  const proc = spawn(python, [entrypoint, "--port", String(port), "--host", "127.0.0.1"], {
+    cwd: vendorDir,
+    env: {
+      ...process.env,
+      ACESTEP_CHECKPOINTS_DIR: checkpointsDir,
+      ACESTEP_CONFIG_PATH: DEFAULT_ACE_STEP_VARIANT,
+      // DiT-only mode: the 5Hz LM ("thinking"/metadata auto-fill) is a real,
+      // optional feature of ACE-Step's own API that this app's manifest
+      // doesn't expose a control for yet — every generation request already
+      // supplies prompt/duration/bpm/key/time-signature explicitly, so
+      // disabling LLM init keeps first-integration startup fast and avoids
+      // pulling the vLLM backend into the dependency surface for a feature
+      // nothing calls. A later phase could wire up `thinking`/`use_format`
+      // as real manifest inputs and flip this back to "auto".
+      ACESTEP_INIT_LLM: "false",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  wireRealServerProcess(ACE_STEP_MODEL_ID, proc);
+
+  // Loading the DiT + VAE + text encoder onto the GPU genuinely takes
+  // longer than the other real servers' 60s health-check budget the first
+  // time a checkpoint is loaded — see servers/ace-step-1.5/README.md.
+  const healthy = await waitForHealthy(port, 5 * 60_000);
+  if (!healthy) {
+    proc.kill("SIGTERM");
+    throw new Error(`ace-step-1.5 server did not become healthy on port ${port} within 5 minutes`);
+  }
+
+  aceStepLoadedVariant = DEFAULT_ACE_STEP_VARIANT;
+  return { proc, port };
+}
+
 async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
   const python = venvPythonPath(modelId);
   if (!fs.existsSync(python)) {
@@ -127,6 +303,11 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
         `See servers/${modelId}/README.md to create it.`,
     );
   }
+
+  if (modelId === ACE_STEP_MODEL_ID) {
+    return spawnAceStepServer(python);
+  }
+
   const entrypoint = path.join(projectRootDir(), "servers", modelId, REAL_SERVER_ENTRYPOINT);
   if (!fs.existsSync(entrypoint)) {
     throw new Error(`${modelId} server entrypoint not found at ${entrypoint}`);
@@ -264,6 +445,10 @@ async function runJob(
   }
   if (modelId === MUSEFORMER_MODEL_ID) {
     await runRealMuseformerJob(workspaceId, generation);
+    return;
+  }
+  if (modelId === ACE_STEP_MODEL_ID) {
+    await runRealAceStepJob(workspaceId, generation);
     return;
   }
   await runMockJob(workspaceId, modelId, generation);
@@ -405,6 +590,210 @@ async function runRealMuseCocoJob(workspaceId: string, generation: repo.Generati
 
 async function runRealMuseformerJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
   await runRealMidiJob(MUSEFORMER_MODEL_ID, workspaceId, generation);
+}
+
+// --- Phase 8: real ACE-Step 1.5 generation -----------------------------------
+// ACE-Step's own server is an async task queue (POST /release_task -> poll
+// POST /query_result -> GET /v1/audio to download), a materially different
+// shape from MusicGen/MuseCoco's single blocking POST /generate — see
+// docs/en/API.md in the vendored repo (servers/ace-step-1.5/vendor/) for the
+// full real contract this was transcribed from.
+
+/**
+ * Mirrors resolveMelodyAudioPath's reasoning exactly: DynamicGenerationForm's
+ * audio_upload handler only ever captures a picked file's *name*, never a
+ * real transferred path, so reference_audio is only usable here if
+ * input_params.reference_audio already happens to be a real absolute path.
+ */
+function resolveAceStepReferenceAudioPath(inputParams: Record<string, unknown>): string | undefined {
+  const value = inputParams.reference_audio;
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  if (path.isAbsolute(value) && fs.existsSync(value)) return value;
+  console.warn(`[ace-step-1.5-server] reference_audio "${value}" is not a real file path on disk — ignoring it`);
+  return undefined;
+}
+
+/**
+ * The real ACE-Step API has no dedicated genre/instrument-tag parameters —
+ * only a single free-text `prompt` (caption). The manifest's genre_tags/
+ * instrument_tags fields (DynamicGenerationForm renders "tags" inputs as a
+ * plain comma-separated text field) are folded into the caption text sent
+ * to the real server rather than dropped, since ACE-Step's own caption
+ * format is natural-language music description and these read naturally as
+ * part of it.
+ */
+function buildAceStepPrompt(inputParams: Record<string, unknown>): string {
+  const prompt = typeof inputParams.prompt === "string" ? inputParams.prompt : "";
+  const genreTags = typeof inputParams.genre_tags === "string" ? inputParams.genre_tags.trim() : "";
+  const instrumentTags = typeof inputParams.instrument_tags === "string" ? inputParams.instrument_tags.trim() : "";
+  const parts = [prompt];
+  if (genreTags) parts.push(`Genre: ${genreTags}`);
+  if (instrumentTags) parts.push(`Instruments/timbre: ${instrumentTags}`);
+  return parts.filter((p) => p.length > 0).join(". ");
+}
+
+/**
+ * ACE-Step's server holds one DiT checkpoint per "slot" (this app only ever
+ * uses slot 1) and only switches on a real POST /v1/init call — not free,
+ * so this is skipped whenever the requested variant is already loaded
+ * (true on every generation after the first for a given workspace).
+ */
+async function ensureAceStepModelLoaded(port: number, variant: string): Promise<void> {
+  if (aceStepLoadedVariant === variant) return;
+  const res = await fetch(`http://127.0.0.1:${port}/v1/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+    body: JSON.stringify({ model: variant, slot: 1 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`ace-step-1.5 /v1/init returned ${res.status} switching to "${variant}": ${text}`);
+  }
+  aceStepLoadedVariant = variant;
+}
+
+interface AceStepReleaseTaskResponse {
+  data?: { task_id?: string };
+  error?: string | null;
+}
+
+interface AceStepQueryResultItem {
+  task_id: string;
+  status: number; // 0 = queued/running, 1 = succeeded, 2 = failed
+  result?: string; // JSON-stringified array, see API.md section 5.3
+}
+
+interface AceStepQueryResultResponse {
+  data?: AceStepQueryResultItem[];
+  error?: string | null;
+}
+
+async function runRealAceStepJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+
+  try {
+    const { port } = await ensureRealServerRunning(ACE_STEP_MODEL_ID);
+    const variant = generation.checkpoint_variant ?? DEFAULT_ACE_STEP_VARIANT;
+    await ensureAceStepModelLoaded(port, variant);
+
+    repo.updateGenerationStatus(generationId, "running");
+    broadcast({ type: "running", generationId, projectId, progressPct: 0 });
+
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const durationSec = typeof inputParams.duration_sec === "number" ? inputParams.duration_sec : 120;
+    const bpm = typeof inputParams.bpm === "number" ? inputParams.bpm : undefined;
+    const keyScale = typeof inputParams.key_signature === "string" && inputParams.key_signature ? inputParams.key_signature : undefined;
+    const timeSignature =
+      typeof inputParams.time_signature === "string" && inputParams.time_signature ? inputParams.time_signature : undefined;
+    const batchCount =
+      typeof inputParams.batch_count === "number" ? Math.min(8, Math.max(1, Math.round(inputParams.batch_count))) : 1;
+    const lyrics = typeof inputParams.lyrics === "string" ? inputParams.lyrics : "";
+    const referenceAudioPath = resolveAceStepReferenceAudioPath(inputParams);
+
+    const dir = generationDir(workspaceId, projectId, generationId);
+    ensureDir(dir);
+    const outputPath = path.join(dir, "output.wav");
+
+    const releaseRes = await fetch(`http://127.0.0.1:${port}/release_task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({
+        prompt: buildAceStepPrompt(inputParams),
+        lyrics,
+        audio_duration: durationSec,
+        bpm,
+        key_scale: keyScale,
+        time_signature: timeSignature,
+        batch_size: batchCount,
+        model: variant,
+        reference_audio_path: referenceAudioPath,
+        // audio_format defaults to mp3 on ACE-Step's own server (see
+        // docs/en/API.md section 4.2) — this app's manifest declares wav
+        // output (matching every other real model's own.wav convention and
+        // audio.ts's mimeTypeFor), so it's requested explicitly rather than
+        // relying on the real default.
+        audio_format: "wav",
+        // The 5Hz LM is disabled process-wide (see spawnAceStepServer) —
+        // these all default true on ACE-Step's own API and would otherwise
+        // try to invoke an LM that was never initialized.
+        thinking: false,
+        use_cot_caption: false,
+        use_cot_language: false,
+        use_format: false,
+        sample_mode: false,
+      }),
+    });
+    if (!releaseRes.ok) {
+      const text = await releaseRes.text().catch(() => releaseRes.statusText);
+      throw new Error(`ace-step-1.5 /release_task returned ${releaseRes.status}: ${text}`);
+    }
+    const releaseBody = (await releaseRes.json()) as AceStepReleaseTaskResponse;
+    const taskId = releaseBody.data?.task_id;
+    if (!taskId) {
+      throw new Error(`ace-step-1.5 /release_task did not return a task_id: ${JSON.stringify(releaseBody)}`);
+    }
+
+    const startedAt = Date.now();
+    // Real inference can legitimately run for several minutes at longer
+    // durations/batch sizes with the LLM disabled — budget generously, same
+    // spirit as servers/musecoco/README.md's 30-minute CPU budget.
+    const pollBudgetMs = 20 * 60 * 1000;
+    const pollDeadline = startedAt + pollBudgetMs;
+    let resultFileUrl: string | null = null;
+
+    while (Date.now() < pollDeadline) {
+      await delay(2000);
+      const queryRes = await fetch(`http://127.0.0.1:${port}/query_result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({ task_id_list: [taskId] }),
+      }).catch(() => null);
+      if (!queryRes || !queryRes.ok) continue;
+
+      const queryBody = (await queryRes.json()) as AceStepQueryResultResponse;
+      const item = queryBody.data?.find((r) => r.task_id === taskId);
+      if (!item) continue;
+
+      broadcast({
+        type: "running",
+        generationId,
+        projectId,
+        progressPct: Math.min(90, Math.round(((Date.now() - startedAt) / pollBudgetMs) * 100)),
+      });
+
+      if (item.status === 1) {
+        const parsed = JSON.parse(item.result ?? "[]") as Array<{ file?: string }>;
+        const first = parsed.find((r) => typeof r.file === "string" && r.file.length > 0);
+        if (!first?.file) throw new Error(`ace-step-1.5 task ${taskId} succeeded but returned no audio file`);
+        resultFileUrl = first.file;
+        break;
+      }
+      if (item.status === 2) {
+        throw new Error(`ace-step-1.5 task ${taskId} failed (see the server's own log for the real cause)`);
+      }
+    }
+
+    if (!resultFileUrl) {
+      throw new Error(`ace-step-1.5 task ${taskId} did not complete within the ${pollBudgetMs / 60_000}-minute poll budget`);
+    }
+
+    const audioRes = await fetch(`http://127.0.0.1:${port}${resultFileUrl}`, { signal: AbortSignal.timeout(60_000) });
+    if (!audioRes.ok) throw new Error(`ace-step-1.5 failed to download generated audio: ${audioRes.status}`);
+    const audioBuf = Buffer.from(await audioRes.arrayBuffer());
+    fs.writeFileSync(outputPath, audioBuf);
+
+    const durationMs = Date.now() - startedAt;
+    repo.updateGenerationStatus(generationId, "done", { outputFiles: [outputPath], durationMs });
+    broadcast({ type: "done", generationId, projectId, outputFiles: [outputPath], durationMs });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    repo.updateGenerationStatus(generationId, "failed", { error });
+    broadcast({ type: "failed", generationId, projectId, error });
+  }
 }
 
 // --- Phase 4 mock generation (every model except musicgen) -------------------

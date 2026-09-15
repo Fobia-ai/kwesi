@@ -33,7 +33,7 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 |---|---|---|---|
 | RAVE | Yes — **its native workflow** | From-scratch / fine-tune per timbre | Raw audio, no captions |
 | MusicGen | Yes | Fine-tune / LoRA (via AudioCraft's own training scripts, `dora`-based) | Audio + text caption per clip |
-| ACE-Step 1.5 | Likely (**NEEDS VERIFICATION**) | LoRA fine-tune | Audio + lyrics/tags |
+| ACE-Step 1.5 | Yes — **confirmed Phase 8** | LoRA or LoKr fine-tune, via the real repo's own API (`POST /v1/training/start`, `/v1/training/start_lokr` — see `docs/en/API.md` "Training API" in the cloned repo, or `docs/en/LoRA_Training_Tutorial.md`) | Audio + lyrics/tags, pre-processed to tensors |
 | MuseCoco | Yes | Full fine-tune | MIDI |
 | Museformer | Yes | Full fine-tune | MIDI |
 | YuE2 | **No, not in v1** | — | — already needs 24GB+ VRAM just for inference; training would need substantially more than is realistic on consumer desktop hardware. Manifest sets `training.supported: false` with that reason shown in the UI. |
@@ -44,9 +44,9 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 - Repo: `github.com/ace-step/ACE-Step-1.5` (confirmed canonical org via `gh api`). License: MIT.
 - Checkpoints — **verified 2026-09-15 live against the Hugging Face API** (`huggingface.co/api/models?author=ACE-Step`), all public/ungated: `acestep-v15-base` (2B, 50-step, pre-train only), `acestep-v15-sft` (2B, 50-step, SFT), `acestep-v15-turbo` (2B, 8-step — **its actual HF repo is named `ACE-Step/Ace-Step1.5`**, not `acestep-v15-turbo`, confirmed correct via the README's own Model Zoo table, not a typo), `acestep-v15-xl-base`/`acestep-v15-xl-sft`/`acestep-v15-xl-turbo` (4B, same pre-train/SFT/turbo split, 12–24GB). Optional LM prompt-expansion front-ends: only `acestep-5Hz-lm-0.6B` and `acestep-5Hz-lm-4B` are confirmed as real HF repos — no separate 1.7B repo was found despite being referenced in the README's GPU table, so it's dropped from the catalog rather than guessed. See `scripts/download_models.py` for the exact repo IDs.
 - Inputs: text prompt (50+ languages), structured lyrics, reference audio (style/cover), duration (10–600s), BPM, key/scale, time signature, genre tags, 1000+ instrument/timbre tags.
-- Outputs: rendered song audio — **format NEEDS VERIFICATION** (likely WAV/FLAC), 10s–10min, batch up to 8.
+- Outputs: rendered song audio — **format resolved (Phase 8)**: the real REST API's `audio_format` request parameter supports `flac`/`mp3`/`opus`/`aac`/`wav`/`wav32` and defaults to `mp3`; verified real by generating and downloading an actual file with `audio_format: "wav"` — a valid RIFF/WAVE, 16-bit PCM, stereo, 48000Hz file, non-silent (99.97% non-zero samples in the first 100k-sample window). 10s–10min, batch up to 8. See `servers/ace-step-1.5/README.md`.
 - Hardware: 4GB VRAM min (2B turbo) up to 24GB (XL). Backends: CUDA, ROCm, Apple MLX, Intel XPU, CPU (slow). Batch, not realtime.
-- Python: 3.11–3.12, PyTorch (pin **NEEDS VERIFICATION**), env via `uv`. Also ships its own REST API and a VST3 — its own local-server pattern lines up well with our architecture.
+- Python: 3.11–3.12, **PyTorch pin resolved (Phase 8)**: `torch==2.10.0+cu128`, `torchvision==0.25.0+cu128`, `torchaudio==2.10.0+cu128`, `transformers==4.57.6` (Linux x86_64 — see the real repo's own `pyproject.toml`, installed via `uv sync` and verified from a real venv build), env via `uv`. Also ships its own real REST API server (`acestep.api_server`, run as-is by this app rather than reimplemented — see `servers/ace-step-1.5/README.md`) and a VST3 — its own local-server pattern lines up well with our architecture, confirmed correct to use directly rather than writing a third hand-rolled wrapper.
 
 ### YuE2
 - Repo: `github.com/multimodal-art-projection/YuE` (hosts YuE2). Weights: `m-a-p/YuE2-3B`, `m-a-p/YuE2-Vae`.
@@ -55,7 +55,7 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 - Inputs: lyrics text, style/genre spec, optional reference audio (WAV/MP3) for cover/transcription, `max_seconds` duration cap.
 - Outputs: **dual** — stereo audio (via YuE2-Vae) **and** symbolic (ABC notation, MIDI, LAB beat/key/chord/structure annotations). Needs both viewer types mounted at once.
 - Hardware: 24GB+ NVIDIA VRAM (BF16), Linux, batch only — heaviest model in the catalog.
-- Python: **pinned and mutually incompatible across its own sub-components** — PyTorch 2.10.0 + Transformers 4.57.6 for YuE2 itself, but Transformers 4.45.2 for SheetSage2 and 4.53.2 for MERT. This single model may need *multiple* isolated venvs internally, not just one.
+- Python: **pinned and mutually incompatible across its own sub-components** — PyTorch 2.10.0 + Transformers 4.57.6 for YuE2 itself (confirmed Phase 8 directly from the real repo's `pyproject.toml`: `torch==2.10.0`, `transformers==4.57.6`, `requires-python = ">=3.10"`), but Transformers 4.45.2 for SheetSage2 and 4.53.2 for MERT. This single model may need *multiple* isolated venvs internally, not just one. **Confirmed Phase 8**: SheetSage2/MERT are only imported by the repo's "Cover a song" transcription workflow (`docs/covers.md`) — the core lyrics+style→song generation path (`YuE2Pipeline.from_pretrained("m-a-p/YuE2-3B", ...)`, `examples/generate.py`) never imports either, confirmed by reading the real README's Quick Start section and `src/yue2/pipeline.py` directly, not assumed. Basic generation only needs the `yue2-3b`/`yue2-vae` venv.
 
 ### MusicGen (Meta AudioCraft)
 - Repo: `github.com/facebookresearch/audiocraft`. License: code MIT; **weights CC-BY-NC 4.0 — non-commercial only.**

@@ -1,9 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { DynamicGenerationForm } from "../DynamicGenerationForm";
 import { getManifest, type ModelManifest } from "../../../data/manifests";
+import { kwesiHardware } from "../../../lib/hardware";
+
+vi.mock("../../../lib/hardware", () => ({
+  kwesiHardware: { gpuVram: vi.fn() },
+}));
 
 function renderForm(installedVariantNames: string[], onSubmit = vi.fn()) {
   const manifest = getManifest("musicgen")!;
@@ -20,6 +25,16 @@ function renderForm(installedVariantNames: string[], onSubmit = vi.fn()) {
 }
 
 describe("DynamicGenerationForm", () => {
+  beforeEach(() => {
+    vi.mocked(kwesiHardware.gpuVram).mockReset();
+    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({
+      available: true,
+      totalVramGb: 24,
+      freeVramGb: 24,
+      gpuName: "Mock GPU",
+    });
+  });
+
   it("shows an install prompt when no variant of the model is installed", () => {
     renderForm([]);
     expect(screen.getByText(/No installed checkpoint for MusicGen/)).toBeInTheDocument();
@@ -83,5 +98,42 @@ describe("DynamicGenerationForm", () => {
 
     await user.click(generateButton);
     expect(onSubmit).toHaveBeenCalledWith("small", expect.objectContaining({ prompt: "A calm piano piece" }));
+  });
+
+  it("shows a hardware warning (but still allows Generate) when free VRAM is below the model's minimum", async () => {
+    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({
+      available: true,
+      totalVramGb: 8,
+      freeVramGb: 1,
+      gpuName: "Mock Low-VRAM GPU",
+    });
+    const user = userEvent.setup();
+    renderForm(["small"]);
+    await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByRole("alert")).toHaveTextContent(/Hardware warning/);
+    expect(screen.getByRole("button", { name: "Generate" })).not.toBeDisabled();
+  });
+
+  it("blocks Generate when no GPU is detected and the model has no CPU fallback", async () => {
+    // MusicGen's real manifest has cpuFallback: false — the one case a
+    // generation is guaranteed to fail outright, per evaluateHardwareGate's
+    // own reasoning in DynamicGenerationForm.tsx.
+    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({ available: false, totalVramGb: 0, freeVramGb: 0 });
+    const user = userEvent.setup();
+    renderForm(["small"]);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByRole("alert")).toHaveTextContent(/Hardware requirement not met/);
+
+    await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+  });
+
+  it("shows no hardware banner when the GPU comfortably meets the requirement", async () => {
+    renderForm(["small"]);
+    await waitFor(() => expect(kwesiHardware.gpuVram).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

@@ -217,6 +217,29 @@ the full manifest (see `04-roadmap.md` Phase 4's simplifications):
 }
 ```
 
+**Phase 8** adds real hardware-gating on top of the `hardware` block above:
+`electron/models/gpuInfo.ts` queries live free/total VRAM via `nvidia-smi`
+from the Electron main process (`electron/ipc/hardware.ts` →
+`window.kwesi.hardware` → `src/lib/hardware.ts`'s real/mock pair, the
+standard IPC quadruplet — the mock reports a fixed plausible value for
+browser-preview testing), and `DynamicGenerationForm.tsx` compares it
+against the selected checkpoint variant's real minimum before allowing
+submit. Some models (ACE-Step 1.5 most notably) span too wide a VRAM range
+across their own variants for one model-level `minVramGb` to represent
+accurately — its 2B checkpoints need ~4-8GB, its XL (4B) checkpoints
+~12-24GB — so the manifest schema grew an optional
+`variantHardware?: Record<string, { minVramGb: number }>` map
+(`minVramGbFor()` in `src/data/manifests.ts` resolves the effective
+minimum, falling back to `hardware.minVramGb` when a variant has no
+override); most models don't need it and don't declare it. A shortfall
+warns rather than blocks by default (the declared minimum is a documented
+figure, not a live guarantee, and other GPU memory can free up before the
+job actually runs) — the one hard block is a model with no GPU detected at
+all and no CPU fallback path, the one case a generation is guaranteed to
+fail outright. No GPU/`nvidia-smi` present at all degrades to "unknown"
+rather than crashing the form, since not every machine running this app
+has an NVIDIA GPU.
+
 The generation-screen renderer (`src/components/generation/
 DynamicGenerationForm.tsx`) walks `inputs[]` to build the generation form,
 filtering each input by `onlyForVariant` against the selected checkpoint
@@ -377,8 +400,27 @@ training and with what input kind, and
   real-subprocess path (own venv/port `17630`) but is **not verified** —
   `servers/museformer/server.py` was never actually run; its decoder
   depends on custom kernels with an unconfirmed CPU story (see
-  `servers/museformer/README.md`). `ace-step-1.5`/`yue2`/`rave` still walk
-  the exact Phase 4 mock path, unmodified.
+  `servers/museformer/README.md`). **Phase 8 status:** `modelId ===
+  "ace-step-1.5"` is now real and proven — but with a materially different
+  shape than every model before it: rather than a hand-written
+  `servers/ace-step-1.5/server.py` wrapper, `modelServer.ts`'s
+  `spawnAceStepServer()` spawns ACE-Step's **own real REST API server**
+  (`acestep.api_server`, cloned whole into `servers/ace-step-1.5/vendor/`)
+  directly — confirmed the more correct approach after investigating the
+  real repo first, per the roadmap's explicit instruction (see
+  `servers/ace-step-1.5/README.md` for the full "why" and the checkpoint-
+  layout bridging problem it took two real attempts to actually solve).
+  Its own server speaks an async task-queue contract (`POST /release_task`
+  → poll `POST /query_result` → `GET /v1/audio` to download) rather than
+  MusicGen/MuseCoco's single blocking call, so `runRealAceStepJob` polls on
+  a timer instead of awaiting one HTTP response. Own port `17640` (this
+  app's own per-model scheme, not ACE-Step's own 8001 default — see the
+  README for why). Proven with a real, valid, non-silent WAV — verified via
+  Python's `wave` module (RIFF/WAVE, 16-bit PCM, stereo, 48000Hz, 99.97%
+  non-zero samples) — for the `acestep-v15-turbo` checkpoint at a short
+  duration; XL variants and non-turbo (base/sft) checkpoints are wired
+  identically but untested (see the README's "What's not verified"). `yue2`
+  still walks the exact Phase 4 mock path, unmodified; `rave` too.
 - A sibling **Training Job Manager** handles the training side (see
   "Training pipeline architecture" above): same venv/subprocess pattern,
   but for long-running `train.py` jobs that must survive app restarts via

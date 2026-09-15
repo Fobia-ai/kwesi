@@ -58,6 +58,14 @@ declare global {
         ) => Promise<{ ok: boolean; path?: string; reason?: string }>;
         reveal: (filePath: string) => Promise<{ ok: boolean }>;
       };
+      hardware: {
+        gpuVram: () => Promise<{
+          available: boolean;
+          totalVramGb: number;
+          freeVramGb: number;
+          gpuName?: string;
+        }>;
+      };
     };
   }
 }

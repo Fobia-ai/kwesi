@@ -15,6 +15,7 @@ import {
 } from "../lib/db";
 import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
 import { getManifest, outputKindOf } from "../data/manifests";
+import { LICENSE_LABEL } from "../data/catalog";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../components/generation/OutputViewerPlaceholder";
 import { WaveformPlayer } from "../components/audio/WaveformPlayer";
@@ -82,13 +83,34 @@ function NewGenerationModal({
   );
 }
 
+// Phase 8: non-commercial-licensed outputs (YuE2, MusicGen) get a visible
+// badge wherever they can be exported/shared, per the roadmap's licensing
+// requirement — surfaced here rather than inside WaveformPlayer/
+// PianoRollViewer themselves, since those are reused as-is from Phase 6/7
+// and this is a per-generation (model-level), not per-player, concern. MIT
+// models render no badge — nothing to warn about.
+function LicenseBadge({ modelId }: { modelId: string }) {
+  const manifest = getManifest(modelId);
+  if (!manifest || manifest.licenseTier === "mit") return null;
+  return (
+    <span
+      className="shrink-0 rounded-chip bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
+      title={`${manifest.displayName} output is licensed ${LICENSE_LABEL[manifest.licenseTier]} — non-commercial use only.`}
+    >
+      {LICENSE_LABEL[manifest.licenseTier]}
+    </span>
+  );
+}
+
 function GenerationListItem({
   generation,
   projectName,
+  modelId,
   onDeleted,
 }: {
   generation: GenerationRow;
   projectName: string;
+  modelId: string;
   onDeleted: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -116,9 +138,10 @@ function GenerationListItem({
   return (
     <li className="rounded-[8px] bg-ink/[0.03] px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
-        <button className="text-left" onClick={() => setExpanded((v) => !v)}>
+        <button className="flex items-center gap-2 text-left" onClick={() => setExpanded((v) => !v)}>
           {generation.status}
           {generation.checkpoint_variant ? ` — ${generation.checkpoint_variant}` : ""}
+          {done && <LicenseBadge modelId={modelId} />}
         </button>
         <div className="flex items-center gap-2">
           <button onClick={() => setExpanded((v) => !v)} className="text-ink-muted hover:text-ink">
@@ -275,6 +298,7 @@ function ProjectCard({
                   key={g.id}
                   generation={g}
                   projectName={project.name}
+                  modelId={modelId}
                   onDeleted={() => removeGeneration(g.id)}
                 />
               ))}

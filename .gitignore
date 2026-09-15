@@ -25,5 +25,14 @@ scripts/__pycache__
 servers/musecoco/vendor
 servers/museformer/vendor
 
+# Phase 8: ACE-Step's own repo, cloned whole rather than reimplemented as a
+# third hand-written FastAPI wrapper — see servers/ace-step-1.5/README.md.
+# Includes its own uv-managed .venv (kept separate from this app's own
+# per-model $KWESI_VENVS_DIR/ace-step-1.5, which is where modelServer.ts
+# actually looks for the interpreter it spawns) and the checkpoints/
+# symlink modelServer.ts creates pointing back into KWESI_MODELS_DIR.
+servers/ace-step-1.5/vendor
+servers/yue2/vendor
+
 # Claude Code harness internals, not project state.
 .claude/

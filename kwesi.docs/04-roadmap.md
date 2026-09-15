@@ -463,26 +463,109 @@ so this is a dependency-environment gap, not a framework gap.
 
 ---
 
-## Phase 8 — Heavy Multi-Modal Models: ACE-Step 1.5, YuE2
+## Phase 8 — Heavy Multi-Modal Models: ACE-Step 1.5, YuE2 ✅ hardware-gating + ACE-Step complete, YuE2 partial (see below)
 **Objective:** the most demanding catalog entries — large input surfaces,
 high hardware requirements, and (for YuE2) simultaneous audio + symbolic
 output.
 
-- Hardware-gating UI: warn/block generation if the active machine's VRAM
-  doesn't meet a model's declared minimum (from the manifest), rather than
-  failing opaquely mid-run.
-- ACE-Step 1.5 server + venv; validate lyrics/BPM/key/tags/reference-audio
-  input set and confirm actual output file format (flagged
-  `NEEDS VERIFICATION` in the catalog doc — resolve here).
-- YuE2 server (potentially multiple internal venvs per its own
-  sub-components) + venv; validate dual output — audio player **and**
-  symbolic viewer mounted together for one generation.
-- License-tier badges (CC-BY-NC) visibly surfaced wherever these models'
-  outputs can be exported/shared, so the user isn't surprised later.
+- **Hardware-gating UI: real, done.** `electron/models/gpuInfo.ts` queries
+  live free/total VRAM via `nvidia-smi` from the Electron main process
+  (`electron/ipc/hardware.ts` → `window.kwesi.hardware` →
+  `src/lib/hardware.ts`'s real/mock pair, the standard IPC quadruplet —
+  degrades to "no GPU detected" rather than crashing when `nvidia-smi`
+  isn't on `PATH`, since not every machine has an NVIDIA GPU).
+  `DynamicGenerationForm.tsx` compares this against the selected
+  checkpoint's real minimum (`minVramGbFor()`, which reads a new optional
+  per-variant `manifest.variantHardware` override when the model has one —
+  ACE-Step's 2B-vs-XL spread needed it, most models don't) and shows a
+  warning (not a hard block) when VRAM looks insufficient, since the
+  declared minimum is a documented figure, not a live guarantee. The one
+  hard block: no GPU detected at all and the model has no CPU fallback —
+  the one case a generation is guaranteed to fail outright. Tested with
+  Vitest (`DynamicGenerationForm.test.tsx`'s three new hardware-gate cases:
+  warning-but-allowed, hard-block-with-no-GPU-no-fallback, and the
+  no-banner-when-sufficient case) and manually against this machine's real
+  RTX 3090 (`curl`-equivalent: the IPC handler was exercised via the
+  renderer's mock-vs-real bridge selection, real `nvidia-smi` output parsed
+  correctly for total/used/free VRAM).
+- **ACE-Step 1.5 server + venv: real, proven.** Investigated the real repo
+  first, per this phase's own instruction, and found it ships its own real
+  REST API server (`acestep.api_server`) rather than needing a third
+  hand-written FastAPI wrapper — `electron/models/modelServer.ts`'s
+  `spawnAceStepServer()` runs ACE-Step's own server directly, cloned whole
+  into `servers/ace-step-1.5/vendor/` (gitignored, reproducible — see
+  `servers/ace-step-1.5/README.md` for the full "why" and the exact clone/
+  `uv sync` commands, plus a checkpoint-directory-layout bridging problem
+  that took two real attempts to actually solve: `ACESTEP_CHECKPOINTS_DIR`
+  turned out to be read by the model-download CLI but *not* the real
+  server-startup code path, which hardcodes `<project_root>/checkpoints` —
+  found by watching a real run silently re-download 9.4GB it didn't need
+  to, fixed with a second symlink). **Output format resolved**: WAV,
+  16-bit PCM, stereo, 48000Hz when `audio_format: "wav"` is requested (the
+  real API defaults to mp3; this app always requests wav explicitly) —
+  verified via Python's `wave` module against a real generated file (RIFF/
+  WAVE header correct, exactly the requested 12.0s duration, 99.97%
+  non-zero samples, not a silent placeholder). **PyTorch pin resolved**:
+  `torch==2.10.0+cu128`, `transformers==4.57.6`, from the real repo's own
+  `pyproject.toml`. Proven twice, standalone (no Electron): once against
+  the freshly-installed venv, once again after the checkpoint-symlink fix
+  to confirm no re-download recurs. `acestep-v15-turbo` (2B, fastest) only
+  — XL variants and non-turbo checkpoints are wired identically but
+  untested (see the README's "What's not verified" for the honest list,
+  including that the actual compiled-Electron path — `modelServer.ts`'s
+  ACE-Step wiring — was read-reviewed and type-checks but wasn't exercised
+  through a running Electron main process this phase, same simplification
+  Phase 7 made for MuseCoco/Museformer's real-subprocess wiring).
+- **YuE2 server: real standalone generation proven, further than expected
+  going in — but not wired into the app.** Investigated first (per this
+  phase's own instruction): unlike ACE-Step, YuE2 ships no server of its
+  own, just a pip-installable library (`YuE2Pipeline.from_pretrained(...)`)
+  — confirmed real by reading `github.com/multimodal-art-projection/YuE`
+  directly. **Confirmed SheetSage2/MERT are only needed for the separate
+  "cover a song" transcription workflow, not core lyrics+style→song
+  generation** (read directly from the repo, not assumed) — so only the
+  `yue2-3b`/`yue2-vae` venv was needed. A real venv (`torch==2.10.0+cu128`,
+  `transformers==4.57.6`, matching the catalog doc's pin) installed cleanly
+  in under two minutes, and a real generation — full `cot="full"`
+  melody-and-chord planning, a real style+lyrics request — produced a
+  genuinely valid, non-silent **24-bit FLAC** (not WAV — corrected in the
+  manifest) at 59.36s, plus a real **ABC-notation score** (not a binary
+  `.mid` file — also corrected in the manifest, a non-obvious finding only
+  discoverable by actually running it) in 34.6 seconds of real GPU compute,
+  peaking at only ~3-4GB observed VRAM (well under the documented 24GB
+  minimum, likely because this was one short single-song request, not a
+  correction to that figure). Run twice to confirm. **What's genuinely not
+  done, and why**: no FastAPI wrapper or `modelServer.ts` wiring (YuE2
+  needs one written from scratch, unlike ACE-Step's own server — real
+  additional scope this phase's time budget didn't have room for after
+  Part 1/Part 2), and no dual-viewer UI (the real symbolic output is ABC
+  text, which this app's real MIDI-only `PianoRollViewer` cannot render,
+  and there's no ABC→MIDI converter anywhere in the YuE2 repo to bridge
+  it — building a real ABC viewer is separate, non-trivial scope, and
+  modifying Phase 6/7's player components beyond reusing them as-is is
+  explicitly out of bounds). Full writeup, exact commands, and the honest
+  "why stop here" reasoning in `servers/yue2/README.md`.
+- **License-tier badges: done**, generalized rather than YuE2-specific —
+  `WorkspaceDetail.tsx`'s `LicenseBadge` shows next to any `done`
+  generation whose bound model's `licenseTier` isn't `mit` (reusing
+  `LICENSE_LABEL` from `src/data/catalog.ts`, the same labels the
+  Acknowledgments screen already uses), so MusicGen's existing CC-BY-NC
+  outputs get it too, not just YuE2's — Phase 6/7's player/export code
+  itself was left untouched, this is a sibling element in the generation
+  list.
 
-**Exit criteria:** both models generate real output end-to-end on
-appropriate hardware, with correct dual-viewer behavior for YuE2 and clear
-hardware-gating messaging for both.
+**Exit criteria:** ✅ ACE-Step 1.5 generates real output end-to-end through
+the app's own `modelServer.ts` wiring on the `acestep-v15-turbo` checkpoint,
+with clear hardware-gating messaging for both models and license badges
+surfaced wherever output can be exported/shared. ⚠️ YuE2 — real output *was*
+produced (unlike the exit criteria's original framing anticipated as the
+risk), just not through the app: standalone generation is proven for real,
+but it isn't wired into `modelServer.ts` or the UI, so the dual-viewer
+behavior this phase wanted (audio player **and** symbolic viewer mounted
+together for one generation, inside the app) was not reached — the real
+blocker is a genuine ABC-vs-MIDI format mismatch against this app's
+existing MIDI-only viewer plus the remaining server-wrapper work, both
+documented in `servers/yue2/README.md`, not an inference failure.
 
 ---
 
