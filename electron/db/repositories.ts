@@ -68,6 +68,13 @@ export function listModelVariants(modelId: string): ModelVariantRow[] {
     .all(modelId) as ModelVariantRow[];
 }
 
+/** Every downloadable (non-manual) variant across all models — used to reconcile install state against disk at startup. */
+export function listDownloadableVariants(): ModelVariantRow[] {
+  return getDatabase()
+    .prepare("SELECT * FROM model_variant WHERE source = 'huggingface' ORDER BY model_id, variant_name")
+    .all() as ModelVariantRow[];
+}
+
 export function listWorkspaces(): WorkspaceRow[] {
   return getDatabase()
     .prepare(

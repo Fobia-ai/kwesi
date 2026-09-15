@@ -140,27 +140,32 @@ MODELS = {
     },
     "musicgen": {
         "variants": {
-            "musicgen-small": {
+            # Variant names match electron/db/seedModels.ts exactly (bare
+            # sizes, not "musicgen-*") -- these two files are the app's
+            # source of truth for install-state folder names; a prior
+            # mismatch here caused downloaded folders not to be recognized
+            # by the app until manually renamed.
+            "small": {
                 # CONFIRMED -- well-documented, stable Meta AudioCraft release.
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-small",
             },
-            "musicgen-medium": {
+            "medium": {
                 # CONFIRMED
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-medium",
             },
-            "musicgen-large": {
+            "large": {
                 # CONFIRMED
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-large",
             },
-            "musicgen-melody": {
+            "melody": {
                 # CONFIRMED
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-melody",
             },
-            "musicgen-style": {
+            "style": {
                 # CONFIRMED
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-style",

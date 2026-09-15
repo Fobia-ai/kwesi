@@ -5,6 +5,7 @@ import * as repo from "../db/repositories.js";
 import { modelVariantDir, ensureDir, removeDirIfExists } from "../db/paths.js";
 import { listRepoFiles, resolveFileUrl } from "./hfClient.js";
 import { checkDiskSpace } from "./diskSpace.js";
+import { dirSizeBytes } from "../lib/fsSize.js";
 
 const PROGRESS_CHANNEL = "kwesi:models:progress";
 
@@ -126,21 +127,6 @@ async function processQueue(): Promise<void> {
     activeJob = null;
     void processQueue();
   }
-}
-
-async function dirSizeBytes(dir: string): Promise<number> {
-  let total = 0;
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      total += await dirSizeBytes(full);
-    } else {
-      const stat = await fs.promises.stat(full);
-      total += stat.size;
-    }
-  }
-  return total;
 }
 
 async function runDownload(job: Job): Promise<void> {
