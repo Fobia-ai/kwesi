@@ -92,4 +92,18 @@ contextBridge.exposeInMainWorld("kwesi", {
       return () => ipcRenderer.removeListener("kwesi:training:progress", listener);
     },
   },
+  security: {
+    hasPasscode: () => ipcRenderer.invoke("kwesi:security:hasPasscode"),
+    setPasscode: (passcode: string) => ipcRenderer.invoke("kwesi:security:setPasscode", passcode),
+    removePasscode: () => ipcRenderer.invoke("kwesi:security:removePasscode"),
+    verifyPasscode: (attempt: string) => ipcRenderer.invoke("kwesi:security:verifyPasscode", attempt),
+    getIdleTimeoutMinutes: () => ipcRenderer.invoke("kwesi:security:getIdleTimeoutMinutes"),
+    setIdleTimeoutMinutes: (minutes: number) =>
+      ipcRenderer.invoke("kwesi:security:setIdleTimeoutMinutes", minutes),
+  },
+  profile: {
+    get: () => ipcRenderer.invoke("kwesi:profile:get"),
+    save: (displayName: string | null, email: string | null) =>
+      ipcRenderer.invoke("kwesi:profile:save", displayName, email),
+  },
 });

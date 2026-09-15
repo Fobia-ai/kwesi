@@ -25,7 +25,7 @@ into a custom checkpoint usable in any new workspace.
 
 ## Status
 
-Phases 0–11 of 13 are done — see [04-roadmap.md](04-roadmap.md) for the
+Phases 0–12 of 13 are done — see [04-roadmap.md](04-roadmap.md) for the
 precise per-phase/per-model breakdown. In short: the app shell, data layer,
 Model Manager (real Hugging Face downloads), the manifest-driven dynamic
 generation UI, and real local inference are all working end to end for
@@ -34,13 +34,14 @@ complete but unverified — blocked on an unconfirmed Triton/CPU-fallback
 question; YuE2 inference is proven standalone but not wired into the app).
 A real training pipeline exists too — RAVE (the pilot), MusicGen, and
 ACE-Step can all be fine-tuned on your own audio for real, with the
-resulting checkpoint immediately usable in a new workspace. Every real
-integration in this project has been independently re-verified (not just
-taken on a build report's word) with actual generated audio/MIDI files,
-checked for validity and non-silence.
+resulting checkpoint immediately usable in a new workspace. A local profile
+and an optional OS-keychain-backed app-lock passcode (relaunch + idle
+timeout) round out Phase 12. Every real integration in this project has
+been independently re-verified (not just taken on a build report's word)
+with actual generated audio/MIDI files, checked for validity and
+non-silence.
 
-Remaining: Phase 12 (local profile + optional app-lock passcode) and
-Phase 13 (packaging/distribution installers) — see
+Remaining: Phase 13 (packaging/distribution installers) — see
 [04-roadmap.md](04-roadmap.md).
 
 - Stack **confirmed and built**: Electron + React + local Python sidecar

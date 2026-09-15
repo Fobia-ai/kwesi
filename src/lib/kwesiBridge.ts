@@ -99,6 +99,18 @@ declare global {
         pickDatasetDir: () => Promise<{ ok: boolean; path?: string }>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
+      security: {
+        hasPasscode: () => Promise<boolean>;
+        setPasscode: (passcode: string) => Promise<{ ok: boolean; reason?: string }>;
+        removePasscode: () => Promise<void>;
+        verifyPasscode: (attempt: string) => Promise<boolean>;
+        getIdleTimeoutMinutes: () => Promise<number>;
+        setIdleTimeoutMinutes: (minutes: number) => Promise<void>;
+      };
+      profile: {
+        get: () => Promise<{ display_name: string | null; email: string | null; avatar_path: string | null }>;
+        save: (displayName: string | null, email: string | null) => Promise<void>;
+      };
     };
   }
 }

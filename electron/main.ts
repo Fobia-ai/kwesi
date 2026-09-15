@@ -17,6 +17,8 @@ import { registerGenerationIpcHandlers } from "./ipc/generation.js";
 import { registerAudioIpcHandlers } from "./ipc/audio.js";
 import { registerHardwareIpcHandlers } from "./ipc/hardware.js";
 import { registerTrainingIpcHandlers } from "./ipc/training.js";
+import { registerSecurityIpcHandlers } from "./ipc/security.js";
+import { registerProfileIpcHandlers } from "./ipc/profile.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
 import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
@@ -47,6 +49,8 @@ registerGenerationIpcHandlers();
 registerAudioIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, app.getPath("downloads"));
 registerHardwareIpcHandlers();
 registerTrainingIpcHandlers();
+registerSecurityIpcHandlers(kwesiEnv.KWESI_LOCK_IDLE_TIMEOUT_MINUTES);
+registerProfileIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"

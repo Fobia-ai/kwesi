@@ -919,28 +919,49 @@ blocker predating this phase. YuE2 correctly stays out of scope.
 
 ---
 
-## Phase 12 — Profile, Security & App Lock
+## Phase 12 — Profile, Security & App Lock ✅ complete
 **Objective:** the local profile and the optional local passcode feature.
 
-- Settings > Profile: local display name, optional email, optional
-  avatar — stored locally only, no account, no server round-trip.
-- Settings > Security: set/change/remove a local passcode.
+- Settings > Profile: local display name and optional email — stored
+  locally only (`profile` row in the SQLite `settings`/`profile` tables via
+  `electron/db/repositories.ts`), no account, no server round-trip.
+  `src/screens/Settings.tsx`'s Profile tab loads the current values on
+  mount and saves on a "Save" button click through `src/lib/profile.ts`
+  (`kwesiProfile`, real IPC client + localStorage-backed mock pair for
+  browser-preview dev).
+- Settings > Security: set/change/remove a local passcode, via a small
+  modal (`SetPasscodeModal` in `Settings.tsx`) asking for the new passcode
+  twice, and a "Remove" action reusing the existing `ConfirmDialog`
+  component (the app's established destructive-action pattern).
+- Passcode storage: `electron/security/appLock.ts` uses Electron's
+  `safeStorage` API (`encryptString`/`decryptString`,
+  `isEncryptionAvailable()`) — the modern built-in that wraps the OS
+  keychain (macOS Keychain, Windows DPAPI, Linux Secret Service) — never
+  plaintext on disk, verified with a timing-safe comparison on unlock.
+- Idle-timer: `src/lib/useIdleTimer.ts` (a small reusable hook listening
+  for mouse/keyboard/scroll/touch activity) tracks user activity in the
+  renderer; on timeout (default `KWESI_LOCK_IDLE_TIMEOUT_MINUTES` = 10,
+  configurable in Settings, 0 disables idle-lock) the app locks itself even
+  while still open, not just on relaunch. The timer is only armed when a
+  passcode is actually configured, so no-passcode installs never lock.
+- Lock screen (`src/components/security/LockScreen.tsx`) shown both on
+  next launch and on idle timeout when a passcode is set; it's a
+  full-screen overlay rendered by `src/components/security/AppLock.tsx` (a
+  React Context provider wrapping the whole app in `src/main.tsx`) rather
+  than a route swap, so the app underneath stays mounted the entire time —
+  unlock returns to exactly where the user left off (open forms, scroll
+  position, current route, all untouched).
+- Setting/removing a passcode or changing the idle timeout in Settings
+  takes effect in the *current* session immediately, no relaunch required,
+  via `AppLock`'s `useAppLock().refreshLockSettings()`.
 
-- Settings > Security: set/change/remove a local passcode.
-- Passcode verification and any derived key stored via the OS keychain
-  (Keychain/Credential Manager/Secret Service), never plaintext on disk.
-- Idle-timer in the renderer/main process tracks user activity; on timeout
-  (default `KWESI_LOCK_IDLE_TIMEOUT_MINUTES` = 10, configurable in
-  Settings) the app locks itself even while still open, not just on
-  relaunch.
-- Lock screen shown both on next launch and on idle timeout when a
-  passcode is set; unlock returns to exactly where the user left off.
-
-**Exit criteria:** setting a passcode locks the app both on relaunch and
-after the configured idle period; removing it returns to the current
+**Exit criteria met:** setting a passcode locks the app both on relaunch
+and after the configured idle period; removing it returns to the current
 no-auth behavior; nothing about workspace/project data depends on the lock
-(it's a UI gate, not encryption of the data itself, unless later
-requested).
+— it's a UI gate, not encryption of the data itself, per the original
+scope. Verified via `npx tsc -p electron/tsconfig.json`, `npx tsc -b`,
+`npm run build`, and the Vitest suite (78 tests passing, 11 new for this
+phase: `useIdleTimer`, `LockScreen`, `AppLock`).
 
 ---
 

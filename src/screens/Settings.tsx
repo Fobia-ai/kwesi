@@ -1,10 +1,230 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
 import { GitHubIcon } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
+import { kwesiProfile } from "../lib/profile";
+import { kwesiSecurity } from "../lib/security";
+import { useAppLock } from "../components/security/AppLock";
+import { PillButton } from "../components/ui/PillButton";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { Modal } from "../components/ui/Modal";
 
 const TABS = ["Profile", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
+
+function ProfileTab() {
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    kwesiProfile.get().then((p) => {
+      setDisplayName(p.displayName ?? "");
+      setEmail(p.email ?? "");
+    });
+  }, []);
+
+  async function handleSave() {
+    setStatus("Saving…");
+    await kwesiProfile.save(displayName.trim() || null, email.trim() || null);
+    setStatus("Saved.");
+    setTimeout(() => setStatus(null), 1500);
+  }
+
+  return (
+    <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
+      <p className="text-xs text-ink-muted">Local profile only — no account, nothing sent anywhere.</p>
+      <label className="flex flex-col gap-1.5 text-sm">
+        Display name
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          placeholder="Your name"
+        />
+      </label>
+      <label className="flex flex-col gap-1.5 text-sm">
+        Email <span className="text-ink-muted">(optional, stored locally)</span>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          placeholder="you@example.com"
+        />
+      </label>
+      <div className="flex items-center gap-3">
+        <PillButton className="!px-4 !py-1.5 text-xs" onClick={handleSave}>
+          Save
+        </PillButton>
+        {status && <span className="text-xs text-ink-muted">{status}</span>}
+      </div>
+    </div>
+  );
+}
+
+function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () => void }) {
+  const [value, setValue] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (value !== confirm) {
+      setError("Passcodes don't match.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const result = await kwesiSecurity.setPasscode(value);
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.reason ?? "Could not set passcode.");
+      return;
+    }
+    onSet();
+  }
+
+  return (
+    <Modal title="Set a passcode" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1.5 text-sm">
+          New passcode
+          <input
+            autoFocus
+            type="password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+            placeholder="At least 4 characters"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          Confirm passcode
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          />
+        </label>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="mt-2 flex justify-end gap-2">
+          <PillButton variant="ghost" onClick={onClose}>
+            Cancel
+          </PillButton>
+          <PillButton disabled={!value || !confirm || saving} onClick={handleSubmit}>
+            Set passcode
+          </PillButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SecurityTab() {
+  const { refreshLockSettings } = useAppLock();
+  const [hasPasscode, setHasPasscode] = useState(false);
+  const [idleMinutes, setIdleMinutes] = useState(10);
+  const [showSetModal, setShowSetModal] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [idleSaveStatus, setIdleSaveStatus] = useState<string | null>(null);
+
+  async function refresh() {
+    const [passcodeSet, minutes] = await Promise.all([
+      kwesiSecurity.hasPasscode(),
+      kwesiSecurity.getIdleTimeoutMinutes(),
+    ]);
+    setHasPasscode(passcodeSet);
+    setIdleMinutes(minutes);
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleRemove() {
+    await kwesiSecurity.removePasscode();
+    setConfirmingRemove(false);
+    await refresh();
+    refreshLockSettings();
+  }
+
+  async function handleIdleChange(minutes: number) {
+    setIdleMinutes(minutes);
+    await kwesiSecurity.setIdleTimeoutMinutes(minutes);
+    refreshLockSettings();
+    setIdleSaveStatus("Saved.");
+    setTimeout(() => setIdleSaveStatus(null), 1200);
+  }
+
+  return (
+    <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
+      <p className="text-xs text-ink-muted">
+        Set a passcode to lock Kwesi on relaunch and after inactivity. This is a local UI gate,
+        not encryption of your workspace data.
+      </p>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm">Passcode</p>
+          <p className="text-xs text-ink-muted">{hasPasscode ? "A passcode is set." : "No passcode set."}</p>
+        </div>
+        {hasPasscode ? (
+          <div className="flex gap-2">
+            <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => setShowSetModal(true)}>
+              Change
+            </PillButton>
+            <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => setConfirmingRemove(true)}>
+              Remove
+            </PillButton>
+          </div>
+        ) : (
+          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => setShowSetModal(true)}>
+            Set passcode
+          </PillButton>
+        )}
+      </div>
+
+      <label className="flex flex-col gap-1.5 text-sm">
+        Auto-lock after inactivity (minutes)
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            disabled={!hasPasscode}
+            value={idleMinutes}
+            onChange={(e) => handleIdleChange(Math.max(0, Number(e.target.value) || 0))}
+            className="kwesi-glass w-24 rounded-[10px] px-3 py-2 text-sm outline-none disabled:opacity-50"
+          />
+          {idleSaveStatus && <span className="text-xs text-ink-muted">{idleSaveStatus}</span>}
+        </div>
+        <span className="text-xs text-ink-muted">0 disables idle-lock (relaunch-only).</span>
+      </label>
+
+      {showSetModal && (
+        <SetPasscodeModal
+          onClose={() => setShowSetModal(false)}
+          onSet={async () => {
+            setShowSetModal(false);
+            await refresh();
+            refreshLockSettings();
+          }}
+        />
+      )}
+
+      {confirmingRemove && (
+        <ConfirmDialog
+          title="Remove your passcode?"
+          description="Kwesi will no longer lock on relaunch or after inactivity."
+          confirmLabel="Remove"
+          onCancel={() => setConfirmingRemove(false)}
+          onConfirm={handleRemove}
+        />
+      )}
+    </div>
+  );
+}
 
 export function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("Profile");
@@ -27,55 +247,8 @@ export function SettingsScreen() {
         ))}
       </div>
 
-      {tab === "Profile" && (
-        <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
-          <p className="text-xs text-ink-muted">
-            Local profile only — no account, nothing sent anywhere.
-          </p>
-          <label className="flex flex-col gap-1.5 text-sm">
-            Display name
-            <input
-              className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
-              placeholder="Your name"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm">
-            Email <span className="text-ink-muted">(optional, stored locally)</span>
-            <input
-              type="email"
-              className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
-              placeholder="you@example.com"
-            />
-          </label>
-        </div>
-      )}
-
-      {tab === "Security" && (
-        <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
-          <p className="text-xs text-ink-muted">
-            Set a passcode to lock Kwesi on relaunch and after inactivity. Wired up in Phase 12 —
-            see kwesi.docs/04-roadmap.md.
-          </p>
-          <label className="flex flex-col gap-1.5 text-sm">
-            Passcode
-            <input
-              type="password"
-              disabled
-              className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none disabled:opacity-50"
-              placeholder="••••••"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm">
-            Auto-lock after inactivity (minutes)
-            <input
-              type="number"
-              disabled
-              defaultValue={10}
-              className="kwesi-glass w-24 rounded-[10px] px-3 py-2 text-sm outline-none disabled:opacity-50"
-            />
-          </label>
-        </div>
-      )}
+      {tab === "Profile" && <ProfileTab />}
+      {tab === "Security" && <SecurityTab />}
 
       {tab === "About" && (
         <div className="flex flex-col gap-2.5">

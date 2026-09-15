@@ -539,3 +539,47 @@ export function upsertTrainedModelVariant(
      VALUES (?, ?, ?, 'installed', ?, ?, 'trained')`,
   ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes);
 }
+
+// --- Phase 12: Profile & Security -------------------------------------------
+
+export interface ProfileRow {
+  display_name: string | null;
+  email: string | null;
+  avatar_path: string | null;
+}
+
+export function getProfile(): ProfileRow {
+  const row = getDatabase()
+    .prepare("SELECT display_name, email, avatar_path FROM profile WHERE id = 1")
+    .get() as ProfileRow | undefined;
+  return row ?? { display_name: null, email: null, avatar_path: null };
+}
+
+export function saveProfile(displayName: string | null, email: string | null): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO profile (id, display_name, email) VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, email = excluded.email`,
+    )
+    .run(displayName, email);
+}
+
+export function getSetting(key: string): string | null {
+  const row = getDatabase().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    .run(key, value);
+}
+
+export function deleteSetting(key: string): void {
+  getDatabase().prepare("DELETE FROM settings WHERE key = ?").run(key);
+}
