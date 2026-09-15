@@ -19,33 +19,38 @@
   --kwesi-glass-strong-alpha: 0.8;
   --kwesi-glass-border: 0 0 0;
   --kwesi-glass-border-alpha: 0.06;
+  /* Top-edge sheen: the bright lip that makes a frosted panel read as a
+     physical pane of glass rather than a flat translucent rectangle. */
+  --kwesi-glass-sheen: 0.5;
 }
 
 .dark {
-  --kwesi-bg: 12 12 15;
+  --kwesi-bg: 9 9 13;
   --kwesi-ink: 240 240 242;
   --kwesi-ink-muted: 150 150 158;
   --kwesi-accent: 245 245 247;
   --kwesi-accent-ink: 20 20 22;
   --kwesi-glass-bg: 255 255 255;
-  --kwesi-glass-bg-alpha: 0.06;
-  --kwesi-glass-strong-alpha: 0.09;
+  --kwesi-glass-bg-alpha: 0.07;
+  --kwesi-glass-strong-alpha: 0.1;
   --kwesi-glass-border: 255 255 255;
-  --kwesi-glass-border-alpha: 0.1;
+  --kwesi-glass-border-alpha: 0.14;
+  --kwesi-glass-sheen: 0.1;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --kwesi-bg: 12 12 15;
+    --kwesi-bg: 9 9 13;
     --kwesi-ink: 240 240 242;
     --kwesi-ink-muted: 150 150 158;
     --kwesi-accent: 245 245 247;
     --kwesi-accent-ink: 20 20 22;
     --kwesi-glass-bg: 255 255 255;
-    --kwesi-glass-bg-alpha: 0.06;
-    --kwesi-glass-strong-alpha: 0.09;
+    --kwesi-glass-bg-alpha: 0.07;
+    --kwesi-glass-strong-alpha: 0.1;
     --kwesi-glass-border: 255 255 255;
-    --kwesi-glass-border-alpha: 0.1;
+    --kwesi-glass-border-alpha: 0.14;
+    --kwesi-glass-sheen: 0.1;
   }
 }
 
@@ -68,33 +73,49 @@ body {
   overflow: hidden;
 }
 
-/* Soft blurred neutral wash behind the app content — confirmed by the
-   glassmorphism mood-board references: frosted panels read best over a
-   gently textured backdrop, not a flat one. Monochrome: no hue, just a
-   faint ink-based glow that flips light/dark with --kwesi-ink. */
+/* Stage for the 3D backdrop. Flat on its own — the depth comes from the lit
+   geometry BackdropScene.tsx raymarches on the canvas above, deliberately
+   not from a CSS gradient wash. */
 .kwesi-backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 15% 10%, rgb(var(--kwesi-ink) / 0.06), transparent 45%),
-    radial-gradient(circle at 85% 30%, rgb(var(--kwesi-ink) / 0.04), transparent 40%),
-    radial-gradient(circle at 50% 90%, rgb(var(--kwesi-ink) / 0.05), transparent 50%);
+  overflow: hidden;
+  background: rgb(var(--kwesi-bg));
 }
 
+/* Full-bleed canvas for the raymarched 3D backdrop (BackdropScene.tsx). It
+   renders at half resolution and is upscaled here, which also softens the
+   blobs' edges for free. */
+.kwesi-backdrop-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The sheen gradient is layered into `background` rather than a box-shadow
+   on purpose: Tailwind's shadow-* utilities (GlassPanel passes
+   shadow-glass-sm) are same-specificity and later in the cascade, so a
+   box-shadow here would silently stomp every panel's drop shadow. */
 .kwesi-glass {
-  background: rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-bg-alpha));
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / var(--kwesi-glass-sheen)) 0%, transparent 46%),
+    rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-bg-alpha));
   border: 1px solid rgb(var(--kwesi-glass-border) / var(--kwesi-glass-border-alpha));
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
 }
 
 .kwesi-glass-strong {
-  background: rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-strong-alpha));
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / var(--kwesi-glass-sheen)) 0%, transparent 46%),
+    rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-strong-alpha));
   border: 1px solid rgb(var(--kwesi-glass-border) / var(--kwesi-glass-border-alpha));
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
 }
 
 /* Slide-over panel (SlideOver.tsx): a right-anchored sheet for forms too
