@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
-import { kwesiDb, type ModelRow, type ModelVariantRow } from "../lib/db";
+import { kwesiDb, type ModelRow, type ModelVariantRow, type TrainedModelRow } from "../lib/db";
 import { kwesiModels, type ModelsProgressEvent, type QueueRow } from "../lib/models";
+import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
 import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/kwesiBridge";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { PillButton } from "../components/ui/PillButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { ModelsIcon, ExternalLinkIcon } from "../components/ui/icons";
+import { ModelsIcon, ExternalLinkIcon, TrainingIcon } from "../components/ui/icons";
 
 const STATUS_LABEL: Record<string, string> = {
   not_installed: "Not installed",
@@ -74,6 +75,11 @@ export function ModelManagerScreen() {
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [diskFree, setDiskFree] = useState<number | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
+  const [trainedModels, setTrainedModels] = useState<TrainedModelRow[]>([]);
+
+  const refreshTrainedModels = useCallback(() => {
+    kwesiTraining.listTrainedModels().then(setTrainedModels);
+  }, []);
 
   const refreshQueue = useCallback(() => {
     kwesiModels.listQueue().then(setQueue);
@@ -91,7 +97,20 @@ export function ModelManagerScreen() {
     });
     refreshQueue();
     kwesiModels.diskFreeBytes().then(setDiskFree);
-  }, [refreshVariants, refreshQueue]);
+    refreshTrainedModels();
+  }, [refreshVariants, refreshQueue, refreshTrainedModels]);
+
+  // Phase 10: a completed training run registers its checkpoint live —
+  // refresh "My Trained Models" (and this model's variant list, since the
+  // trained checkpoint also lands as an installed model_variant row) the
+  // moment one lands, rather than only on next screen visit.
+  useEffect(() => {
+    const unsubscribe = kwesiTraining.onProgress((event: TrainingProgressEvent) => {
+      if (event.type !== "completed") return;
+      refreshTrainedModels();
+    });
+    return unsubscribe;
+  }, [refreshTrainedModels]);
 
   useEffect(() => {
     const unsubscribe = kwesiModels.onProgress((event: ModelsProgressEvent) => {
@@ -351,6 +370,33 @@ export function ModelManagerScreen() {
           })}
         </div>
       )}
+
+      <GlassPanel className="p-4">
+        <h2 className="mb-3 text-sm font-semibold">My Trained Models</h2>
+        {trainedModels.length === 0 ? (
+          <EmptyState
+            icon={<TrainingIcon width={24} height={24} />}
+            title="No trained checkpoints yet — start a run from the Training screen."
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {trainedModels.map((tm) => {
+              const model = models?.find((m) => m.id === tm.base_model_id);
+              return (
+                <div key={tm.id} className="rounded-[10px] bg-ink/[0.03] px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm">{tm.display_name}</span>
+                    <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                      {model?.display_name ?? tm.base_model_id}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-ink-muted">{tm.checkpoint_path}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </GlassPanel>
 
       {removeTarget && (
         <ConfirmDialog

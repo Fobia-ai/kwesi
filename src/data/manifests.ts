@@ -108,6 +108,67 @@ export interface ModelServerConfig {
   portRange?: [number, number];
 }
 
+// Phase 10: training manifest block. See kwesi.docs/02-architecture.md
+// "Manifest extension: training" for the schema sketch this is transcribed
+// from, and "Training pipeline architecture" for the end-to-end flow.
+// `hyperparameters` deliberately reuses `ManifestInput[]` — the exact same
+// type the generation form's `inputs[]` uses — since the Training screen's
+// wizard renders these through the same field-control renderer
+// (`FieldControl`/`visibleInputs`/`defaultValueFor`/`isSatisfied`, exported
+// from DynamicGenerationForm.tsx) rather than a second form system.
+export type TrainingMethod = "lora" | "full_finetune" | "from_scratch";
+export type TrainingInputKind = "audio_raw" | "audio_captioned" | "midi";
+
+export interface TrainingDatasetRequirements {
+  fileTypes: string[];
+  minFiles: number;
+  minTotalDurationMin: number;
+  requiresCaptions: boolean;
+}
+
+export interface TrainingHardware {
+  minVramGb: number;
+  recommendedVramGb?: number;
+  cpuFallback: boolean;
+  notes?: string;
+}
+
+// Real finding (Phase 10, RAVE): unlike every hand-written servers/<id>/
+// server.py wrapper the generation side needs, RAVE ships its own real CLI
+// (`rave preprocess|train|export`, installed as a console-script entry
+// point by the `acids-rave` pip package) — genuinely more correct to invoke
+// directly than reimplementing a wrapper around it, the same call Phase 8
+// made for ACE-Step's own REST server. So `entrypoint` here names a
+// real console-script command (resolved as `<venv>/bin/<entrypoint>`), not
+// a Python file under servers/<model_id>/ the way the generation-side
+// `ModelServerConfig.entrypoint` always is.
+export interface TrainingServerConfig {
+  entrypoint: string;
+  venv: string;
+}
+
+export interface TrainingCheckpointOutput {
+  format: string;
+}
+
+export interface TrainingSupportedConfig {
+  supported: true;
+  method: TrainingMethod;
+  inputKind: TrainingInputKind;
+  datasetRequirements: TrainingDatasetRequirements;
+  hyperparameters: ManifestInput[];
+  hardware: TrainingHardware;
+  server: TrainingServerConfig;
+  checkpointOutput: TrainingCheckpointOutput;
+}
+
+export interface TrainingUnsupportedConfig {
+  supported: false;
+  reason: string;
+}
+
+export type TrainingConfig = TrainingSupportedConfig | TrainingUnsupportedConfig;
+
 export interface ModelManifest {
   modelId: string;
   displayName: string;
@@ -115,15 +176,19 @@ export interface ModelManifest {
   // Checkpoint variants selectable for a *generation* job. Deliberately not
   // always identical to electron/db/seedModels.ts's install-time variant
   // list — e.g. RAVE's "pretrained-examples" row there is a manual pointer
-  // link, not a real usable generation checkpoint, so this list is empty
-  // for RAVE until the training pipeline (Phase 10/11) produces real
-  // trained_model rows.
+  // link, not a real usable generation checkpoint. A *trained* checkpoint
+  // (Phase 10+) isn't added to this static list at all — it lands as its
+  // own `model_variant` row (source: "trained") instead, and
+  // WorkspaceDetail.tsx/DynamicGenerationForm.tsx merge those in
+  // separately (see `extraVariantNames`) so this array only ever needs to
+  // list the model family's stock catalog checkpoints.
   checkpointVariants: string[];
   hardware: ModelHardware;
   variantHardware?: VariantHardwareOverrides;
   inputs: ManifestInput[];
   outputs: ManifestOutput[];
   server: ModelServerConfig;
+  training: TrainingConfig;
 }
 
 export function outputKindOf(manifest: ModelManifest): "audio" | "midi" | "audio+midi" {
@@ -169,6 +234,15 @@ const MUSICGEN: ModelManifest = {
   // out of electron/ since it's a standalone Python process, not
   // main-process TS — see servers/musicgen/README.md.
   server: { entrypoint: "server.py", venv: "musicgen", portRange: [17600, 17619] },
+  // Phase 10 scope: only RAVE's training.supported is true this phase (it's
+  // the training pipeline's pilot model). MusicGen is real trainable in
+  // principle (LoRA/fine-tune via AudioCraft's own dora-based scripts, per
+  // kwesi.docs/03-model-catalog.md's training-feasibility table) but not
+  // wired into this app's Training screen yet — that's Phase 11's job.
+  training: {
+    supported: false,
+    reason: "Training support for MusicGen lands in Phase 11 — it's trainable in principle (LoRA/fine-tune via AudioCraft's own dora-based scripts), just not wired into this app's Training pipeline yet.",
+  },
 };
 
 // Phase 7 reality check: the real, published checkpoint
@@ -325,6 +399,10 @@ const MUSECOCO: ModelManifest = {
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "musecoco-venv", portRange: [17620, 17629] },
+  training: {
+    supported: false,
+    reason: "Training support for MuseCoco lands in Phase 11 — it's trainable in principle (full fine-tune on a MIDI dataset), just not wired into this app's Training pipeline yet.",
+  },
 };
 
 const MUSEFORMER: ModelManifest = {
@@ -359,6 +437,10 @@ const MUSEFORMER: ModelManifest = {
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "museformer-venv", portRange: [17630, 17639] },
+  training: {
+    supported: false,
+    reason: "Training support for Museformer lands in Phase 11 — it's trainable in principle (full fine-tune on a MIDI dataset), just not wired into this app's Training pipeline yet.",
+  },
 };
 
 const ACE_STEP: ModelManifest = {
@@ -418,6 +500,10 @@ const ACE_STEP: ModelManifest = {
   // scheme (17640-17659) rather than ACE-Step's own 8001 default, documented
   // there.
   server: { entrypoint: "server.py", venv: "ace-step-1.5", portRange: [17640, 17659] },
+  training: {
+    supported: false,
+    reason: "Training support for ACE-Step 1.5 lands in Phase 11 — the real repo confirms a LoRA/LoKr fine-tuning API (POST /v1/training/start, /v1/training/start_lokr), just not wired into this app's Training pipeline yet.",
+  },
 };
 
 const YUE2: ModelManifest = {
@@ -467,6 +553,10 @@ const YUE2: ModelManifest = {
     },
   ],
   server: { entrypoint: "server.py", venv: "yue2", portRange: [17660, 17679] },
+  training: {
+    supported: false,
+    reason: "YuE2 already needs 24GB+ VRAM just for inference; training would need substantially more than is realistic on consumer desktop hardware — not planned for v1 (kwesi.docs/03-model-catalog.md's training-feasibility table).",
+  },
 };
 
 const RAVE: ModelManifest = {
@@ -497,6 +587,75 @@ const RAVE: ModelManifest = {
   inputs: [{ key: "input_audio", type: "audio_upload", label: "Audio input (timbre transfer source)", required: true, accept: "audio/*" }],
   outputs: [{ kind: "audio", format: "wav" }],
   server: { entrypoint: "server.py", venv: "rave-venv", portRange: [17680, 17689] },
+  // Phase 10: RAVE is the training pipeline's pilot — real, proven. Training
+  // is RAVE's own native workflow (from-scratch per-timbre, no captions).
+  // `hyperparameters` mirrors what the real `rave train` CLI actually
+  // exposes as meaningful knobs for a short pilot run — confirmed directly
+  // against acids-ircam/RAVE's scripts/train.py flag definitions, not
+  // guessed. There's no `learning_rate` flag (RAVE's optimizer LR is fixed
+  // inside rave/model.py, not train.py-overridable) and no direct
+  // `latent_size` flag either (it's a gin config value baked into the
+  // chosen `config`, not a simple CLI override) — both were in
+  // 02-architecture.md's original illustrative sketch but aren't real
+  // train.py knobs, so this list uses the real ones instead (config,
+  // max_steps, batch_size) — see that doc's updated sketch.
+  training: {
+    supported: true,
+    method: "from_scratch",
+    inputKind: "audio_raw",
+    // Deliberately modest for a *pipeline-proof* run, not a production
+    // timbre model — RAVE's own community guidance wants 20+ minutes for a
+    // musically useful result, but this app's Phase 10 exit criterion is a
+    // real, structurally valid checkpoint that round-trips through
+    // inference, not a good-sounding one (same bar Phase 5 held MusicGen's
+    // 6-second smoke clip to). A production-quality run just needs more/
+    // longer files against these same minimums.
+    datasetRequirements: {
+      fileTypes: [".wav", ".flac", ".aiff"],
+      minFiles: 3,
+      minTotalDurationMin: 1,
+      requiresCaptions: false,
+    },
+    hyperparameters: [
+      {
+        key: "config",
+        type: "select",
+        label: "Model size / config",
+        default: "v2_small",
+        helpText: "v2_small is RAVE's own reduced-footprint config (min ~8GB VRAM, per the real repo's config table) — the right default for a quick pilot run.",
+        options: [
+          { value: "v2_small", label: "v2_small (fastest, lowest VRAM)" },
+          { value: "v2", label: "v2 (standard)" },
+          { value: "v2_nopqmf_small", label: "v2_nopqmf_small (experimental, no PQMF)" },
+        ],
+      },
+      {
+        key: "max_steps",
+        type: "number",
+        label: "Training steps",
+        default: 60,
+        min: 10,
+        max: 500,
+        helpText: "Kept deliberately small — this proves the pipeline produces a real checkpoint, not a musically finished model. RAVE's own docs describe production runs in the hundreds of thousands of steps.",
+      },
+      {
+        key: "batch_size",
+        type: "number",
+        label: "Batch size",
+        default: 4,
+        min: 1,
+        max: 16,
+      },
+    ],
+    hardware: {
+      minVramGb: 8,
+      recommendedVramGb: 16,
+      cpuFallback: true,
+      notes: "8GB minimum is v2_small's own documented figure; CPU training (rave train --gpu -1) works but is impractically slow for anything beyond a tiny pilot run.",
+    },
+    server: { entrypoint: "rave", venv: "rave-train" },
+    checkpointOutput: { format: "ts" },
+  },
 };
 
 export const MANIFESTS: Record<string, ModelManifest> = {

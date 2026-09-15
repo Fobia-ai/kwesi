@@ -11,11 +11,18 @@ export type GenerationFormValues = Record<string, unknown>;
 interface DynamicGenerationFormProps {
   manifest: ModelManifest;
   installedVariantNames: string[];
+  // Phase 10: trained-model variant names for this model family (already
+  // guaranteed installed — see trainingManager.ts) that aren't part of the
+  // manifest's static `checkpointVariants` list. Merged in separately
+  // rather than folded into that static array, since it's runtime data
+  // (WorkspaceDetail.tsx derives it from `model_variant` rows where
+  // `source === "trained"`), not catalog data.
+  extraVariantNames?: string[];
   disabled?: boolean;
   onSubmit: (checkpointVariant: string | null, values: GenerationFormValues) => void;
 }
 
-function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null): ManifestInput[] {
+export function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null): ManifestInput[] {
   return inputs.filter((input) => !input.onlyForVariant || input.onlyForVariant === selectedVariant);
 }
 
@@ -35,19 +42,28 @@ function resolveUploadedFilePath(file: File | undefined): string {
   return realPath && realPath.length > 0 ? realPath : file.name;
 }
 
-function defaultValueFor(input: ManifestInput): unknown {
+export function defaultValueFor(input: ManifestInput): unknown {
   if ("default" in input && input.default !== undefined) return input.default;
   if (input.type === "number") return "";
   return "";
 }
 
-function isSatisfied(input: ManifestInput, value: unknown): boolean {
+export function isSatisfied(input: ManifestInput, value: unknown): boolean {
   if (!input.required) return true;
   if (input.type === "audio_upload" || input.type === "midi_upload") return typeof value === "string" && value.length > 0;
   return value !== undefined && value !== null && String(value).trim().length > 0;
 }
 
-function FieldControl({
+/**
+ * The single control-level renderer for every manifest input type — reused
+ * as-is by the Training screen's hyperparameters form (Phase 10) so
+ * `training.hyperparameters[]` (same `ManifestInput[]` shape as generation's
+ * `inputs[]`) renders through the exact same field controls rather than a
+ * second form system, per kwesi.docs/02-architecture.md's "Manifest
+ * extension: training" — this is the "generalize it slightly" the roadmap
+ * asked for: export the reusable pieces rather than forking them.
+ */
+export function FieldControl({
   input,
   value,
   onChange,
@@ -129,7 +145,7 @@ function FieldControl({
   }
 }
 
-type HardwareGateStatus =
+export type HardwareGateStatus =
   | { level: "ok" }
   | { level: "warn"; message: string }
   | { level: "block"; message: string };
@@ -146,15 +162,19 @@ type HardwareGateStatus =
  * runs. Warning (not blocking) in the uncertain cases respects the user's
  * own judgment about their hardware, per the roadmap's explicit guidance.
  */
-function evaluateHardwareGate(manifest: ModelManifest, requiredVramGb: number, gpu: GpuVramInfo | null): HardwareGateStatus {
+export function evaluateHardwareGate(
+  target: { displayName: string; hardware: { cpuFallback: boolean } },
+  requiredVramGb: number,
+  gpu: GpuVramInfo | null,
+): HardwareGateStatus {
   if (!gpu) return { level: "ok" };
   if (requiredVramGb <= 0) return { level: "ok" };
 
   if (!gpu.available) {
-    if (!manifest.hardware.cpuFallback) {
+    if (!target.hardware.cpuFallback) {
       return {
         level: "block",
-        message: `${manifest.displayName} requires an NVIDIA GPU with ~${requiredVramGb}GB+ VRAM and has no CPU fallback — no GPU was detected on this machine.`,
+        message: `${target.displayName} requires an NVIDIA GPU with ~${requiredVramGb}GB+ VRAM and has no CPU fallback — no GPU was detected on this machine.`,
       };
     }
     return {
@@ -173,7 +193,7 @@ function evaluateHardwareGate(manifest: ModelManifest, requiredVramGb: number, g
   return { level: "ok" };
 }
 
-function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
+export function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
   if (status.level === "ok") return null;
   const isBlock = status.level === "block";
   return (
@@ -194,15 +214,17 @@ function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
 export function DynamicGenerationForm({
   manifest,
   installedVariantNames,
+  extraVariantNames,
   disabled,
   onSubmit,
 }: DynamicGenerationFormProps) {
   const navigate = useNavigate();
 
-  const usableVariants = useMemo(
-    () => manifest.checkpointVariants.filter((v) => installedVariantNames.includes(v)),
-    [manifest.checkpointVariants, installedVariantNames],
-  );
+  const usableVariants = useMemo(() => {
+    const fromManifest = manifest.checkpointVariants.filter((v) => installedVariantNames.includes(v));
+    const extra = (extraVariantNames ?? []).filter((v) => !fromManifest.includes(v));
+    return [...fromManifest, ...extra];
+  }, [manifest.checkpointVariants, installedVariantNames, extraVariantNames]);
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
   const [values, setValues] = useState<GenerationFormValues>(() => {

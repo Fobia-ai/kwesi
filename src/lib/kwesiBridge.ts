@@ -1,4 +1,12 @@
-import type { ModelRow, ModelVariantRow, WorkspaceRow, ProjectRow, GenerationRow } from "./db";
+import type {
+  ModelRow,
+  ModelVariantRow,
+  WorkspaceRow,
+  ProjectRow,
+  GenerationRow,
+  TrainingRunRow,
+  TrainedModelRow,
+} from "./db";
 
 declare global {
   interface Window {
@@ -70,6 +78,24 @@ declare global {
           freeVramGb: number;
           gpuName?: string;
         }>;
+      };
+      training: {
+        submit: (params: {
+          modelId: string;
+          baseCheckpointVariant: string | null;
+          runName: string;
+          datasetFiles: string[];
+          allowedExtensions: string[];
+          hyperparams: Record<string, unknown>;
+          outputDir: string;
+        }) => Promise<{ ok: boolean; reason?: string; trainingRun?: TrainingRunRow }>;
+        list: (modelId?: string) => Promise<TrainingRunRow[]>;
+        get: (runId: string) => Promise<TrainingRunRow | null>;
+        cancel: (runId: string) => Promise<boolean>;
+        listTrainedModels: (modelId?: string) => Promise<TrainedModelRow[]>;
+        pickOutputDir: (modelId: string, runName: string) => Promise<{ ok: boolean; path?: string }>;
+        defaultOutputDir: (modelId: string, runName: string) => Promise<string>;
+        onProgress: (callback: (event: unknown) => void) => () => void;
       };
     };
   }

@@ -1,0 +1,31 @@
+# Real RAVE *training* dependencies — deliberately a SEPARATE venv from
+# servers/rave/requirements.txt (Phase 9's CPU-only inference venv). Install
+# into $KWESI_VENVS_DIR/rave-train with a Python 3.11 interpreter (not 3.12 —
+# see servers/rave/README.md's "Training venv" section for why: acids-rave's
+# own pinned scipy==1.10.0/pytorch_lightning==1.9.0 have no cp312 wheels).
+#
+#   uv venv --python 3.11 $KWESI_VENVS_DIR/rave-train
+#   uv pip install --python $KWESI_VENVS_DIR/rave-train/bin/python \
+#       torch==2.4.1 torchaudio==2.4.1
+#   uv pip install --python $KWESI_VENVS_DIR/rave-train/bin/python \
+#       "pytorch_lightning==1.9.0" "setuptools<81" acids-rave
+#
+# `setuptools<81` is load-bearing, not optional: acids-rave's own dependency
+# chain (pytorch_lightning -> lightning_fabric) still does
+# `import pkg_resources` at import time, which setuptools>=81 no longer
+# vendors by default — a bare `pip install acids-rave` on a fresh venv
+# otherwise fails at first `import rave` with
+# `ModuleNotFoundError: No module named 'pkg_resources'`, confirmed by
+# hitting it directly, not guessed.
+#
+# No special --index-url needed (unlike servers/rave/requirements.txt's
+# CPU-only wheel pin) — plain `pip install torch==2.4.1` from PyPI already
+# resolves a real CUDA 12.1-enabled Linux wheel (bundled via the
+# nvidia-cu12-* dependency packages) on this machine; confirmed via
+# `torch.cuda.is_available()` returning True in the installed venv.
+
+torch==2.4.1
+torchaudio==2.4.1
+pytorch_lightning==1.9.0
+setuptools<81
+acids-rave==2.3.1

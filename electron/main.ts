@@ -4,14 +4,22 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { resolveKwesiEnv } from "./kwesiEnv.js";
 import { openDatabase } from "./db/database.js";
-import { initPaths, initModelsPaths, initVenvsPaths } from "./db/paths.js";
+import {
+  initPaths,
+  initModelsPaths,
+  initVenvsPaths,
+  initLogsPaths,
+  initTrainedModelsPaths,
+} from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
 import { registerModelsIpcHandlers } from "./ipc/models.js";
 import { registerGenerationIpcHandlers } from "./ipc/generation.js";
 import { registerAudioIpcHandlers } from "./ipc/audio.js";
 import { registerHardwareIpcHandlers } from "./ipc/hardware.js";
+import { registerTrainingIpcHandlers } from "./ipc/training.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
+import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
 
 // Loads .env from the project root in dev (electron launched via `electron .`,
 // so process.cwd() is the project root); silently a no-op if no .env exists
@@ -31,11 +39,14 @@ openDatabase(kwesiEnv.KWESI_DB_PATH);
 initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
 initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
+initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
+initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
 registerDbIpcHandlers();
 registerModelsIpcHandlers();
 registerGenerationIpcHandlers();
 registerAudioIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, app.getPath("downloads"));
 registerHardwareIpcHandlers();
+registerTrainingIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"
@@ -43,6 +54,13 @@ registerHardwareIpcHandlers();
 // awaited here rather than fired in the background to avoid a flash of
 // stale "not installed" state on first paint.
 await reconcileInstalledModelsFromDisk();
+
+// Phase 10: any training_run left queued/preparing/running at startup has
+// no live orchestration behind it anymore (see trainingManager.ts's own
+// comment on why true resume isn't attempted) — surfaced as interrupted
+// rather than left stuck, mirroring resetInterruptedDownloads's precedent
+// in db/database.ts for the install queue.
+reconcileTrainingRunsOnStartup();
 
 let mainWindow: BrowserWindow | null = null;
 

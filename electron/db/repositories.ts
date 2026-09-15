@@ -374,3 +374,168 @@ export function updateGenerationStatus(
       id,
     );
 }
+
+// --- Phase 10: Training Job Manager ------------------------------------------
+// training_run/trained_model tables already existed in schema.ts from the
+// original Phase 0 design (see kwesi.docs/02-architecture.md's data model) —
+// these are the first real read/write functions against them.
+
+export interface TrainingRunRow {
+  id: string;
+  model_id: string;
+  base_checkpoint_variant: string | null;
+  run_name: string;
+  status: string;
+  dataset_manifest: string;
+  hyperparams: string;
+  output_dir: string | null;
+  output_checkpoint_id: string | null;
+  log_path: string | null;
+  pid: number | null;
+  started_at: number | null;
+  completed_at: number | null;
+  error: string | null;
+}
+
+export interface TrainedModelRow {
+  id: string;
+  base_model_id: string;
+  training_run_id: string;
+  display_name: string;
+  checkpoint_path: string;
+  created_at: number;
+}
+
+export function createTrainingRun(
+  modelId: string,
+  baseCheckpointVariant: string | null,
+  runName: string,
+  datasetManifest: unknown,
+  hyperparams: Record<string, unknown>,
+  outputDir: string,
+): TrainingRunRow {
+  const db = getDatabase();
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO training_run
+       (id, model_id, base_checkpoint_variant, run_name, status, dataset_manifest, hyperparams, output_dir)
+     VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)`,
+  ).run(id, modelId, baseCheckpointVariant, runName, JSON.stringify(datasetManifest), JSON.stringify(hyperparams), outputDir);
+  return getTrainingRunById(id) as TrainingRunRow;
+}
+
+export function listTrainingRuns(modelId?: string): TrainingRunRow[] {
+  const db = getDatabase();
+  if (modelId) {
+    return db
+      .prepare("SELECT * FROM training_run WHERE model_id = ? ORDER BY started_at DESC, rowid DESC")
+      .all(modelId) as TrainingRunRow[];
+  }
+  return db.prepare("SELECT * FROM training_run ORDER BY started_at DESC, rowid DESC").all() as TrainingRunRow[];
+}
+
+export function getTrainingRunById(id: string): TrainingRunRow | undefined {
+  return getDatabase().prepare("SELECT * FROM training_run WHERE id = ?").get(id) as TrainingRunRow | undefined;
+}
+
+/** Every run currently `queued`/`preparing`/`running` — used by the startup reconciliation sweep. */
+export function listActiveTrainingRuns(): TrainingRunRow[] {
+  return getDatabase()
+    .prepare("SELECT * FROM training_run WHERE status IN ('queued', 'preparing', 'running')")
+    .all() as TrainingRunRow[];
+}
+
+export function updateTrainingRunStatus(
+  id: string,
+  status: string,
+  patch: {
+    pid?: number | null;
+    logPath?: string;
+    outputCheckpointId?: string | null;
+    startedAt?: number;
+    completedAt?: number;
+    error?: string | null;
+  } = {},
+): void {
+  const db = getDatabase();
+  const sets: string[] = ["status = ?"];
+  const values: unknown[] = [status];
+  if (patch.pid !== undefined) {
+    sets.push("pid = ?");
+    values.push(patch.pid);
+  }
+  if (patch.logPath !== undefined) {
+    sets.push("log_path = ?");
+    values.push(patch.logPath);
+  }
+  if (patch.outputCheckpointId !== undefined) {
+    sets.push("output_checkpoint_id = ?");
+    values.push(patch.outputCheckpointId);
+  }
+  if (patch.startedAt !== undefined) {
+    sets.push("started_at = ?");
+    values.push(patch.startedAt);
+  }
+  if (patch.completedAt !== undefined) {
+    sets.push("completed_at = ?");
+    values.push(patch.completedAt);
+  }
+  if (patch.error !== undefined) {
+    sets.push("error = ?");
+    values.push(patch.error);
+  }
+  values.push(id);
+  db.prepare(`UPDATE training_run SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+}
+
+export function createTrainedModel(
+  baseModelId: string,
+  trainingRunId: string,
+  displayName: string,
+  checkpointPath: string,
+): TrainedModelRow {
+  const db = getDatabase();
+  const id = randomUUID();
+  const createdAt = Date.now();
+  db.prepare(
+    `INSERT INTO trained_model (id, base_model_id, training_run_id, display_name, checkpoint_path, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, baseModelId, trainingRunId, displayName, checkpointPath, createdAt);
+  return { id, base_model_id: baseModelId, training_run_id: trainingRunId, display_name: displayName, checkpoint_path: checkpointPath, created_at: createdAt };
+}
+
+export function listTrainedModels(modelId?: string): TrainedModelRow[] {
+  const db = getDatabase();
+  if (modelId) {
+    return db
+      .prepare("SELECT * FROM trained_model WHERE base_model_id = ? ORDER BY created_at DESC")
+      .all(modelId) as TrainedModelRow[];
+  }
+  return db.prepare("SELECT * FROM trained_model ORDER BY created_at DESC").all() as TrainedModelRow[];
+}
+
+/**
+ * Registers a completed training run's checkpoint as a real, selectable
+ * generation checkpoint — inserts (or refreshes) a `model_variant` row with
+ * `source = 'trained'`, `install_status = 'installed'` so it flows through
+ * the exact same "installed variant" plumbing every stock catalog variant
+ * already uses (Model Manager's listing, DynamicGenerationForm's
+ * installed-variant check), rather than a parallel mechanism.
+ */
+export function upsertTrainedModelVariant(
+  modelId: string,
+  variantName: string,
+  installPath: string,
+  diskSizeBytes: number,
+): void {
+  const db = getDatabase();
+  const existing = getModelVariant(modelId, variantName);
+  if (existing) {
+    setVariantInstalled(existing.id, installPath, diskSizeBytes);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO model_variant (id, model_id, variant_name, install_status, install_path, disk_size_bytes, source)
+     VALUES (?, ?, ?, 'installed', ?, ?, 'trained')`,
+  ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes);
+}

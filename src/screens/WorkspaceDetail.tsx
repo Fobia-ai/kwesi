@@ -59,11 +59,13 @@ function NewProjectModal({
 function NewGenerationModal({
   modelId,
   installedVariantNames,
+  extraVariantNames,
   onClose,
   onSubmit,
 }: {
   modelId: string;
   installedVariantNames: string[];
+  extraVariantNames: string[];
   onClose: () => void;
   onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
 }) {
@@ -74,6 +76,7 @@ function NewGenerationModal({
         <DynamicGenerationForm
           manifest={manifest}
           installedVariantNames={installedVariantNames}
+          extraVariantNames={extraVariantNames}
           onSubmit={onSubmit}
         />
       ) : (
@@ -225,6 +228,16 @@ function ProjectCard({
     () => variants.filter((v) => v.install_status === "installed").map((v) => v.variant_name),
     [variants],
   );
+  // Phase 10: trained-model variants (model_variant rows created by
+  // trainingManager.ts on a completed run, source === "trained") aren't
+  // part of the manifest's static checkpointVariants list — merged in
+  // separately here rather than folded into installedVariantNames, since
+  // DynamicGenerationForm treats them as always-usable regardless of the
+  // static catalog list.
+  const trainedVariantNames = useMemo(
+    () => variants.filter((v) => v.install_status === "installed" && v.source === "trained").map((v) => v.variant_name),
+    [variants],
+  );
 
   async function refresh() {
     setGenerations(await kwesiDb.listGenerations(project.id));
@@ -318,6 +331,7 @@ function ProjectCard({
         <NewGenerationModal
           modelId={modelId}
           installedVariantNames={installedVariantNames}
+          extraVariantNames={trainedVariantNames}
           onClose={() => setShowGenerationModal(false)}
           onSubmit={submitGeneration}
         />

@@ -75,4 +75,20 @@ contextBridge.exposeInMainWorld("kwesi", {
   hardware: {
     gpuVram: () => ipcRenderer.invoke("kwesi:hardware:gpuVram"),
   },
+  training: {
+    submit: (params: unknown) => ipcRenderer.invoke("kwesi:training:submit", params),
+    list: (modelId?: string) => ipcRenderer.invoke("kwesi:training:list", modelId),
+    get: (runId: string) => ipcRenderer.invoke("kwesi:training:get", runId),
+    cancel: (runId: string) => ipcRenderer.invoke("kwesi:training:cancel", runId),
+    listTrainedModels: (modelId?: string) => ipcRenderer.invoke("kwesi:training:listTrainedModels", modelId),
+    pickOutputDir: (modelId: string, runName: string) =>
+      ipcRenderer.invoke("kwesi:training:pickOutputDir", modelId, runName),
+    defaultOutputDir: (modelId: string, runName: string) =>
+      ipcRenderer.invoke("kwesi:training:defaultOutputDir", modelId, runName),
+    onProgress: (callback: (event: unknown) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("kwesi:training:progress", listener);
+      return () => ipcRenderer.removeListener("kwesi:training:progress", listener);
+    },
+  },
 });

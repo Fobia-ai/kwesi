@@ -658,34 +658,154 @@ per the roadmap's own stretch-goal framing.
 
 ---
 
-## Phase 10 — Training Pipeline Framework & RAVE Training Pilot
+## Phase 10 — Training Pipeline Framework & RAVE Training Pilot ✅ complete
 **Objective:** prove the training pipeline end to end with the simplest,
 most natural case in the catalog before generalizing it.
 
-- `training` manifest block finalized (per [02-architecture.md](02-architecture.md))
-  and written for every catalog model, including `supported: false` +
-  reason for YuE2.
-- Training Job Manager in the Electron main process: spawn/health-check a
-  model's `train.py` in its own venv, PID + heartbeat file per run so a
-  run survives app restarts and can be reattached to on relaunch.
-- Training screen (new top-level nav item, not nested in a workspace):
-  New Training Run wizard reusing the Phase 4 form renderer against
-  `training.hyperparameters[]`; dataset drop-zone with file-type
-  validation; hardware preflight reusing Phase 8's gating component
-  against `training.hardware`; output-directory picker defaulting to
-  `KWESI_TRAINED_MODELS_DIR`.
-- Real RAVE training end-to-end: drop in a raw-audio dataset (no captions
-  needed — RAVE's native case), run training, watch live loss/progress,
-  land a completed checkpoint that registers as a `trained_model` and
-  shows up in Model Manager under "My Trained Models," selectable for a
-  new workspace exactly like a stock checkpoint.
-- Interrupted-run handling: kill the app mid-run, relaunch, confirm the
-  run is correctly surfaced as interrupted rather than silently lost.
+- **`training` manifest block: real, written for every catalog model.**
+  `src/data/manifests.ts`'s `TrainingConfig`/`TrainingSupportedConfig`
+  types match [02-architecture.md](02-architecture.md)'s schema sketch,
+  with two real, documented deviations forced by RAVE's actual CLI
+  (`hyperparameters` uses `config`/`max_steps`/`batch_size`, not the
+  sketch's illustrative `epochs`/`latent_size`; `server.entrypoint` names
+  a real console-script command, `"rave"`, not a Python file) — see that
+  doc's updated "Manifest extension: training" section for the full
+  reasoning. Only RAVE has `supported: true`; MusicGen, MuseCoco,
+  Museformer, and ACE-Step 1.5 all declare `supported: false` with a real
+  reason ("Phase 11's job," not a hardware limitation — each really is
+  trainable in principle per
+  [03-model-catalog.md](03-model-catalog.md)'s training-feasibility
+  table); YuE2 declares `supported: false` for the real hardware reason
+  (24GB+ VRAM already needed for inference alone).
+- **Training Job Manager: real, proven.**
+  `electron/models/trainingManager.ts` spawns RAVE's own real CLI
+  (`rave preprocess` → `rave train` → `rave export`, installed as a
+  console-script entry point by the real `acids-rave` pip package — no
+  hand-written `train.py` needed, the same "run the vendor's own tooling
+  directly" call Phase 8 made for ACE-Step) in its own venv
+  (`$KWESI_VENVS_DIR/rave-train`, a **separate** Python 3.11 venv from
+  Phase 9's CPU-only inference venv — `acids-rave`'s own
+  `scipy==1.10.0`/`pytorch_lightning==1.9.0` pins have no Python 3.12
+  wheels; full dependency archaeology, including a real
+  `pkg_resources`-missing bug hit and fixed, in
+  `servers/rave/README.md`'s "Training (Phase 10)" section). Writes a
+  PID + heartbeat file and a real log per run. On completion, registers
+  the checkpoint as both a `trained_model` row and a `model_variant` row
+  (`source: "trained"`, `install_status: "installed"`) — the latter is
+  what makes a trained checkpoint immediately selectable as a real
+  generation checkpoint, reusing the exact same "installed variant"
+  plumbing every stock catalog variant already flows through
+  (`DynamicGenerationForm.tsx`'s new `extraVariantNames` prop,
+  `WorkspaceDetail.tsx` merges them in from `model_variant` rows where
+  `source === "trained"`).
+- **Training screen: real, built.** `src/screens/Training.tsx` (the
+  "Training" nav item already existed as a Phase-1-era placeholder,
+  extended here into the real screen) — New Training Run form (model
+  picker showing every manifest, unsupported ones disabled with their real
+  `reason`, same UX pattern as Model Manager's manual-source rows; dataset
+  drop-zone with real client-side file-type validation; hyperparameters
+  rendered through `DynamicGenerationForm.tsx`'s newly-exported
+  `FieldControl`/`defaultValueFor`/`isSatisfied` — the *exact* same
+  field-control renderer the generation screen uses, not a fork of it;
+  hardware preflight reusing the same newly-exported
+  `evaluateHardwareGate`/`HardwareGateBanner`; output-directory picker via
+  a real native folder dialog, `electron/ipc/training.ts`'s
+  `pickOutputDir`, defaulting to `KWESI_TRAINED_MODELS_DIR/<model_id>/
+  <run_name>`) plus a live Training Runs list (status badges, real step/
+  ETA/rate progress parsed from RAVE's own tqdm output, cancel button).
+  Full IPC/mock quadruplet house style (`electron/ipc/training.ts` →
+  `electron/preload.ts`'s `window.kwesi.training` → `src/lib/db.ts`'s
+  `TrainingRunRow`/`TrainedModelRow` types → `src/lib/training.ts`'s real/
+  localStorage-mock pair). Model Manager's "My Trained Models" section
+  (no prior scaffolding existed — built from scratch) lists every
+  `trained_model` row and refreshes live when a run completes.
+- **Real RAVE training end-to-end: proven twice.** (1) Standalone CLI
+  against a synthesized 30-file/270s dataset (sine-sweep + noise,
+  `soundfile`-generated, same "synthesize a test input" precedent as
+  Phase 9's inference verification) — real `rave preprocess` (90 real
+  windowed chunks), real `rave train --max_steps 40` on the RTX 3090
+  (~15s wall time), real `rave export` → a genuine, structurally valid
+  31MB `.ts` checkpoint, loaded back with a bare `torch.jit.load()` and
+  producing real, non-silent audio (verified via Python's `wave` module).
+  (2) **Through the actual compiled Electron code path** — a standalone
+  `npx electron <script>.mjs` (same no-GUI technique Phase 5 established;
+  `app.whenReady()` itself hangs indefinitely in this sandboxed
+  container with no display server at all, confirmed with and without
+  `--disable-gpu`/`--no-sandbox`, so the script calls straight into
+  `dist-electron/models/trainingManager.js` instead) drove a real
+  `submitTrainingRun()` call end-to-end: real `training_run` row
+  (`queued` → `preparing` → `running` → `completed` in ~14s), real
+  `trained_model` + `model_variant` rows, a real 31MB checkpoint at the
+  chosen output directory, and the app-managed symlink bridge at
+  `KWESI_MODELS_DIR/rave/<variant>/<variant>.ts`. **Then loaded back
+  through the real, completely unmodified Phase 9 `servers/rave/
+  server.py`** — a real running `uvicorn` instance, a real
+  `POST /generate` against the newly trained variant, confirmed via
+  `GET /health` that the trained checkpoint (not a pretrained one) was
+  what actually loaded, and a real, valid, non-silent output WAV (RIFF/
+  WAVE, mono, 44100Hz, 99.98% non-zero samples) — same verification rigor
+  as every prior real-inference phase. Full writeup, exact commands, and
+  the two real dependency-install bugs hit and fixed in
+  `servers/rave/README.md`.
+- **Interrupted-run handling: real, tested.** `reconcileTrainingRunsOnStartup()`
+  (mirroring `resetInterruptedDownloads`'s exact precedent in
+  `electron/db/database.ts`) was exercised in the same verification run
+  against a synthetic stale `training_run` row (`status: "running"`, a
+  nonexistent pid) and correctly flipped it to `interrupted` with a clear
+  error message. **Simplification, honestly scoped down from this
+  section's original framing**: true "reattach to any still-running
+  process and resume showing live progress" is not attempted — the
+  multi-phase orchestration is an `async` function living inside the
+  Electron process that submitted the run, so restarting the app has
+  nothing left to resume regardless of whether a `detached` child process
+  happens to still be alive; every active run found at startup is
+  unconditionally marked `interrupted` (with a best-effort kill of any
+  orphaned process at its stored pid) instead. This is simpler than
+  [02-architecture.md](02-architecture.md)'s original resume-oriented
+  framing, and that doc's "Training pipeline architecture" section has
+  been updated to match. Real mid-training process kill (rather than a
+  synthetic stale-pid row) was not separately re-run, since both exercise
+  the identical reconciliation code path.
 
-**Exit criteria:** a user can take an installed RAVE model, drop in their
-own audio files, train a custom timbre model, and immediately use that
-trained checkpoint in a new workspace — with the run surviving an app
-restart along the way.
+**Simplifications made (v1, noted as acceptable scope calls):**
+- **No real per-step loss value in the live IPC progress channel** — only
+  step count, ETA, and throughput (parsed from RAVE's own real `tqdm`
+  progress-bar text). RAVE's training loop doesn't mark its logged
+  metrics `prog_bar=True`, so real loss values only reach the run's
+  TensorBoard event file, not stdout; reading that live would need a
+  protobuf-based TensorBoard event reader, judged out of scope.
+- **Dataset duration/sample-rate/channel validation happens server-side**
+  (RAVE's own `rave preprocess`, which fails clearly on a too-short
+  dataset — `trainingManager.ts` catches this specifically), not
+  pre-flighted client-side via a real per-file `ffprobe` duration probe
+  the way [02-architecture.md](02-architecture.md)'s original "42 files,
+  38 minutes total" framing implied.
+- **Mono only, fixed 44.1kHz/~1.49s analysis windows** for the pilot —
+  not exposed as hyperparameters, matching the "couple of knobs that
+  matter" framing; a real per-model Simple/Advanced hyperparameter toggle
+  (mentioned as a nice-to-have in the architecture doc) wasn't built,
+  since RAVE's pilot hyperparameter list is already short.
+- **Validation is intentionally skipped during training**
+  (`--val_every 999999`) — confirmed real and safe (RAVE's `export.py`
+  reads the model's `fidelity`/`latent_pca` buffers, which default to
+  zero-initialized tensors and export without erroring even unpopulated),
+  but means a completed pilot checkpoint's latent space is unrefined, not
+  representative of what a real, much longer production run would learn.
+- **The output-directory symlink bridge is a known fragility point**: if
+  a user moves or deletes a trained checkpoint's `output_dir` file after
+  training, the `KWESI_MODELS_DIR/rave/<variant>/` symlink breaks and
+  that variant's inference fails until it's restored — not silently
+  corrected, but also not proactively guarded against (e.g. no "missing
+  file" badge in the UI yet).
+
+**Exit criteria:** ✅ a user can take an installed RAVE model, drop in
+their own audio files, train a custom timbre model, and immediately use
+that trained checkpoint in a new workspace — verified end-to-end through
+the actual compiled Electron code path, with the trained checkpoint
+loaded back and proven working through Phase 9's real, unmodified
+inference server. Interrupted-run handling is real and tested against a
+stale run row; true live-progress reattachment across an app restart is
+the one deliberate, documented scope cut.
 
 ---
 

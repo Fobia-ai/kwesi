@@ -285,11 +285,61 @@ this is a second consumer of the existing renderer, not a new one.
 }
 ```
 
+**Phase 10 reality check** — implemented in `src/data/manifests.ts` as
+camelCase TypeScript data (`TrainingConfig`/`TrainingSupportedConfig`, same
+shape as above, not the jsonc sketch verbatim — same convention the
+generation-side manifest already established), with two real deviations
+from this original sketch, both forced by what RAVE's real CLI actually
+exposes (confirmed by reading `acids-ircam/RAVE`'s own `scripts/train.py`
+flag definitions directly, not guessed):
+- **`hyperparameters` uses `config`/`max_steps`/`batch_size`, not
+  `epochs`/`latent_size`.** `rave train` has no `--epochs` flag at all (it
+  trains by `--max_steps`, defaulting to 6,000,000) and no `--latent_size`
+  override either (latent size is baked into the chosen `--config`'s gin
+  file, not a simple CLI knob) — so the real, meaningful knobs for a short
+  pilot run are which config to use (`v2_small` by default — RAVE's own
+  reduced-footprint config, ~8GB VRAM minimum per its config table),
+  `max_steps` (kept deliberately small — tens to low hundreds — for a
+  pipeline-proof run, not a production one), and `batch_size`. There's no
+  real `learning_rate` flag either (RAVE's optimizer LR is fixed inside
+  `rave/model.py`, not `train.py`-overridable), so it isn't exposed.
+- **`server.entrypoint` names a real console-script command (`"rave"`),
+  not a Python file.** Unlike every generation-side model, RAVE ships its
+  own real CLI (the `rave` entry point the `acids-rave` pip package
+  installs, exposing `preprocess`/`train`/`export` subcommands) — genuinely
+  more correct to spawn directly than writing a hand-rolled `train.py`
+  wrapper, the same call Phase 8 made for ACE-Step's own REST server. See
+  `servers/rave/README.md`'s "Training (Phase 10)" section for the full
+  three-real-phases breakdown and the dependency archaeology getting the
+  training venv installed (a separate Python 3.11 venv from the CPU-only
+  inference venv — `acids-rave`'s own `scipy==1.10.0`/
+  `pytorch_lightning==1.9.0` pins have no Python 3.12 wheels).
+- `dataset_requirements` for RAVE is deliberately more modest than this
+  sketch's illustrative `min_files: 20`/`min_total_duration_min: 20` — a
+  handful of files (3+) totaling just over a minute is enough to prove the
+  pipeline produces a real, structurally valid checkpoint (this app's
+  actual exit criterion per `04-roadmap.md` Phase 10), not a musically
+  good one; a real production-quality run just needs more/longer files
+  against these same minimums, nothing about the mechanism changes.
+
 For a model with `"training": { "supported": false, "reason": "..." }`,
 the Training screen lists it but disables it with that reason shown
 inline (e.g. YuE2 — see [03-model-catalog.md](03-model-catalog.md)) rather
 than hiding it, so the user understands why it's absent instead of
-wondering if it was forgotten.
+wondering if it was forgotten. **Phase 10**: every catalog model except
+RAVE declares `supported: false` — they're real trainable models in
+principle (see 03-model-catalog.md's training-feasibility table), just not
+wired into this app's Training pipeline yet (Phase 11's job).
+
+A completed training run's checkpoint is registered two ways, not one:
+a `trained_model` row (the user-facing "My Trained Models" record) **and**
+a `model_variant` row with `source: "trained"` — the latter is what makes
+the trained checkpoint actually selectable as a generation checkpoint
+variant, reusing the exact same "installed variant" plumbing every stock
+catalog variant already flows through (see
+`electron/db/repositories.ts`'s `upsertTrainedModelVariant` and
+`src/components/generation/DynamicGenerationForm.tsx`'s
+`extraVariantNames` prop) rather than a parallel selection mechanism.
 
 ## Training pipeline architecture
 
@@ -320,43 +370,84 @@ any one workspace/project, so it shouldn't be scoped like a generation is.
    file, plus a bulk CSV/JSON import option for larger datasets.
    Auto-captioning (a lightweight tagger suggesting text per clip) is a
    nice-to-have flagged for later, not required for v1.
-4. **Dataset validation pass**: duration/sample-rate/channel checks
-   against `dataset_requirements`, a plain-language summary ("42 files,
-   38 minutes total — meets the 20-file/20-minute minimum"), and a hard
-   stop with clear messaging if the dataset falls short.
+4. **Dataset validation pass**: file-type/count checks against
+   `dataset_requirements` (client-side, `Training.tsx`'s drop-zone), and a
+   hard stop with a clear per-file reason if a file's type doesn't match —
+   e.g. a `.mid` file dropped on RAVE's audio-only dataset. **Phase 10
+   reality**: duration/sample-rate/channel validation is enforced
+   server-side by RAVE's own `rave preprocess` step, not pre-flighted in
+   the UI — a dataset that's too short for RAVE's analysis window
+   (`num_signal`) fails the run with a clear message
+   (`trainingManager.ts` checks for an empty preprocessed LMDB and surfaces
+   this specifically) rather than being caught earlier by a duration
+   probe; a real per-file `ffprobe` duration check before submission is
+   unbuilt.
 5. **Hyperparameters**: rendered from `training.hyperparameters[]` via
-   the shared form renderer; a Simple/Advanced toggle keeps the default
-   view to just the couple of knobs that matter (e.g. epochs, a
-   quality-vs-speed preset), with everything else tucked behind Advanced.
-6. **Hardware preflight**: reuses the same hardware-gating component from
-   Phase 8, checked against `training.hardware` — training thresholds are
-   generally higher than inference thresholds for the same model, so this
-   check is run independently, not inferred from the inference gate.
-7. **Output location**: a folder picker, defaulting to
+   the shared form renderer (the exact `FieldControl`/`defaultValueFor`/
+   `isSatisfied` pieces the generation screen's `DynamicGenerationForm.tsx`
+   exports, reused as-is — see "Manifest extension: training" above for
+   RAVE's real knobs). A Simple/Advanced toggle is not built in Phase 10 —
+   RAVE's pilot hyperparameter list is already short enough (config,
+   max_steps, batch_size) that the flat list stands in for it; a model
+   with a richer hyperparameter surface (Phase 11) may still want one.
+6. **Hardware preflight**: reuses the same `evaluateHardwareGate`/
+   `HardwareGateBanner` pieces from Phase 8 (now exported from
+   `DynamicGenerationForm.tsx` for this second caller), checked against
+   `training.hardware` — training thresholds are generally higher than
+   inference thresholds for the same model, so this check is run
+   independently, not inferred from the inference gate.
+7. **Output location**: a folder picker (`electron/ipc/training.ts`'s
+   `pickOutputDir`, the same `dialog.show*` pattern `electron/ipc/audio.ts`
+   uses for Export/Download), defaulting to
    `$KWESI_TRAINED_MODELS_DIR/<model_id>/<run_name>` — unlike the
    structural app directories, this is a per-run, always-user-editable
    "Save As"-style choice (the env var only seeds where the picker opens
    to), matching how `KWESI_EXPORTS_DIR` already behaves.
-8. **Run**: the Training Job Manager (a sibling to the Model Server
-   Manager, same subprocess/venv pattern) launches the model's `train.py`
-   inside its own venv. Progress — step/epoch, loss, ETA — streams back via
-   SSE to a Training Run detail screen with a live log tail and a loss
-   chart.
+8. **Run**: the Training Job Manager (`electron/models/trainingManager.ts`,
+   a sibling to the Model Server Manager, same subprocess/venv pattern)
+   spawns RAVE's own real CLI (`rave preprocess` → `rave train` → `rave
+   export`, not a hand-written `train.py` — see "Manifest extension:
+   training" above) inside its own venv. Progress — step count, ETA,
+   throughput — streams back over the same plain IPC-event pattern every
+   other real job in this app uses (`kwesi:training:progress`, mirroring
+   `GenerationProgressEvent`'s shape), parsed from RAVE's own real
+   `tqdm`-based progress-bar text. **Not real**: live per-step loss values
+   — RAVE's training loop doesn't mark its logged metrics
+   `prog_bar=True`, so they only reach the run's TensorBoard event file,
+   not this app's IPC channel; documented honestly in
+   `servers/rave/README.md` rather than faked.
 9. **Resilience across app restarts**: a training run can take hours, far
    longer than the app may stay open. Each run writes a PID + heartbeat
-   file; on relaunch, the app reattaches to any still-running process and
-   resumes showing live progress. If a run's process is found dead with no
-   completion marker, it's surfaced as **interrupted** (not silently lost),
-   with a resume-from-last-checkpoint option where the training script
-   supports periodic checkpointing.
+   file (`trainingRunDir(runId)/heartbeat.json`) and a full log
+   (`log.txt`). **Phase 10 reality — simpler than "reattach and resume
+   live progress" turned out to be honestly achievable**: the multi-phase
+   orchestration (deciding when preprocessing finishes and training should
+   start, etc.) is an `async` function living inside the Electron process
+   that submitted the run — restarting the app has nothing left to resume
+   even if a `detached` child process happened to survive, since nothing
+   would ever move it to its next phase or register a finished result.  So
+   `reconcileTrainingRunsOnStartup()` (mirroring `resetInterruptedDownloads`'s
+   exact precedent in `electron/db/database.ts`) unconditionally marks
+   every `training_run` row still `queued`/`preparing`/`running` at
+   startup as **interrupted** — not silently lost, always surfaced
+   plainly — with a best-effort kill of any orphaned process still alive
+   at the stored pid. True resume-from-last-checkpoint (this doc's
+   original framing) is not attempted; it would need a persistent
+   supervisor process outliving the Electron app itself, out of scope here.
 10. **On completion**: the output checkpoint is registered as a
-    `trained_model` row and immediately appears in the Model Manager under
-    "My Trained Models," selectable when creating a new workspace exactly
-    like any stock catalog checkpoint.
-11. **Failure/cancel**: partial checkpoints are preserved whenever the
-    training script checkpoints periodically; the run is marked
-    failed/cancelled with its log retained for diagnosis, never silently
-    discarded.
+    `trained_model` row **and** a `model_variant` row (`source: "trained"`)
+    — the latter is what makes it immediately appear in the Model Manager
+    under "My Trained Models" *and* selectable as a real checkpoint variant
+    for a new generation in any workspace bound to that model family,
+    exactly like any stock catalog checkpoint (see "Manifest extension:
+    training" above).
+11. **Failure/cancel**: a partial checkpoint from a periodic
+    `--save_every` save is preserved on disk even if a later phase fails
+    (e.g. export erroring after training succeeded) — not cleaned up
+    automatically, so a failed run's `log_path` and working directory
+    remain available for diagnosis; the run itself is marked
+    failed/cancelled, never silently discarded. `cancelTrainingRun` sends
+    the active phase's subprocess a real `SIGTERM`.
 
 See [03-model-catalog.md](03-model-catalog.md) for which models support
 training and with what input kind, and
@@ -448,11 +539,15 @@ training and with what input kind, and
   sample-rate assumption (no `.ts` file carries sample-rate metadata; 44100Hz
   is IRCAM/ACIDS's own documented default for most of their pretrained
   examples, not a per-checkpoint-confirmed fact).
-- A sibling **Training Job Manager** handles the training side (see
-  "Training pipeline architecture" above): same venv/subprocess pattern,
-  but for long-running `train.py` jobs that must survive app restarts via
-  a PID + heartbeat file per run, rather than short-lived generation
-  requests.
+- A sibling **Training Job Manager** (`electron/models/trainingManager.ts`,
+  Phase 10, real and proven for RAVE — see "Training pipeline architecture"
+  above and `servers/rave/README.md`'s "Training (Phase 10)" section)
+  handles the training side: same venv/subprocess pattern, but for
+  longer-running `rave preprocess`/`rave train`/`rave export` phases
+  (RAVE's own real CLI, not a hand-written `train.py`) rather than
+  short-lived generation requests, with a PID + heartbeat file per run so
+  a still-`queued`/`preparing`/`running` row is never left stuck across an
+  app restart.
 - Each model's venv is created and pip-installed once, at model-install
   time (from the Model Manager screen), using the exact pinned versions
   captured per-model in [03-model-catalog.md](03-model-catalog.md) — not

@@ -56,6 +56,36 @@ export interface GenerationRow {
   checkpoint_variant: string | null;
 }
 
+// Phase 10 — see src/lib/training.ts for the KwesiTrainingApi wrapper these
+// back; kept here alongside the other *Row types for the same reason
+// src/lib/models.ts imports ModelVariantRow from here rather than
+// redeclaring it.
+export interface TrainingRunRow {
+  id: string;
+  model_id: string;
+  base_checkpoint_variant: string | null;
+  run_name: string;
+  status: string;
+  dataset_manifest: string;
+  hyperparams: string;
+  output_dir: string | null;
+  output_checkpoint_id: string | null;
+  log_path: string | null;
+  pid: number | null;
+  started_at: number | null;
+  completed_at: number | null;
+  error: string | null;
+}
+
+export interface TrainedModelRow {
+  id: string;
+  base_model_id: string;
+  training_run_id: string;
+  display_name: string;
+  checkpoint_path: string;
+  created_at: number;
+}
+
 export interface KwesiDbApi {
   listModels(): Promise<ModelRow[]>;
   listModelVariants(modelId: string): Promise<ModelVariantRow[]>;
