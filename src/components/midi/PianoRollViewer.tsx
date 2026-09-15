@@ -1,29 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { GlassPanel } from "../ui/GlassPanel";
-import { PillButton } from "../ui/PillButton";
-import { PianoRollIcon, DownloadIcon, ExportIcon, FolderIcon } from "../ui/icons";
+import { PianoRollIcon } from "../ui/icons";
 import { kwesiAudio } from "../../lib/audio";
-import { classifyAudioStat, suggestedExportName } from "../../lib/audioFiles";
+import { classifyAudioStat } from "../../lib/audioFiles";
 import { parseMidi, type ParsedMidi } from "../../lib/midiParser";
 
 interface PianoRollViewerProps {
   filePath: string;
-  title: string;
   compact?: boolean;
+  // How tall to draw the roll. Defaults to a comfortable standalone size;
+  // the hero passes a shorter one to sit inside its transport row.
+  viewHeight?: number;
 }
 
 type LoadState = "checking" | "loading" | "ready" | "empty" | "error";
 
-const NOTE_HEIGHT = 3;
 const PIXELS_PER_BEAT = 24;
-const VIEW_HEIGHT = 220;
+const DEFAULT_VIEW_HEIGHT = 220;
+// Bounds on a single semitone's row height once it's scaled to the view.
+const MIN_ROW_HEIGHT = 3;
+const MAX_ROW_HEIGHT = 14;
 
 function noteColor(track: number): string {
   const palette = ["rgb(var(--kwesi-accent))", "#8b8b8b", "#b0b0b0", "#6b6b6b"];
   return palette[track % palette.length];
 }
 
-function PianoRollSvg({ midi }: { midi: ParsedMidi }) {
+function PianoRollSvg({ midi, viewHeight }: { midi: ParsedMidi; viewHeight: number }) {
   const { notes, ticksPerBeat, durationTicks } = midi;
 
   const { minPitch, maxPitch } = useMemo(() => {
@@ -37,8 +40,13 @@ function PianoRollSvg({ midi }: { midi: ParsedMidi }) {
     return { minPitch: Math.max(0, lo - 2), maxPitch: Math.min(127, hi + 2) };
   }, [notes]);
 
-  const pitchSpan = Math.max(1, maxPitch - minPitch);
-  const height = Math.max(VIEW_HEIGHT, pitchSpan * NOTE_HEIGHT);
+  // Rows scale to fill the view instead of being a fixed few pixels each:
+  // notes are laid out from the bottom, so a fixed row height left most of
+  // the canvas as dead space above them for any ordinary pitch range (a
+  // ~20-semitone span drew 60px of notes inside a 220px box).
+  const pitchCount = Math.max(1, maxPitch - minPitch + 1);
+  const rowHeight = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, viewHeight / pitchCount));
+  const height = Math.round(pitchCount * rowHeight);
   const beats = Math.max(1, durationTicks / (ticksPerBeat || 480));
   const width = Math.max(320, beats * PIXELS_PER_BEAT);
 
@@ -46,7 +54,7 @@ function PianoRollSvg({ midi }: { midi: ParsedMidi }) {
     return (tick / (ticksPerBeat || 480)) * PIXELS_PER_BEAT;
   }
   function y(pitch: number): number {
-    return height - (pitch - minPitch) * NOTE_HEIGHT;
+    return height - (pitch - minPitch + 1) * rowHeight;
   }
 
   return (
@@ -70,7 +78,7 @@ function PianoRollSvg({ midi }: { midi: ParsedMidi }) {
             x={x(note.startTick)}
             y={y(note.pitch)}
             width={Math.max(1.5, x(note.endTick) - x(note.startTick))}
-            height={NOTE_HEIGHT - 0.5}
+            height={Math.max(2, rowHeight - 1)}
             rx={1}
             fill={noteColor(note.track)}
             opacity={0.55 + (note.velocity / 127) * 0.45}
@@ -81,10 +89,9 @@ function PianoRollSvg({ midi }: { midi: ParsedMidi }) {
   );
 }
 
-export function PianoRollViewer({ filePath, title, compact }: PianoRollViewerProps) {
+export function PianoRollViewer({ filePath, compact, viewHeight = DEFAULT_VIEW_HEIGHT }: PianoRollViewerProps) {
   const [loadState, setLoadState] = useState<LoadState>("checking");
   const [midi, setMidi] = useState<ParsedMidi | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,20 +129,6 @@ export function PianoRollViewer({ filePath, title, compact }: PianoRollViewerPro
     };
   }, [filePath]);
 
-  async function handleSave(kind: "export" | "download") {
-    setSaveStatus(kind === "export" ? "Exporting…" : "Downloading…");
-    const name = suggestedExportName(filePath, title);
-    const result = await kwesiAudio.save(filePath, name, kind);
-    if (result.ok) setSaveStatus(`Saved to ${result.path}`);
-    else if (result.reason === "cancelled") setSaveStatus(null);
-    else setSaveStatus(result.reason ?? "Save failed");
-  }
-
-  async function handleReveal() {
-    const result = await kwesiAudio.reveal(filePath);
-    setSaveStatus(result.ok ? null : "Couldn't reveal the file.");
-  }
-
   if (loadState === "checking" || loadState === "loading") {
     return (
       <GlassPanel className="p-3">
@@ -159,29 +152,13 @@ export function PianoRollViewer({ filePath, title, compact }: PianoRollViewerPro
 
   return (
     <GlassPanel className={`flex flex-col gap-2 ${compact ? "p-2.5" : "p-4"}`}>
-      {midi && <PianoRollSvg midi={midi} />}
+      {midi && <PianoRollSvg midi={midi} viewHeight={viewHeight} />}
       {midi && (
         <p className="text-[11px] text-ink-muted">
           {midi.notes.length} notes · {midi.trackCount} track{midi.trackCount === 1 ? "" : "s"}
         </p>
       )}
 
-      {!compact && (
-        <>
-          <div className="flex items-center justify-end gap-1.5">
-            <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => handleSave("export")}>
-              <ExportIcon width={14} height={14} /> Export
-            </PillButton>
-            <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => handleSave("download")}>
-              <DownloadIcon width={14} height={14} /> Download
-            </PillButton>
-            <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={handleReveal}>
-              <FolderIcon width={14} height={14} /> Share
-            </PillButton>
-          </div>
-          {saveStatus && <p className="text-[11px] text-ink-muted">{saveStatus}</p>}
-        </>
-      )}
     </GlassPanel>
   );
 }

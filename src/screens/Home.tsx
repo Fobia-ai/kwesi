@@ -68,13 +68,13 @@ export function HomeScreen() {
           await kwesiDb.deleteGeneration(item.generation.id, true);
           refresh();
         }}
-        topLeft={
+        mode="library"
+        headerSlot={
           <span className="kwesi-glass inline-flex h-9 items-center gap-1.5 rounded-chip px-3 text-xs text-ink">
             <HeadphonesIcon width={14} height={14} />
             Library · {workspaces.length} workspace{workspaces.length === 1 ? "" : "s"}
           </span>
         }
-        listTitle="All tracks"
         emptyState={
           <EmptyState
             icon={<WaveformIcon width={28} height={28} />}

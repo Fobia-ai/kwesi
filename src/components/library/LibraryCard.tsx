@@ -32,32 +32,37 @@ export interface LibraryItem {
   generation: GenerationRow;
   modelId: string;
   modelDisplayName: string;
-  // Where the track lives, for lists that span projects (the Home tab):
-  // "Workspace › Project". Omitted inside a single project.
+  // Where the track lives, for the cross-project library view:
+  // "Workspace › Project". Unset inside a single project, where it'd be the
+  // same string on every row.
   context?: string;
 }
 
-interface LibraryCardProps {
+interface LibraryCardBaseProps {
   items: LibraryItem[];
   artistProfiles: ArtistProfile[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   // Always removes the record and every file it produced — there's no
-  // "keep the files" option here, the app's copy is the only one.
+  // "keep the files" option, the app's copy is the only one.
   onDelete: (item: LibraryItem) => Promise<void> | void;
-  // Top-left of the hero: the project switcher (project view) or a plain
-  // label (Home).
-  topLeft?: ReactNode;
-  listTitle: string;
-  onNew?: () => void;
-  // Non-null while a new-generation form is open: rendered as the list's
-  // first row (most recent on top) mirroring the form's track name live.
-  draftTrackName?: string | null;
-  // The form itself, rendered in the hero's slot in place of the overview
-  // while drafting.
-  form?: ReactNode;
+  // Top-left of the hero: the project switcher, or the library's summary.
+  headerSlot: ReactNode;
   emptyState: ReactNode;
 }
+
+/**
+ * The two places this card appears are the same shape but genuinely
+ * different jobs, so the mode is explicit rather than inferred from which
+ * optional props happened to be passed:
+ *
+ *  - "library" (Home) browses every track in the app read-only: no
+ *    creation, and each row says which workspace/project it came from.
+ *  - "project" manages one project's tracks: creation, and rows drop the
+ *    location (it's the same for all of them) for the prompt instead.
+ */
+export type LibraryCardProps = LibraryCardBaseProps &
+  ({ mode: "library" } | { mode: "project"; onNew: () => void; isCreating: boolean; form: ReactNode });
 
 type HeroTab = "overview" | "lyrics";
 
@@ -85,26 +90,21 @@ function matchesQuery(item: LibraryItem, query: string): boolean {
   return haystack.includes(q);
 }
 
-/**
- * The one card a project (and the Home tab) is made of: a hero on top that's
- * the player for the selected track (or the new-track form while drafting)
- * and the track list below it. Selecting a row plays it in full; the
- * "Overview" / "Lyrics" tabs switch the hero between the player and the
- * selected track's lyrics.
- */
-export function LibraryCard({
-  items,
-  artistProfiles,
-  selectedId,
-  onSelect,
-  onDelete,
-  topLeft,
-  listTitle,
-  onNew,
-  draftTrackName = null,
-  form,
-  emptyState,
-}: LibraryCardProps) {
+/** The artist, as its own circle — same treatment as the sidebar's avatars. */
+function ArtistBadge({ artist, fallbackName }: { artist: ArtistProfile | null; fallbackName: string }) {
+  return (
+    <div
+      className="kwesi-glass-strong flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full shadow-glass-sm"
+      title={artist ? artist.name : undefined}
+    >
+      <AvatarImage avatarPath={artist?.avatarPath ?? null} name={artist?.name ?? fallbackName} size={42} />
+    </div>
+  );
+}
+
+export function LibraryCard(props: LibraryCardProps) {
+  const { items, artistProfiles, selectedId, onSelect, onDelete, headerSlot, emptyState } = props;
+  const project = props.mode === "project" ? props : null;
   const player = usePlayer();
   const [tab, setTab] = useState<HeroTab>("overview");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -114,7 +114,6 @@ export function LibraryCard({
   const [saveStatus, setSaveStatus] = useState<{ id: string; text: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const isDrafting = draftTrackName !== null;
   const artistFor = (generation: GenerationRow) =>
     artistProfiles.find((p) => p.id === generationArtistId(generation)) ?? null;
 
@@ -122,7 +121,7 @@ export function LibraryCard({
   const selectedArtist = selected ? artistFor(selected.generation) : null;
   const selectedTrack = selected ? playerTrackFor(selected, selectedArtist) : null;
 
-  // Play order = list order, skipping anything that has no audio to play.
+  // Play order = list order, skipping anything with no audio to play.
   const queue = useMemo(
     () =>
       items
@@ -174,256 +173,271 @@ export function LibraryCard({
     setSearchOpen(false);
   }
 
-  const showEmpty = items.length === 0 && !isDrafting;
+  // Setting up a new track takes the whole card: the hero and the track
+  // list are both about tracks that already exist, and squeezing the form
+  // into the hero above the list made both cramped.
+  if (project?.isCreating) {
+    return (
+      <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {project.form}
+      </GlassPanel>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <GlassPanel radius="panel" className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-8">
+        {emptyState}
+      </GlassPanel>
+    );
+  }
 
   return (
     <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {showEmpty ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8">{emptyState}</div>
-      ) : (
-        <>
-          <div className="shrink-0 p-3 pb-0">
-            <div className="kwesi-glass relative overflow-hidden rounded-card">
-              {isDrafting && form ? (
-                <div className="flex h-[min(58vh,600px)] flex-col">{form}</div>
-              ) : (
-                <>
-                  <div className="relative z-10 flex items-start justify-between gap-3 px-5 pt-4">
-                    <div className="min-w-0 flex-1">{topLeft}</div>
-                    <div className="flex shrink-0 gap-6">
-                      {(["overview", "lyrics"] as HeroTab[]).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setTab(t)}
-                          className={`relative pb-1 text-sm capitalize transition-colors duration-150 ${
-                            tab === t ? "text-ink" : "text-ink-muted hover:text-ink"
-                          }`}
-                        >
-                          {t}
-                          {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="hidden min-w-0 flex-1 lg:block" />
-                  </div>
-
-                  {tab === "overview" ? (
-                    <div className="relative min-h-[288px]">
-                      <DjIllustration className="absolute -bottom-1 right-8 hidden h-[94%] text-ink lg:block" />
-                      <div className="relative z-10 flex flex-col gap-4 px-6 pb-6 pt-6 lg:max-w-[64%]">
-                        {selected ? (
-                          <>
-                            <div className="min-w-0">
-                              <p className="text-xs text-ink-muted">
-                                {selectedArtist ? `by ${selectedArtist.name}` : "Track"}
-                                {selected.context && <span> · {selected.context}</span>}
-                              </p>
-                              <h2 className="mt-0.5 truncate text-3xl font-semibold tracking-tight">
-                                {generationTitle(selected.generation)}
-                              </h2>
-                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted">
-                                <span className="inline-flex items-center gap-1.5">
-                                  <HeadphonesIcon width={15} height={15} />
-                                  {items.length} track{items.length === 1 ? "" : "s"}
-                                </span>
-                                <span>· {selected.modelDisplayName}</span>
-                                {selected.generation.checkpoint_variant && (
-                                  <span>· {selected.generation.checkpoint_variant}</span>
-                                )}
-                                <span>· {formatRelativeTime(selected.generation.created_at)}</span>
-                                {selected.generation.status === "done" && selected.generation.duration_ms !== null && (
-                                  <span title="Time this generation took to run">
-                                    · {(selected.generation.duration_ms / 1000).toFixed(1)}s to generate
-                                  </span>
-                                )}
-                                {selected.generation.status === "done" && <LicenseBadge modelId={selected.modelId} />}
-                              </div>
-                              {generationGenres(selected.generation).length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {generationGenres(selected.generation).map((genre) => (
-                                    <Chip key={genre}>{genre}</Chip>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                            <HeroPlayback
-                              item={selected}
-                              track={selectedTrack}
-                              queue={queue}
-                              progressPct={progressPct}
-                              lyricsActive={false}
-                              onToggleLyrics={() => setTab("lyrics")}
-                            />
-                          </>
-                        ) : (
-                          <p className="text-sm text-ink-muted">Pick a track below to play it.</p>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <LyricsView lyrics={selected ? generationLyrics(selected.generation) : undefined} />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-center justify-between gap-3 px-6 pb-2 pt-5">
-              <div className="min-w-0">
-                <h3 className="text-xl font-semibold tracking-tight">{listTitle}</h3>
-                <p className="text-[11px] text-ink-muted">
-                  {items.length === 0
-                    ? "No tracks yet"
-                    : query.trim()
-                      ? `${visibleItems.length} of ${items.length} track${items.length === 1 ? "" : "s"}`
-                      : `${items.length} track${items.length === 1 ? "" : "s"}`}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <div
-                  className={`kwesi-glass flex h-9 items-center rounded-chip transition-all duration-300 ease-smooth ${
-                    searchOpen ? "w-64 pl-1 pr-1" : "w-9"
+      <div className="shrink-0 p-3 pb-0">
+        <div className="kwesi-glass relative flex h-[330px] flex-col overflow-hidden rounded-card">
+          <div className="relative z-10 flex shrink-0 items-start justify-between gap-3 px-5 pt-4">
+            <div className="min-w-0 flex-1">{headerSlot}</div>
+            <div className="flex shrink-0 gap-6">
+              {(["overview", "lyrics"] as HeroTab[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={`relative pb-1 text-sm capitalize transition-colors duration-150 ${
+                    tab === t ? "text-ink" : "text-ink-muted hover:text-ink"
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => (searchOpen ? clearSearch() : setSearchOpen(true))}
-                    aria-label={searchOpen ? "Close search" : "Search tracks"}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:text-ink"
-                  >
-                    {searchOpen ? <CloseIcon width={15} height={15} /> : <SearchIcon width={16} height={16} />}
-                  </button>
-                  <input
-                    ref={searchInputRef}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") clearSearch();
-                    }}
-                    placeholder="Track name, lyrics, or prompt"
-                    aria-label="Search tracks"
-                    className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-muted/70 ${
-                      searchOpen ? "px-1 opacity-100" : "w-0 px-0 opacity-0"
-                    }`}
-                    tabIndex={searchOpen ? 0 : -1}
-                  />
-                  {searchOpen && query && (
-                    <button
-                      type="button"
-                      onClick={() => setQuery("")}
-                      aria-label="Clear search"
-                      className="mr-1 rounded-full px-1.5 text-[10px] uppercase tracking-wide text-ink-muted hover:text-ink"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                {onNew && (
-                  <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={onNew} disabled={isDrafting}>
-                    + New
-                  </PillButton>
+                  {t}
+                  {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
+                </button>
+              ))}
+            </div>
+            <div className="hidden min-w-0 flex-1 lg:block" />
+          </div>
+
+          {tab === "overview" ? (
+            <>
+              <DjIllustration className="absolute bottom-0 right-6 hidden h-[78%] text-ink lg:block" />
+              <div className="relative z-10 flex min-h-0 flex-1 flex-col px-6 pb-5 pt-4 lg:max-w-[68%]">
+                {selected ? (
+                  <>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs text-ink-muted">
+                        {props.mode === "library"
+                          ? (selected.context ?? selected.modelDisplayName)
+                          : selectedArtist
+                            ? `by ${selectedArtist.name}`
+                            : "Track"}
+                      </p>
+                      <h2 className="mt-0.5 truncate text-3xl font-semibold tracking-tight">
+                        {generationTitle(selected.generation)}
+                      </h2>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted">
+                        <span className="inline-flex items-center gap-1.5">
+                          <HeadphonesIcon width={15} height={15} />
+                          {items.length} track{items.length === 1 ? "" : "s"}
+                        </span>
+                        {props.mode === "library" && selectedArtist && <span>· {selectedArtist.name}</span>}
+                        <span>· {selected.modelDisplayName}</span>
+                        <span>· {formatRelativeTime(selected.generation.created_at)}</span>
+                        {selected.generation.status === "done" && selected.generation.duration_ms !== null && (
+                          <span title="Time this generation took to run">
+                            · {(selected.generation.duration_ms / 1000).toFixed(1)}s to generate
+                          </span>
+                        )}
+                        {selected.generation.status === "done" && <LicenseBadge modelId={selected.modelId} />}
+                      </div>
+                      {generationGenres(selected.generation).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {generationGenres(selected.generation)
+                            .slice(0, 4)
+                            .map((genre) => (
+                              <Chip key={genre}>{genre}</Chip>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pushed to the hero's floor rather than left to sit
+                        wherever the text above happens to end, so the
+                        transport lands in the same place on every track. */}
+                    <div className="mt-auto flex items-center gap-3 pt-4">
+                      <ArtistBadge artist={selectedArtist} fallbackName={generationTitle(selected.generation)} />
+                      <HeroPlayback
+                        item={selected}
+                        track={selectedTrack}
+                        queue={queue}
+                        progressPct={progressPct}
+                        onShowLyrics={() => setTab("lyrics")}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-ink-muted">Pick a track below to play it.</p>
                 )}
               </div>
-            </div>
+            </>
+          ) : (
+            <LyricsView lyrics={selected ? generationLyrics(selected.generation) : undefined} />
+          )}
+        </div>
+      </div>
 
-            <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
-              {isDrafting && (
-                <li className="px-3">
-                  <div className="flex items-center gap-3 rounded-[12px] border border-dashed border-ink/15 bg-ink/[0.05] px-3 py-2.5">
-                    <div className="h-9 w-9 shrink-0 rounded-[10px] bg-ink/[0.06]" />
-                    <p className="min-w-0 flex-1 truncate text-sm text-ink">{draftTrackName.trim() || "Untitled track"}</p>
-                    <Chip tone="live">Draft</Chip>
-                  </div>
-                </li>
-              )}
-              {visibleItems.length === 0 && !isDrafting && (
-                <li className="px-3 py-6 text-center text-xs text-ink-muted">No tracks match “{query}”.</li>
-              )}
-              {visibleItems.map((item) => {
-                const generation = item.generation;
-                const artist = artistFor(generation);
-                const isSelected = !isDrafting && generation.id === selectedId;
-                const isPlaying = player.isActive(generation.id) && player.state.status === "playing";
-                const files = parseOutputFiles(generation.output_files);
-                const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? findMidiFile(files));
-                const expanded = expandedId === generation.id;
-                return (
-                  <li key={generation.id} className="border-b border-ink/[0.07] px-3 last:border-b-0">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleRowClick(item)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleRowClick(item);
-                        }
-                      }}
-                      className={`group flex cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2.5 transition-colors duration-150 ${
-                        isSelected ? "bg-ink/[0.08]" : "hover:bg-ink/[0.04]"
-                      }`}
-                    >
-                      <div className="relative shrink-0">
-                        <AvatarImage avatarPath={artist?.avatarPath ?? null} name={artist?.name ?? generationTitle(generation)} size={36} />
-                        {isPlaying && (
-                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg bg-accent" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm ${isSelected ? "text-ink" : "text-ink/90"}`}>
-                          {generationTitle(generation)}
-                        </p>
-                        <p className="truncate text-[11px] text-ink-muted">
-                          {[artist?.name, item.context ?? generationPrompt(generation)].filter(Boolean).join(" · ")}
-                        </p>
-                      </div>
-                      <div className="hidden shrink-0 items-center gap-1.5 md:flex">
-                        {generationGenres(generation)
-                          .slice(0, 2)
-                          .map((genre) => (
-                            <Chip key={genre}>{genre}</Chip>
-                          ))}
-                      </div>
-                      <div className="hidden w-28 shrink-0 items-center xl:flex">
-                        <Chip>{generation.checkpoint_variant ?? item.modelDisplayName}</Chip>
-                      </div>
-                      <div className="w-20 shrink-0">
-                        <StatusChip status={generation.status} />
-                      </div>
-                      <span className="hidden w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-muted sm:block">
-                        {formatRelativeTime(generation.created_at)}
-                      </span>
-                      <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          disabled={!savable}
-                          onClick={() => void handleSave(item)}
-                          title="Save a copy"
-                          aria-label={`Save ${generationTitle(generation)}`}
-                          className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink disabled:opacity-30"
-                        >
-                          <DownloadIcon width={15} height={15} />
-                        </button>
-                        <RowMenu
-                          onDetails={() => setExpandedId(expanded ? null : generation.id)}
-                          onSave={savable ? () => void handleSave(item) : undefined}
-                          onDelete={() => setPendingDelete(item)}
-                        />
-                      </div>
-                    </div>
-                    {saveStatus?.id === generation.id && (
-                      <p className="px-3 pb-2 text-[11px] text-ink-muted">{saveStatus.text}</p>
-                    )}
-                    {expanded && <RowDetails item={item} />}
-                  </li>
-                );
-              })}
-            </ul>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-6 pb-2 pt-5">
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold tracking-tight">
+              {props.mode === "library" ? "All tracks" : "Tracks"}
+            </h3>
+            <p className="text-[11px] text-ink-muted">
+              {query.trim()
+                ? `${visibleItems.length} of ${items.length} track${items.length === 1 ? "" : "s"}`
+                : `${items.length} track${items.length === 1 ? "" : "s"}`}
+            </p>
           </div>
-        </>
-      )}
+          <div className="flex shrink-0 items-center gap-2">
+            <div
+              className={`kwesi-glass flex h-9 items-center rounded-chip transition-all duration-300 ease-smooth ${
+                searchOpen ? "w-64 px-1" : "w-9"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => (searchOpen ? clearSearch() : setSearchOpen(true))}
+                aria-label={searchOpen ? "Close search" : "Search tracks"}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:text-ink"
+              >
+                {searchOpen ? <CloseIcon width={15} height={15} /> : <SearchIcon width={16} height={16} />}
+              </button>
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") clearSearch();
+                }}
+                placeholder="Track name, lyrics, or prompt"
+                aria-label="Search tracks"
+                className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-muted/70 ${
+                  searchOpen ? "px-1 opacity-100" : "w-0 px-0 opacity-0"
+                }`}
+                tabIndex={searchOpen ? 0 : -1}
+              />
+              {searchOpen && query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className="mr-1 rounded-full px-1.5 text-[10px] uppercase tracking-wide text-ink-muted hover:text-ink"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {project && (
+              <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={project.onNew}>
+                + New
+              </PillButton>
+            )}
+          </div>
+        </div>
+
+        <ul className="kwesi-scroll-inset flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
+          {visibleItems.length === 0 && (
+            <li className="px-3 py-6 text-center text-xs text-ink-muted">No tracks match “{query}”.</li>
+          )}
+          {visibleItems.map((item) => {
+            const generation = item.generation;
+            const artist = artistFor(generation);
+            const isSelected = generation.id === selectedId;
+            const isPlaying = player.isActive(generation.id) && player.state.status === "playing";
+            const files = parseOutputFiles(generation.output_files);
+            const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? findMidiFile(files));
+            const expanded = expandedId === generation.id;
+            const secondary =
+              props.mode === "library"
+                ? [artist?.name, item.context].filter(Boolean).join(" · ")
+                : (generationPrompt(generation) ?? artist?.name ?? "");
+            return (
+              <li key={generation.id} className="border-b border-ink/[0.07] px-3 last:border-b-0">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleRowClick(item)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleRowClick(item);
+                    }
+                  }}
+                  className={`group flex cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2.5 transition-colors duration-150 ${
+                    isSelected ? "bg-ink/[0.08]" : "hover:bg-ink/[0.04]"
+                  }`}
+                >
+                  <div className="relative shrink-0">
+                    <AvatarImage
+                      avatarPath={artist?.avatarPath ?? null}
+                      name={artist?.name ?? generationTitle(generation)}
+                      size={36}
+                    />
+                    {isPlaying && (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg bg-accent" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-sm ${isSelected ? "text-ink" : "text-ink/90"}`}>
+                      {generationTitle(generation)}
+                    </p>
+                    {secondary && <p className="truncate text-[11px] text-ink-muted">{secondary}</p>}
+                  </div>
+                  <div className="hidden shrink-0 items-center gap-1.5 md:flex">
+                    {generationGenres(generation)
+                      .slice(0, 2)
+                      .map((genre) => (
+                        <Chip key={genre}>{genre}</Chip>
+                      ))}
+                  </div>
+                  <div className="hidden w-28 shrink-0 items-center xl:flex">
+                    <Chip>
+                      {props.mode === "library"
+                        ? item.modelDisplayName
+                        : (generation.checkpoint_variant ?? item.modelDisplayName)}
+                    </Chip>
+                  </div>
+                  <div className="w-20 shrink-0">
+                    <StatusChip status={generation.status} />
+                  </div>
+                  <span className="hidden w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-muted sm:block">
+                    {formatRelativeTime(generation.created_at)}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      disabled={!savable}
+                      onClick={() => void handleSave(item)}
+                      title="Save a copy"
+                      aria-label={`Save ${generationTitle(generation)}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink disabled:opacity-30"
+                    >
+                      <DownloadIcon width={15} height={15} />
+                    </button>
+                    <RowMenu
+                      onDetails={() => setExpandedId(expanded ? null : generation.id)}
+                      onSave={savable ? () => void handleSave(item) : undefined}
+                      onDelete={() => setPendingDelete(item)}
+                    />
+                  </div>
+                </div>
+                {saveStatus?.id === generation.id && (
+                  <p className="px-3 pb-2 text-[11px] text-ink-muted">{saveStatus.text}</p>
+                )}
+                {expanded && <RowDetails item={item} />}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {pendingDelete && (
         <ConfirmDialog
@@ -442,54 +456,66 @@ export function LibraryCard({
   );
 }
 
+/**
+ * The hero's playback surface — whatever this track can actually do right
+ * now: the transport for audio, the roll for MIDI-only output, progress
+ * while it's still generating.
+ */
 function HeroPlayback({
   item,
   track,
   queue,
   progressPct,
-  lyricsActive,
-  onToggleLyrics,
+  onShowLyrics,
 }: {
   item: LibraryItem;
   track: PlayerTrack | null;
   queue: PlayerTrack[];
   progressPct: number;
-  lyricsActive: boolean;
-  onToggleLyrics: () => void;
+  onShowLyrics: () => void;
 }) {
   const generation = item.generation;
-  const done = generation.status === "done";
   const outputKind = (generation.output_kind ?? "audio") as "audio" | "midi" | "audio+midi";
-  const files = parseOutputFiles(generation.output_files);
-  const midiFile = findMidiFile(files);
-  const showPianoRoll = done && (outputKind === "midi" || outputKind === "audio+midi") && Boolean(midiFile);
+  const midiFile = findMidiFile(parseOutputFiles(generation.output_files));
 
-  if (!done) {
+  if (generation.status !== "done") {
     return (
-      <OutputViewerPlaceholder
-        outputKind={outputKind}
-        status={generation.status as GenerationStatus}
-        progressPct={progressPct}
-        error={generation.error}
-      />
+      <div className="min-w-0 flex-1">
+        <OutputViewerPlaceholder
+          outputKind={outputKind}
+          status={generation.status as GenerationStatus}
+          progressPct={progressPct}
+          error={generation.error}
+        />
+      </div>
     );
   }
-  if (!track && !showPianoRoll) {
-    return <OutputViewerPlaceholder outputKind={outputKind} status="done" />;
+
+  if (track) {
+    return <TrackControls track={track} queue={queue} lyricsActive={false} onToggleLyrics={onShowLyrics} />;
   }
+
+  // MIDI-only output (MuseCoco, Museformer): the roll is this track's
+  // player, drawn short so it sits in the transport row rather than
+  // stretching the hero.
+  if (midiFile) {
+    return (
+      <div className="min-w-0 flex-1">
+        <PianoRollViewer filePath={midiFile} compact viewHeight={84} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3">
-      {track && <TrackControls track={track} queue={queue} lyricsActive={lyricsActive} onToggleLyrics={onToggleLyrics} />}
-      {showPianoRoll && (
-        <PianoRollViewer filePath={midiFile as string} title={generationTitle(generation)} compact={!track ? false : true} />
-      )}
+    <div className="min-w-0 flex-1">
+      <OutputViewerPlaceholder outputKind={outputKind} status="done" />
     </div>
   );
 }
 
 function LyricsView({ lyrics }: { lyrics: string | undefined }) {
   return (
-    <div className="kwesi-scroll-inset h-[288px] overflow-y-auto scroll-smooth px-8 py-6">
+    <div className="kwesi-scroll-inset min-h-0 flex-1 overflow-y-auto scroll-smooth px-8 py-6">
       {lyrics ? (
         <pre className="mx-auto max-w-[60ch] whitespace-pre-wrap text-center font-sans text-sm leading-7 text-ink/90">
           {lyrics}
@@ -507,12 +533,23 @@ function RowDetails({ item }: { item: LibraryItem }) {
   const manifest = getManifest(item.modelId);
   const prompt = generationPrompt(item.generation);
   const files = parseOutputFiles(item.generation.output_files);
+  const midiFile = findMidiFile(files);
+  const hasAudio = Boolean(findAudioFile(files));
   return (
     <div className="mb-2 flex flex-col gap-4 rounded-[12px] bg-ink/[0.03] px-4 py-4">
       {prompt && (
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Prompt</p>
           <p className="max-w-[70ch] text-sm leading-relaxed">{prompt}</p>
+        </div>
+      )}
+      {/* Only worth repeating here when the hero isn't already showing it —
+          i.e. this track has audio, so the roll lost the hero slot to the
+          transport. */}
+      {midiFile && hasAudio && (
+        <div>
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Piano roll</p>
+          <PianoRollViewer filePath={midiFile} />
         </div>
       )}
       <ParamsGrid generation={item.generation} manifest={manifest} />

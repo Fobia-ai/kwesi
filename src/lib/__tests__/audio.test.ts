@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildSilentWav, kwesiAudio } from "../audio";
+import { buildDemoMidi, buildSilentWav, kwesiAudio } from "../audio";
+import { parseMidi } from "../midiParser";
 
 describe("buildSilentWav", () => {
   it("produces a valid RIFF/WAVE header", () => {
@@ -41,6 +42,17 @@ describe("kwesiAudio (browser-preview mock)", () => {
     expect(result.bytes && result.bytes.byteLength).toBeGreaterThan(0);
   });
 
+  // Regression: the mock used to answer every read with WAV bytes, so the
+  // piano roll rejected every MIDI generation in the browser preview with
+  // "Couldn't parse this MIDI file".
+  it("serves real, parseable MIDI bytes for a .mid path", async () => {
+    const result = await kwesiAudio.read("/mock/generations/g1/output.mid");
+    expect(result.ok).toBe(true);
+    expect(result.mimeType).toBe("audio/midi");
+    const parsed = parseMidi(result.bytes as Uint8Array);
+    expect(parsed.notes.length).toBeGreaterThan(0);
+  });
+
   it("save resolves ok without touching any real filesystem", async () => {
     const result = await kwesiAudio.save("/mock/generations/g1/output.wav", "song.wav", "export");
     expect(result.ok).toBe(true);
@@ -49,5 +61,17 @@ describe("kwesiAudio (browser-preview mock)", () => {
   it("reveal resolves ok", async () => {
     const result = await kwesiAudio.reveal("/mock/generations/g1/output.wav");
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("buildDemoMidi", () => {
+  it("is a format-0 SMF the real parser reads notes out of", () => {
+    const parsed = parseMidi(buildDemoMidi());
+    expect(parsed.trackCount).toBe(1);
+    expect(parsed.ticksPerBeat).toBe(480);
+    expect(parsed.notes).toHaveLength(16);
+    // Notes are sequential and separated, not one overlapping smear.
+    expect(parsed.notes[0].endTick).toBeLessThan(parsed.notes[1].startTick);
+    expect(parsed.durationTicks).toBeGreaterThan(0);
   });
 });

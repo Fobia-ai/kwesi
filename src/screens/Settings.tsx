@@ -1,8 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import pkg from "../../package.json";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
-import { GitHubIcon } from "../components/ui/icons";
+import {
+  GitHubIcon,
+  HeadphonesIcon,
+  InfoIcon,
+  LockIcon,
+  ProfileIcon,
+  SystemIcon,
+} from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
@@ -21,8 +28,24 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { AvatarImage } from "../components/ui/AvatarImage";
 import { ChipMultiSelect } from "../components/ui/ChipMultiSelect";
 
-const TABS = ["Profile", "Artists", "System", "General", "Generation", "Models in use", "Security", "About"] as const;
-type Tab = (typeof TABS)[number];
+const SECTIONS = [
+  { tab: "Profile", blurb: "Your local display name and email." },
+  { tab: "Artists", blurb: "Personas tracks are attributed to." },
+  { tab: "System", blurb: "Hardware, storage, and where files live." },
+  { tab: "Security", blurb: "Passcode and auto-lock." },
+  { tab: "About", blurb: "The open-source models Kwesi builds on." },
+] as const;
+
+const TABS = SECTIONS.map((s) => s.tab);
+type Tab = (typeof SECTIONS)[number]["tab"];
+
+const TAB_ICONS: Record<Tab, ReactNode> = {
+  Profile: <ProfileIcon width={17} height={17} />,
+  Artists: <HeadphonesIcon width={17} height={17} />,
+  System: <SystemIcon width={17} height={17} />,
+  Security: <LockIcon width={17} height={17} />,
+  About: <InfoIcon width={17} height={17} />,
+};
 
 function ProfileTab() {
   const [displayName, setDisplayName] = useState("");
@@ -607,61 +630,66 @@ export function SettingsScreen() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="Settings" />
-      <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 gap-1 border-b border-ink/10 px-4">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`relative px-3 py-2 text-sm transition-colors duration-150 ${
-              tab === t ? "text-ink" : "text-ink-muted hover:text-ink"
-            }`}
-          >
-            {t}
-            {tab === t && <span className="absolute inset-x-2 -bottom-px h-px bg-accent" />}
-          </button>
-        ))}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
-      {tab === "Profile" && <ProfileTab />}
-      {tab === "Artists" && <ArtistsTab />}
-      {tab === "System" && <SystemTab />}
-      {tab === "Security" && <SecurityTab />}
-
-      {tab === "About" && (
-        <div className="-m-5 flex flex-col">
-          {CATALOG.map((entry) => (
-            <div
-              key={entry.modelId}
-              className="flex items-center gap-3 border-b border-ink/10 px-5 py-3 last:border-b-0"
+      <GlassPanel radius="panel" className="flex min-h-0 flex-1 overflow-hidden">
+        {/* A vertical nav rather than a row of tabs: the labels stay
+            readable at full length, and adding a section doesn't squeeze
+            the others. */}
+        <nav className="flex w-56 shrink-0 flex-col gap-1 border-r border-ink/10 p-3">
+          {SECTIONS.map(({ tab: t }) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              aria-current={tab === t ? "page" : undefined}
+              className={`flex items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm transition-colors duration-150 ${
+                tab === t ? "bg-ink/[0.09] text-ink" : "text-ink-muted hover:bg-ink/[0.05] hover:text-ink"
+              }`}
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{entry.displayName}</span>
-                  <span className="shrink-0 rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
-                    {LICENSE_LABEL[entry.licenseTier]}
-                  </span>
-                </div>
-                <p className="truncate text-xs text-ink-muted">{entry.org}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => openExternal(entry.repoUrl)}
-                aria-label={`Open ${entry.displayName} on GitHub`}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-ink-muted hover:bg-ink/[0.06] hover:text-ink"
-              >
-                <GitHubIcon />
-              </button>
-            </div>
+              <span className={tab === t ? "text-accent" : ""}>{TAB_ICONS[t]}</span>
+              {t}
+            </button>
           ))}
-        </div>
-      )}
+        </nav>
 
-      {(tab === "General" || tab === "Generation" || tab === "Models in use") && (
-        <p className="text-sm text-ink-muted">Coming in a later phase — see kwesi.docs/04-roadmap.md.</p>
-      )}
-      </div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-ink/10 px-6 py-4">
+            <h2 className="text-lg font-semibold tracking-tight">{tab}</h2>
+            <p className="text-xs text-ink-muted">{SECTIONS.find((s) => s.tab === tab)?.blurb}</p>
+          </div>
+          <div className="kwesi-scroll-inset min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            {tab === "Profile" && <ProfileTab />}
+            {tab === "Artists" && <ArtistsTab />}
+            {tab === "System" && <SystemTab />}
+            {tab === "Security" && <SecurityTab />}
+            {tab === "About" && (
+              <div className="flex max-w-2xl flex-col">
+                {CATALOG.map((entry) => (
+                  <div
+                    key={entry.modelId}
+                    className="flex items-center gap-3 border-b border-ink/[0.07] py-3 last:border-b-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{entry.displayName}</span>
+                        <span className="shrink-0 rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+                          {LICENSE_LABEL[entry.licenseTier]}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-ink-muted">{entry.org}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openExternal(entry.repoUrl)}
+                      aria-label={`Open ${entry.displayName} on GitHub`}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.06] hover:text-ink"
+                    >
+                      <GitHubIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </GlassPanel>
     </div>
   );

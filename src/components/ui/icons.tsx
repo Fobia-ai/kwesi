@@ -236,3 +236,31 @@ export function PlusIcon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+export function ProfileIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="8" r="3.8" />
+      <path d="M4.5 20c0-4.1 3.4-6.2 7.5-6.2s7.5 2.1 7.5 6.2" />
+    </Base>
+  );
+}
+
+export function SystemIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="5" width="18" height="12" rx="2.5" />
+      <path d="M8 21h8M12 17v4" />
+    </Base>
+  );
+}
+
+export function InfoIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none" />
+    </Base>
+  );
+}

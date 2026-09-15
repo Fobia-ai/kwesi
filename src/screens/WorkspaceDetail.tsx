@@ -165,9 +165,9 @@ function ProjectSwitcher({
 }
 
 /**
- * Renders in the hero slot of the LibraryCard, in place of the player, while
- * a new track is being set up — same header shape as the overview (title
- * left, one action right) so the swap doesn't jolt.
+ * Takes over the whole card while a new track is being set up — the player
+ * and the track list are both about tracks that already exist, so neither
+ * has anything to say until this is submitted or cancelled.
  */
 function NewTrackForm({
   modelId,
@@ -176,7 +176,6 @@ function NewTrackForm({
   artistProfiles,
   onCancel,
   onSubmit,
-  onTrackNameChange,
 }: {
   modelId: string;
   installedVariantNames: string[];
@@ -184,7 +183,6 @@ function NewTrackForm({
   artistProfiles: ArtistProfile[];
   onCancel: () => void;
   onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
-  onTrackNameChange: (trackName: string) => void;
 }) {
   const manifest = getManifest(modelId);
   return (
@@ -201,7 +199,7 @@ function NewTrackForm({
           Cancel
         </button>
       </div>
-      <div className="kwesi-scroll-inset flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-6 py-5">
+      <div className="kwesi-scroll-inset mx-auto flex w-full max-w-2xl flex-1 flex-col overflow-y-auto overflow-x-hidden px-6 py-5">
         {manifest ? (
           <DynamicGenerationForm
             manifest={manifest}
@@ -209,7 +207,6 @@ function NewTrackForm({
             extraVariantNames={extraVariantNames}
             artistProfiles={artistProfiles}
             onSubmit={onSubmit}
-            onTrackNameChange={onTrackNameChange}
           />
         ) : (
           <p className="text-sm text-ink-muted">No manifest found for this model.</p>
@@ -241,11 +238,8 @@ function ProjectPane({
   const modelId = workspace?.model_id ?? "";
   const [generations, setGenerations] = useState<GenerationRow[] | null>(null);
   const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(null);
-  // Non-null means the new-track form is open in the hero in place of the
-  // player — its value is the form's live track name, mirrored into the
-  // list's draft row. null means closed (never opened, cancelled, or just
-  // submitted).
-  const [draftTrackName, setDraftTrackName] = useState<string | null>(null);
+  // The new-track form takes over the whole card while this is true.
+  const [isCreating, setIsCreating] = useState(false);
 
   const installedVariantNames = useMemo(
     () => variants.filter((v) => v.install_status === "installed").map((v) => v.variant_name),
@@ -296,7 +290,7 @@ function ProjectPane({
     if (!manifest) return;
     const result = await kwesiGeneration.submit(project.id, checkpointVariant, values, outputKindOf(manifest));
     if (result.ok) {
-      setDraftTrackName(null);
+      setIsCreating(false);
       if (result.generation) setSelectedGenerationId(result.generation.id);
       refresh();
     }
@@ -317,17 +311,13 @@ function ProjectPane({
       items={items}
       artistProfiles={artistProfiles}
       selectedId={selectedGenerationId}
-      onSelect={(id) => {
-        // Picking an existing track exits the draft — the hero can only show
-        // one thing at a time, and a half-filled form isn't worth keeping.
-        setDraftTrackName(null);
-        setSelectedGenerationId(id);
-      }}
+      onSelect={setSelectedGenerationId}
       onDelete={async (item) => {
         await kwesiDb.deleteGeneration(item.generation.id, true);
         refresh();
       }}
-      topLeft={
+      mode="project"
+      headerSlot={
         <ProjectSwitcher
           workspace={workspace}
           projects={projects}
@@ -337,18 +327,16 @@ function ProjectPane({
           onRequestDelete={onRequestDeleteProject}
         />
       }
-      listTitle="Tracks"
-      onNew={() => setDraftTrackName("")}
-      draftTrackName={draftTrackName}
+      onNew={() => setIsCreating(true)}
+      isCreating={isCreating}
       form={
         <NewTrackForm
           modelId={modelId}
           installedVariantNames={installedVariantNames}
           extraVariantNames={trainedVariantNames}
           artistProfiles={artistProfiles}
-          onCancel={() => setDraftTrackName(null)}
+          onCancel={() => setIsCreating(false)}
           onSubmit={submitGeneration}
-          onTrackNameChange={setDraftTrackName}
         />
       }
       emptyState={
@@ -364,7 +352,7 @@ function ProjectPane({
           <EmptyState
             icon={<WaveformIcon width={28} height={28} />}
             title="Nothing generated in this project yet."
-            action={<PillButton onClick={() => setDraftTrackName("")}>Create your first track</PillButton>}
+            action={<PillButton onClick={() => setIsCreating(true)}>Create your first track</PillButton>}
           />
         </div>
       }
