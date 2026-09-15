@@ -10,6 +10,8 @@ release
 # Developer-only local staging area for model weights pulled by
 # scripts/download_models.py before re-upload to Cloudflare R2.
 /models
+scripts/.venv
+scripts/__pycache__
 
 # Claude Code harness internals, not project state.
 .claude/

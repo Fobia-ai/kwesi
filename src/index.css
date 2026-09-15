@@ -8,6 +8,17 @@
   --kwesi-ink-muted: 108 108 116;
   --kwesi-accent: 20 20 22;
   --kwesi-accent-ink: 255 255 255;
+  /* Glass surface tokens: base color + per-mode alpha, so .kwesi-glass
+     itself never hardcodes a light/dark-specific color (see the bug this
+     fixed — .dark-class overrides were unreachable because nothing ever
+     applied a literal .dark class; only prefers-color-scheme flipped the
+     rest of the palette, leaving glass panels stuck light-mode-white with
+     now-white text on top of them). */
+  --kwesi-glass-bg: 255 255 255;
+  --kwesi-glass-bg-alpha: 0.65;
+  --kwesi-glass-strong-alpha: 0.8;
+  --kwesi-glass-border: 0 0 0;
+  --kwesi-glass-border-alpha: 0.06;
 }
 
 .dark {
@@ -16,6 +27,11 @@
   --kwesi-ink-muted: 150 150 158;
   --kwesi-accent: 245 245 247;
   --kwesi-accent-ink: 20 20 22;
+  --kwesi-glass-bg: 255 255 255;
+  --kwesi-glass-bg-alpha: 0.06;
+  --kwesi-glass-strong-alpha: 0.09;
+  --kwesi-glass-border: 255 255 255;
+  --kwesi-glass-border-alpha: 0.1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +41,11 @@
     --kwesi-ink-muted: 150 150 158;
     --kwesi-accent: 245 245 247;
     --kwesi-accent-ink: 20 20 22;
+    --kwesi-glass-bg: 255 255 255;
+    --kwesi-glass-bg-alpha: 0.06;
+    --kwesi-glass-strong-alpha: 0.09;
+    --kwesi-glass-border: 255 255 255;
+    --kwesi-glass-border-alpha: 0.1;
   }
 }
 
@@ -63,27 +84,17 @@ body {
 }
 
 .kwesi-glass {
-  background: rgb(255 255 255 / 0.65);
-  border: 1px solid rgb(0 0 0 / 0.06);
+  background: rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-bg-alpha));
+  border: 1px solid rgb(var(--kwesi-glass-border) / var(--kwesi-glass-border-alpha));
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-}
-
-.dark .kwesi-glass {
-  background: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.1);
 }
 
 .kwesi-glass-strong {
-  background: rgb(255 255 255 / 0.8);
-  border: 1px solid rgb(0 0 0 / 0.06);
+  background: rgb(var(--kwesi-glass-bg) / var(--kwesi-glass-strong-alpha));
+  border: 1px solid rgb(var(--kwesi-glass-border) / var(--kwesi-glass-border-alpha));
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-}
-
-.dark .kwesi-glass-strong {
-  background: rgb(255 255 255 / 0.09);
-  border: 1px solid rgb(255 255 255 / 0.12);
 }
 
 ::-webkit-scrollbar {

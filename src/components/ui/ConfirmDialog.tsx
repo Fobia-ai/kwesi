@@ -20,7 +20,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
       <GlassPanel strong radius="panel" className="w-full max-w-sm p-5">
         <h2 className="text-base font-semibold">{title}</h2>
         <div className="mt-2 text-sm text-ink-muted">{description}</div>

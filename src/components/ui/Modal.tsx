@@ -10,7 +10,7 @@ interface ModalProps {
 export function Modal({ title, onClose, children }: ModalProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={onClose}
     >
       <GlassPanel
