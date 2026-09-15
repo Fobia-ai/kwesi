@@ -420,7 +420,34 @@ training and with what input kind, and
   non-zero samples) — for the `acestep-v15-turbo` checkpoint at a short
   duration; XL variants and non-turbo (base/sft) checkpoints are wired
   identically but untested (see the README's "What's not verified"). `yue2`
-  still walks the exact Phase 4 mock path, unmodified; `rave` too.
+  still walks the exact Phase 4 mock path, unmodified. **Phase 9 status:**
+  `modelId === "rave"` is now real and proven — a hand-written
+  `servers/rave/server.py` wrapper following MusicGen's exact shape (single
+  blocking `POST /generate`, in-process checkpoint cache), which turned out
+  to be genuinely enough: every one of RAVE's nine pretrained `.ts`
+  checkpoints is a self-contained TorchScript export needing nothing but
+  `torch.jit.load()` at runtime — no `acids-rave` package, no vendored repo,
+  confirmed by loading one with nothing installed but `torch` itself. Own
+  port `17680`, own CPU-only venv (RAVE's docs call inference CPU-feasible
+  for small models; a standalone timing test bore that out — see
+  `servers/rave/README.md`). RAVE's `input_audio` is not optional the way
+  MusicGen's melody reference or ACE-Step's reference audio are — there is
+  nothing to transform without it — so `runRealRaveJob` fails the
+  generation outright with a clear error if a real path isn't present,
+  rather than silently dropping the field. Proven twice (standalone direct
+  call, and through a real running `uvicorn` instance) against both a mono
+  (`darbouka_onnx`) and a stereo (`percussion`) checkpoint, verified via
+  Python's `wave` module — real RIFF/WAVE, correct channel count and
+  44100Hz sample rate, non-silent, genuinely different from the input audio.
+  Two real bugs were found and fixed doing this: `percussion`'s stereo
+  output needs transposing to soundfile's `(frames, channels)` convention
+  (not just squeezing both leading dims the way the mono checkpoints allow),
+  and its decoder output isn't bounded to `[-1, 1]` the way `darbouka_onnx`'s
+  is, so it's peak-normalized only when it actually exceeds that range — see
+  `servers/rave/README.md` for the full writeup, including the honest
+  sample-rate assumption (no `.ts` file carries sample-rate metadata; 44100Hz
+  is IRCAM/ACIDS's own documented default for most of their pretrained
+  examples, not a per-checkpoint-confirmed fact).
 - A sibling **Training Job Manager** handles the training side (see
   "Training pipeline architecture" above): same venv/subprocess pattern,
   but for long-running `train.py` jobs that must survive app restarts via

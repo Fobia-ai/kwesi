@@ -88,14 +88,21 @@ function NewGenerationModal({
 // requirement — surfaced here rather than inside WaveformPlayer/
 // PianoRollViewer themselves, since those are reused as-is from Phase 6/7
 // and this is a per-generation (model-level), not per-player, concern. MIT
-// models render no badge — nothing to warn about.
+// models render no badge — nothing to warn about. Phase 9: RAVE's
+// cc-by-nc-sa is the strictest tier in the catalog — share-alike on top of
+// non-commercial — so its tooltip spells that out rather than reusing the
+// generic "non-commercial use only" wording every other non-mit model gets.
 function LicenseBadge({ modelId }: { modelId: string }) {
   const manifest = getManifest(modelId);
   if (!manifest || manifest.licenseTier === "mit") return null;
+  const terms =
+    manifest.licenseTier === "cc-by-nc-sa"
+      ? "non-commercial use only, and any derivative work must be shared under this same license (share-alike)."
+      : "non-commercial use only.";
   return (
     <span
       className="shrink-0 rounded-chip bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
-      title={`${manifest.displayName} output is licensed ${LICENSE_LABEL[manifest.licenseTier]} — non-commercial use only.`}
+      title={`${manifest.displayName} output is licensed ${LICENSE_LABEL[manifest.licenseTier]} — ${terms}`}
     >
       {LICENSE_LABEL[manifest.licenseTier]}
     </span>

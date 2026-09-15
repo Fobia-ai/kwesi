@@ -19,6 +19,22 @@ function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null):
   return inputs.filter((input) => !input.onlyForVariant || input.onlyForVariant === selectedVariant);
 }
 
+/**
+ * Real absolute path when running inside Electron (32+'s webUtils.getPathForFile
+ * bridge, exposed as window.kwesi.getFilePathForUpload — see electron/preload.ts),
+ * falling back to just the picked file's name in the plain-browser preview mock
+ * where window.kwesi is undefined and there's no real filesystem to resolve
+ * against. This used to only ever capture the name (a known gap since Phase 4,
+ * documented in kwesi.docs/04-roadmap.md's Phase 5/7 notes) — RAVE's audio_upload
+ * input is what makes fixing it non-optional, since RAVE has nothing to run
+ * without a real transferred path.
+ */
+function resolveUploadedFilePath(file: File | undefined): string {
+  if (!file) return "";
+  const realPath = window.kwesi?.getFilePathForUpload(file);
+  return realPath && realPath.length > 0 ? realPath : file.name;
+}
+
 function defaultValueFor(input: ManifestInput): unknown {
   if ("default" in input && input.default !== undefined) return input.default;
   if (input.type === "number") return "";
@@ -104,7 +120,7 @@ function FieldControl({
         <input
           type="file"
           accept={input.accept}
-          onChange={(e) => onChange(e.target.files?.[0]?.name ?? "")}
+          onChange={(e) => onChange(resolveUploadedFilePath(e.target.files?.[0]))}
           className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-xs outline-none file:mr-2 file:rounded-chip file:border-0 file:bg-ink/[0.08] file:px-3 file:py-1 file:text-xs"
         />
       );

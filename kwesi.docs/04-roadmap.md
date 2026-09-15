@@ -231,7 +231,10 @@ in the catalog.
   `modelServer.ts` passes one through if `input_params.melody_audio` happens
   to already be a real file that exists on disk — but nothing in the
   current UI can produce that today. Fixing the upload plumbing is future
-  work, not scoped to this phase.
+  work, not scoped to this phase. **Fixed in Phase 9**, driven by RAVE
+  actually needing it — see that section below and
+  `src/components/generation/DynamicGenerationForm.tsx`'s
+  `resolveUploadedFilePath`.
 - **No real streaming progress from the Python server.** A generation
   request is one blocking `POST /generate` call; the UI still sees
   `queued` → `running` (a single 0% tick) → `done`/`failed` over the same
@@ -426,7 +429,10 @@ output modality, and MuseCoco's much richer structured-input form.
   wireable yet even once the environment is sorted, for the same
   pre-existing Phase 4 reason MusicGen's melody-reference upload isn't:
   `DynamicGenerationForm`'s `midi_upload`/`audio_upload` handlers only ever
-  capture a file's *name*, never a real transferred path.
+  capture a file's *name*, never a real transferred path. **Fixed in Phase
+  9** — the upload plumbing itself no longer blocks this; Museformer's
+  real-generation verification gap (the kernel/CPU-fallback question) is
+  separate and still open.
 - **MuseCoco generation is CPU-only and slow** (minutes, not seconds, for a
   real-length piece) — there is no GPU path today since the model's compiled
   attention extension has nothing to build against without a system CUDA
@@ -569,20 +575,86 @@ documented in `servers/yue2/README.md`, not an inference failure.
 
 ---
 
-## Phase 9 — Realtime Adapter: RAVE
+## Phase 9 — Realtime Adapter: RAVE ✅ batch mode complete, streaming not attempted
 **Objective:** the one model that doesn't fit the batch-generation pattern
 at all — audio-in/audio-out timbre transfer, potentially realtime.
 
-- Distinct UI paradigm: "select a trained timbre model" + audio input
-  (file or live capture) instead of a prompt bar.
-- RAVE server lifecycle for streaming/realtime use, separate from the
-  batch job queue used by every other model.
-- CC-BY-NC-SA license badge, share-alike terms surfaced clearly given it's
-  the strictest tier in the catalog.
+- **A real, blocking gap fixed first: file uploads now transfer a real
+  path.** `DynamicGenerationForm.tsx`'s `audio_upload`/`midi_upload`
+  handler previously only ever captured a picked file's *name*
+  (`onChange(file.name)`) — a known gap since Phase 4/5 that MusicGen's
+  optional melody reference and Museformer's optional seed MIDI could limp
+  along without, but RAVE cannot: its entire function is transforming a
+  real input file. Fixed with Electron 32's `webUtils.getPathForFile(file)`,
+  exposed through the standard preload bridge as a new, narrow
+  `window.kwesi.getFilePathForUpload(file)` (synchronous — no IPC round
+  trip needed, since `webUtils` only needs the real `File` reference a
+  contextBridge-exposed function already receives as its argument — see
+  `electron/preload.ts`). `DynamicGenerationForm.tsx`'s
+  `resolveUploadedFilePath` uses it for both `audio_upload` and
+  `midi_upload`, falling back to the bare file name when `window.kwesi` is
+  undefined (the browser-preview mock, which has no real filesystem to
+  resolve against). `electron/models/modelServer.ts`'s
+  `resolveMelodyAudioPath`/`resolveAceStepReferenceAudioPath` still verify
+  the path is real and absolute before trusting it (the mock path can still
+  hand back a bare name), but the "happens to already be a real path" gap
+  they used to document is now the normal path, not an edge case — see
+  their updated comments. **Not runtime-tested** — no display server is
+  available to drive a real Electron file picker in this environment; this
+  was verified by reading Electron's actual `webUtils` type definitions and
+  documented contract directly (`node_modules/electron/electron.d.ts`), not
+  by exercising drag-and-drop or a real dialog.
+- **RAVE batch-mode inference: real, proven.** `servers/rave/server.py`
+  (FastAPI, following MusicGen's exact shape) loads a checkpoint's `.ts`
+  file with a bare `torch.jit.load()` and caches it in-process — no
+  `acids-rave` package, no vendored repo, confirmed unnecessary by loading
+  a checkpoint with nothing but `torch` installed (every one of the nine
+  pretrained checkpoints in `models/rave/` is a self-contained TorchScript
+  export, architecturally unlike every other model in this catalog).
+  `electron/models/modelServer.ts` gains `rave` in `isRealServerModel`/
+  `REAL_SERVER_PORTS` (port `17680`) and a `runRealRaveJob`, its own venv at
+  `$KWESI_VENVS_DIR/rave` (CPU-only — RAVE's docs call inference
+  CPU-feasible for small models, confirmed by a standalone timing test).
+  Proven twice — standalone direct call, and through a real running
+  `uvicorn` instance — against both a mono (`darbouka_onnx`) and stereo
+  (`percussion`) checkpoint, each verified with Python's `wave` module: real
+  RIFF/WAVE, correct channel count, 44100Hz, non-silent, genuinely different
+  from the input audio. Two real bugs were found and fixed getting there
+  (stereo-output channel ordering for `soundfile`, and one checkpoint's
+  decoder output exceeding `[-1, 1]`) — full writeup in
+  `servers/rave/README.md`, including the honest sample-rate assumption (no
+  `.ts` file carries sample-rate metadata; 44100Hz is IRCAM/ACIDS's own
+  documented default for most pretrained examples, not confirmed
+  per-checkpoint). The other seven checkpoints are wired identically but
+  weren't individually run.
+- **Existing dynamic form needed no real adjustment.** RAVE's manifest
+  (`checkpointVariants`: the nine real names, one required `input_audio`
+  input, no free-text prompt) already renders exactly the "select a trained
+  timbre model + provide audio" UI the roadmap wanted, once the upload fix
+  above landed — `DynamicGenerationForm.tsx` itself was not changed beyond
+  that fix, confirming Phase 4's adapter-framework promise held for the one
+  model whose input shape looks nothing like the others.
+- **License-tier visibility.** `WorkspaceDetail.tsx`'s `LicenseBadge`
+  (generalized in Phase 8) already showed next to any `done` generation
+  whose model isn't MIT-licensed, always visible in the generation row's
+  header regardless of expand/collapse state — including RAVE's
+  `cc-by-nc-sa` outputs, which sit in the same row as the Export/Download/
+  Share actions once expanded. Its tooltip now spells out share-alike
+  specifically for `cc-by-nc-sa` (the strictest tier) rather than reusing
+  the generic "non-commercial use only" wording every other non-MIT model
+  gets.
+- **Realtime/streaming: not attempted**, per the roadmap's own framing as
+  an explicit stretch goal not to let consume the batch-mode time budget.
+  `rave export --streaming` and the VST/Max `nn~` external remain
+  unexplored; nothing about batch mode blocks adding it later.
 
-**Exit criteria:** a user can run an audio file (or live input, if in
-scope for v1) through a RAVE timbre model and get resynthesized audio out,
-saved through the same Phase 6 export flow.
+**Exit criteria:** ✅ a user can run an audio file through an installed RAVE
+timbre model and get resynthesized audio out, saved through the same Phase
+6 export flow — proven standalone and through a real running server
+process, not yet exercised through a live Electron GUI (no display server
+available; see the file-upload fix's own verification note above, which
+applies to the whole flow). Live-input/realtime is explicitly not in v1,
+per the roadmap's own stretch-goal framing.
 
 ---
 

@@ -11,9 +11,13 @@
 // unverified (see servers/museformer/README.md). Phase 8 adds
 // `ace-step-1.5`, proven real (see servers/ace-step-1.5/README.md) but
 // spawning ACE-Step's *own* REST API server rather than a hand-written
-// wrapper — see the real-server-vs-wrapper writeup there. `yue2` and `rave`
-// are still untouched and walk the Phase 4 mock path below; YuE2's real
-// generation was proven standalone (servers/yue2/README.md) but
+// wrapper — see the real-server-vs-wrapper writeup there. Phase 9 adds
+// `rave`, proven real (see servers/rave/README.md) — a hand-written
+// FastAPI wrapper following MusicGen's shape exactly, since every one of
+// RAVE's nine pretrained checkpoints is a self-contained TorchScript
+// export needing nothing but torch.jit.load(), not a bigger framework to
+// wrap. `yue2` is still untouched and walks the Phase 4 mock path below;
+// its real generation was proven standalone (servers/yue2/README.md) but
 // deliberately not wired into modelServer.ts yet, so don't assume its
 // model_id is in REAL_SERVER_PORTS just because a README exists for it.
 import { BrowserWindow } from "electron";
@@ -67,6 +71,7 @@ const MUSICGEN_MODEL_ID = "musicgen";
 const MUSECOCO_MODEL_ID = "musecoco";
 const MUSEFORMER_MODEL_ID = "museformer";
 const ACE_STEP_MODEL_ID = "ace-step-1.5";
+const RAVE_MODEL_ID = "rave";
 const REAL_SERVER_ENTRYPOINT = "server.py"; // same bare filename under servers/<model_id>/ for every real model *except* ace-step-1.5 (see spawnAceStepServer)
 
 // First port in each model's manifest portRange (src/data/manifests.ts) —
@@ -89,6 +94,7 @@ const REAL_SERVER_PORTS: Record<string, number> = {
   [MUSECOCO_MODEL_ID]: 17620,
   [MUSEFORMER_MODEL_ID]: 17630,
   [ACE_STEP_MODEL_ID]: 17640,
+  [RAVE_MODEL_ID]: 17680,
 };
 
 // ACE-Step ships its own real REST API server (acestep.api_server, cloned
@@ -383,7 +389,7 @@ export async function shutdownAllRealServers(): Promise<void> {
   await Promise.all([...realServers.keys()].map((modelId) => stopRealServer(modelId)));
 }
 
-// --- Public server lifecycle (mock for every model except musicgen) --------
+// --- Public server lifecycle (mock for every model not in REAL_SERVER_PORTS) --
 
 export async function startServer(modelId: string): Promise<void> {
   if (isRealServerModel(modelId)) {
@@ -451,22 +457,26 @@ async function runJob(
     await runRealAceStepJob(workspaceId, generation);
     return;
   }
+  if (modelId === RAVE_MODEL_ID) {
+    await runRealRaveJob(workspaceId, generation);
+    return;
+  }
   await runMockJob(workspaceId, modelId, generation);
 }
 
 // --- Phase 5: real MusicGen generation ---------------------------------------
 
 /**
- * The Phase 4 form only ever stores an uploaded file's *name*
- * (DynamicGenerationForm's audio_upload handler is `onChange(file.name)`,
- * not a real path or file transfer — that plumbing was never built). So a
- * melody reference is only usable here if input_params.melody_audio happens
- * to already be a real absolute path that exists on disk; otherwise it's
- * dropped with a log line rather than sent to the server as a bogus path.
- * The real-inference server itself (servers/musicgen/server.py) does support
- * melody conditioning given a real path — this gap is purely on the
- * renderer's upload-capture side, a pre-existing Phase 4 simplification, not
- * something Phase 5 introduced.
+ * DynamicGenerationForm's audio_upload handler now captures a real absolute
+ * path via Electron 32's webUtils.getPathForFile (Phase 9 — previously it
+ * only ever stored the picked file's *name*, a known gap since Phase 4/5).
+ * This still checks that input_params.melody_audio is a real, existing
+ * absolute path rather than trusting it blindly — the browser-preview mock
+ * (no window.kwesi) still only ever produces a bare name, and a renderer is
+ * untrusted input in general — dropping it with a log line if not, rather
+ * than sending a bogus path to the server. The real-inference server itself
+ * (servers/musicgen/server.py) does support melody conditioning given a
+ * real path.
  */
 function resolveMelodyAudioPath(inputParams: Record<string, unknown>): string | undefined {
   const value = inputParams.melody_audio;
@@ -600,10 +610,9 @@ async function runRealMuseformerJob(workspaceId: string, generation: repo.Genera
 // full real contract this was transcribed from.
 
 /**
- * Mirrors resolveMelodyAudioPath's reasoning exactly: DynamicGenerationForm's
- * audio_upload handler only ever captures a picked file's *name*, never a
- * real transferred path, so reference_audio is only usable here if
- * input_params.reference_audio already happens to be a real absolute path.
+ * Mirrors resolveMelodyAudioPath's reasoning exactly (see its comment) — same
+ * real-path check, same reason it's needed even now that the upload path is
+ * fixed (the browser-preview mock still only ever has a bare name).
  */
 function resolveAceStepReferenceAudioPath(inputParams: Record<string, unknown>): string | undefined {
   const value = inputParams.reference_audio;
@@ -796,7 +805,85 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
   }
 }
 
-// --- Phase 4 mock generation (every model except musicgen) -------------------
+// --- Phase 9: real RAVE generation -------------------------------------------
+// servers/rave/server.py mirrors MusicGen's shape exactly (single blocking
+// POST /generate, same in-process checkpoint cache) — RAVE's own inference
+// surface is genuinely that simple once torch.jit.load() replaces the whole
+// "load model code + load checkpoint" split every other model needs. See
+// servers/rave/README.md for what's real vs. assumed (the sample-rate
+// assumption in particular).
+
+/**
+ * Unlike MusicGen's melody reference or ACE-Step's reference audio, RAVE's
+ * input_audio is not optional — it's the model's entire input, there's
+ * nothing to generate without it. So this fails the generation outright
+ * with a clear message rather than silently dropping the field and calling
+ * a server that has no meaningful request to make, mirroring the same
+ * real-absolute-path check resolveMelodyAudioPath uses (see its comment).
+ */
+function resolveRaveInputAudioPath(inputParams: Record<string, unknown>): string {
+  const value = inputParams.input_audio;
+  if (typeof value === "string" && value.length > 0 && path.isAbsolute(value) && fs.existsSync(value)) {
+    return value;
+  }
+  throw new Error(
+    typeof value === "string" && value.length > 0
+      ? `input_audio "${value}" is not a real file path on disk — re-select the audio file and try again.`
+      : "No input audio file was provided — RAVE needs a real audio file to transform.",
+  );
+}
+
+async function runRealRaveJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+
+  try {
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const inputAudioPath = resolveRaveInputAudioPath(inputParams);
+
+    const { port } = await ensureRealServerRunning(RAVE_MODEL_ID);
+
+    repo.updateGenerationStatus(generationId, "running");
+    broadcast({ type: "running", generationId, projectId, progressPct: 0 });
+
+    const dir = generationDir(workspaceId, projectId, generationId);
+    ensureDir(dir);
+    const outputPath = path.join(dir, "output.wav");
+
+    const res = await fetch(`http://127.0.0.1:${port}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // RAVE inference is fast even on CPU (a few hundred ms for a few
+      // seconds of audio in standalone testing — see servers/rave/README.md)
+      // but a long input file legitimately takes longer; same generous
+      // budget as MusicGen's call rather than a tight one.
+      signal: AbortSignal.timeout(5 * 60 * 1000),
+      body: JSON.stringify({
+        variant: generation.checkpoint_variant,
+        input_audio_path: inputAudioPath,
+        output_path: outputPath,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`rave server returned ${res.status}: ${text}`);
+    }
+
+    const data = (await res.json()) as { output_path: string; duration_ms: number };
+    repo.updateGenerationStatus(generationId, "done", {
+      outputFiles: [data.output_path],
+      durationMs: data.duration_ms,
+    });
+    broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    repo.updateGenerationStatus(generationId, "failed", { error });
+    broadcast({ type: "failed", generationId, projectId, error });
+  }
+}
+
+// --- Phase 4 mock generation (yue2 only, as of Phase 9) ----------------------
 
 const PROGRESS_STEPS = 5;
 // Small, fixed chance of a simulated failure so the error-handling UI has

@@ -5,6 +5,11 @@ declare global {
     kwesi?: {
       openExternal: (url: string) => Promise<boolean>;
       getEnv: () => Promise<Record<string, string | number>>;
+      // Synchronous — see electron/preload.ts's comment on why this doesn't
+      // need ipcRenderer.invoke. Returns "" if the given File wasn't really
+      // backed by a file on disk (e.g. constructed in JS), same as
+      // webUtils.getPathForFile's own documented behavior.
+      getFilePathForUpload: (file: File) => string;
       db: {
         listModels: () => Promise<ModelRow[]>;
         listModelVariants: (modelId: string) => Promise<ModelVariantRow[]>;

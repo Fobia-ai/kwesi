@@ -1,0 +1,17 @@
+# RAVE's nine pretrained checkpoints (models/rave/<name>/<name>.ts) are
+# self-contained TorchScript exports — torch.jit.load() + .forward()/
+# .encode()/.decode() is the entire inference surface, confirmed by loading
+# one directly with nothing but torch installed (see README.md). No
+# acids-rave package, no separate model-definition code. CPU wheels only —
+# RAVE's own docs call inference CPU-feasible for small models, and a
+# standalone timing test bore that out (see README.md), so this venv
+# deliberately skips the multi-GB CUDA torch build servers/musicgen and
+# servers/ace-step-1.5 need.
+--index-url https://download.pytorch.org/whl/cpu
+
+torch==2.6.0
+torchaudio==2.6.0
+soundfile
+fastapi
+uvicorn[standard]
+python-multipart

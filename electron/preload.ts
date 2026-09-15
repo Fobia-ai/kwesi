@@ -1,8 +1,15 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 
 contextBridge.exposeInMainWorld("kwesi", {
   openExternal: (url: string) => ipcRenderer.invoke("kwesi:open-external", url),
   getEnv: () => ipcRenderer.invoke("kwesi:get-env"),
+  // Electron 32+'s replacement for the removed `file.path` property.
+  // webUtils only runs in a context with a real reference to the renderer's
+  // File object, which a contextBridge-exposed function gets directly (the
+  // File is structured-cloneable across the bridge) — no IPC round-trip
+  // needed, this returns synchronously. See DynamicGenerationForm.tsx's
+  // audio_upload/midi_upload handling for the real consumer.
+  getFilePathForUpload: (file: File) => webUtils.getPathForFile(file),
   db: {
     listModels: () => ipcRenderer.invoke("kwesi:db:models:list"),
     listModelVariants: (modelId: string) =>
