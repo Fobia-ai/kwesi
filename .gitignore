@@ -18,5 +18,12 @@ scripts/__pycache__
 /venvs
 **/__pycache__
 
+# Vendored third-party inference code (github.com/microsoft/muzic), pulled in
+# by Phase 7 -- not ours, reproducible via `git clone` (see each server's
+# README), and large enough (musecoco/vendor alone is ~57MB) not to belong
+# in this repo's own history.
+servers/musecoco/vendor
+servers/museformer/vendor
+
 # Claude Code harness internals, not project state.
 .claude/

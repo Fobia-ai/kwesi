@@ -1,0 +1,26 @@
+# Museformer real inference -- UNVERIFIED, see README.md "Status" section.
+#
+# Python 3.8 (matches the vendored repo's own documented pin, same era as
+# MuseCoco's). fairseq==0.10.2 is the same package version MuseCoco needs
+# (both are muzic-era repos against the same fairseq fork API surface), so
+# in principle this venv could share MuseCoco's venv -- kept separate here
+# per kwesi.docs/02-architecture.md's one-venv-per-model rule, and because
+# Museformer's own decoder pulls in extra kernel/dictionary machinery
+# MuseCoco doesn't need.
+fairseq==0.10.2
+miditoolkit==0.1.16
+scipy
+numpy==1.23.4
+mido
+fastapi
+uvicorn[standard]
+pydantic
+
+# NOT pinned/installed here -- see README.md: the real MidiProcessor
+# tokenizer/decoder Museformer's own README points at
+# (github.com/btyu/MidiProcessor) needs to be resolved and vendored the
+# same way musecoco/museformer's own code was, and museformer's decoder
+# (museformer/kernels/*, museformer/blocksparse/*) has custom CUDA/triton
+# code whose CPU-fallback coverage was not confirmed working end-to-end in
+# Phase 7 -- do that investigation before trusting this file to produce a
+# real MIDI.

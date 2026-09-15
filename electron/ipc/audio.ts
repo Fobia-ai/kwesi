@@ -8,6 +8,13 @@ import { workspacesRootDir } from "../db/paths.js";
 // server-written paths under KWESI_WORKSPACES_DIR, so a renderer asking for
 // anything outside that tree is treated as untrusted rather than honored,
 // per the same allowlisting posture as electron/allowedExternalLinks.ts.
+//
+// Phase 7: this channel's stat/read/save/reveal handlers are generic over
+// any output file, not just audio — MuseCoco/Museformer's .mid files reuse
+// it as-is (mimeTypeFor grew a ".mid"/".midi" case) rather than duplicating
+// this same path-boundary-safety logic in a parallel electron/ipc/midi.ts.
+// The channel/window.kwesi.audio names stayed as "audio" for continuity
+// with Phase 6 rather than a renderer-wide rename.
 function isWithinWorkspaces(filePath: string): boolean {
   const root = path.resolve(workspacesRootDir());
   const resolved = path.resolve(filePath);
@@ -26,6 +33,9 @@ function mimeTypeFor(filePath: string): string {
       return "audio/ogg";
     case ".aiff":
       return "audio/aiff";
+    case ".mid":
+    case ".midi":
+      return "audio/midi";
     default:
       return "application/octet-stream";
   }

@@ -18,7 +18,8 @@ import { getManifest, outputKindOf } from "../data/manifests";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../components/generation/OutputViewerPlaceholder";
 import { WaveformPlayer } from "../components/audio/WaveformPlayer";
-import { findAudioFile, parseOutputFiles } from "../lib/audioFiles";
+import { PianoRollViewer } from "../components/midi/PianoRollViewer";
+import { findAudioFile, findMidiFile, parseOutputFiles } from "../lib/audioFiles";
 
 function NewProjectModal({
   onClose,
@@ -106,8 +107,10 @@ function GenerationListItem({
   const outputKind = generation.output_kind as "audio" | "midi" | "audio+midi" | null;
   const outputFiles = useMemo(() => parseOutputFiles(generation.output_files), [generation.output_files]);
   const audioFile = useMemo(() => findAudioFile(outputFiles), [outputFiles]);
+  const midiFile = useMemo(() => findMidiFile(outputFiles), [outputFiles]);
   const showAudioPlayer = done && (outputKind === "audio" || outputKind === "audio+midi") && Boolean(audioFile);
-  const showMidiSlot = done && (outputKind === "midi" || outputKind === "audio+midi");
+  const showPianoRoll = done && (outputKind === "midi" || outputKind === "audio+midi") && Boolean(midiFile);
+  const showMidiSlot = done && (outputKind === "midi" || outputKind === "audio+midi") && !midiFile;
   const title = `${projectName} — ${generation.checkpoint_variant ?? "generation"}`;
 
   return (
@@ -152,13 +155,19 @@ function GenerationListItem({
         </div>
       )}
 
+      {showPianoRoll && (
+        <div className="mt-2">
+          <PianoRollViewer filePath={midiFile as string} title={title} compact={!expanded} />
+        </div>
+      )}
+
       {showMidiSlot && expanded && (
         <div className="mt-2">
           <OutputViewerPlaceholder outputKind="midi" status="done" />
         </div>
       )}
 
-      {done && !showAudioPlayer && !showMidiSlot && expanded && (
+      {done && !showAudioPlayer && !showPianoRoll && !showMidiSlot && expanded && (
         <p className="mt-2 text-ink-muted">No output files for this generation.</p>
       )}
     </li>

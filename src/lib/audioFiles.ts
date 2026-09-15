@@ -1,7 +1,12 @@
 const AUDIO_EXTENSIONS = [".wav", ".mp3", ".flac", ".ogg", ".aiff"];
+const MIDI_EXTENSIONS = [".mid", ".midi"];
 
 export function findAudioFile(files: string[]): string | undefined {
   return files.find((file) => AUDIO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)));
+}
+
+export function findMidiFile(files: string[]): string | undefined {
+  return files.find((file) => MIDI_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)));
 }
 
 export function parseOutputFiles(json: string | null | undefined): string[] {

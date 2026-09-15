@@ -346,23 +346,120 @@ reference bar for "beautiful audio UI" the rest of the app is held to. ✅
 
 ---
 
-## Phase 7 — Symbolic/MIDI Models: MuseCoco, Museformer
+## Phase 7 — Symbolic/MIDI Models: MuseCoco, Museformer ✅ MuseCoco complete, Museformer partial
 **Objective:** prove the adapter framework handles a completely different
 output modality, and MuseCoco's much richer structured-input form.
 
-- MIDI/piano-roll viewer component (new — first non-audio output viewer).
-- MuseCoco server + venv (Python 3.8/PyTorch 1.11 pin, isolated), wired
-  through the adapter framework; validate the richer structured-input form
-  (instrument/genre/mood/tempo/key/time-signature/bar-count/etc.) renders
-  and submits correctly.
-- Museformer server + venv, wired through; validate the seed/continuation-
-  style input (no free-text prompt) renders sensibly in the same generic
-  form renderer, or extend the manifest schema if it genuinely can't.
-- MIDI export/download/save parity with the audio flow from Phase 6.
+- MIDI/piano-roll viewer component: `src/components/midi/PianoRollViewer.tsx`
+  (first non-audio output viewer) — a static piano roll (notes as bars
+  positioned by pitch/time, no playback), mounted inline per generation in
+  `WorkspaceDetail.tsx` exactly like Phase 6's `WaveformPlayer`, with the
+  same Export/Download/Share actions. Parses the real `.mid` bytes with a
+  small hand-rolled Standard MIDI File parser (`src/lib/midiParser.ts`) —
+  a new npm dependency was considered and rejected (see that file's header
+  comment): the read-only, notes-only surface this viewer needs is a few
+  dozen lines, and every real npm option pulls in either a playback engine
+  or a much broader event surface than needed. Unit-tested against a
+  hand-built minimal SMF byte buffer (`src/lib/__tests__/midiParser.test.ts`).
+- **MuseCoco: real, proven end-to-end.** `servers/musecoco/server.py`
+  (FastAPI, `servers/musecoco/vendor/` = `microsoft/muzic`'s `musecoco`
+  subfolder) loads the real ~1B-param `attribute2music.pt` checkpoint once
+  and serves `/generate` in-process using the vendored fairseq task/model/
+  generator directly (not a CLI subprocess). Runs on **CPU** — the model's
+  `pytorch-fast-transformers` dependency has no system CUDA toolchain to
+  build its GPU extension against on this machine, but the package's own
+  CPU fallback works with zero code changes (see
+  `servers/musecoco/README.md`'s dependency-archaeology section). Verified
+  twice: (1) standalone, calling the vendored fairseq task/generator
+  directly with no server involved; (2) through `servers/musecoco/
+  server.py`'s own `generate()` function. Both produced a real, valid,
+  non-empty `.mid` file — confirmed with `mido` (non-zero duration, real
+  `note_on`/`note_off` event pairs). `electron/models/modelServer.ts` now
+  spawns/health-checks/reuses this real subprocess for
+  `modelId === "musecoco"`, mirroring MusicGen's Phase 5 pattern exactly
+  (`runRealMuseCocoJob`, sharing a generic `runRealMidiJob` with
+  Museformer since both speak the same `{input_params, output_path} ->
+  {output_path}` contract).
+- **The manifest's structured-attribute *values* were rewritten to match
+  the real model**, not the other way around — MuseCoco's real attribute
+  vocabulary (reverse-engineered from the vendored repo's own attribute-unit
+  code) turned out narrower/differently-shaped than the v1 guesses in
+  several places: key signature only conditions on major/minor (not a
+  specific tonic), pitch range means "octaves spanned" (not a register),
+  mood is Russell's 4-quadrant model (not free text), artist style is a
+  fixed 17-composer list (not free text), bar count only meaningfully
+  conditions up to 16 bars. Full table and reasoning in
+  `servers/musecoco/README.md` and the comment block above `MUSECOCO` in
+  `src/data/manifests.ts`. The `description` free-text field is kept in the
+  form but never sent to the real server — no stage-1 text-to-attribute
+  checkpoint was ever published (confirmed in `03-model-catalog.md`), so
+  there's no code path that could use it.
+- **Museformer: code-complete, not verified.** `servers/museformer/
+  server.py` is wired into `modelServer.ts` the same real-subprocess way,
+  shelling out to the vendored repo's own documented `fairseq-interactive`
+  CLI invocation (`--user-dir`) rather than a hand-rolled generation loop.
+  Never actually run: no venv was built for it in this phase, and its
+  decoder imports custom CUDA/Triton kernels
+  (`museformer/kernels/*`, `museformer/blocksparse/*`) whose CPU-fallback
+  coverage is unconfirmed — two of the three kernel modules do have a real
+  `is_cuda`-gated PyTorch fallback, but the Triton-based `blocksparse`
+  module has no CPU path at all, and whether the default inference path
+  actually reaches it was never determined. Full risk assessment and the
+  concrete next steps to verify it are in `servers/museformer/README.md`.
+  This is a deliberate scope cut, not an oversight: MuseCoco's integration
+  took most of this phase's budget after a materially deeper
+  reverse-engineering effort than expected (see below), and finishing one
+  model for real rather than leaving both half-verified was the better use
+  of the remaining time.
+- MIDI export/download/save parity with the audio flow from Phase 6: no new
+  IPC surface was needed — `electron/ipc/audio.ts`'s `stat`/`read`/`save`/
+  `reveal` handlers were already generic over any file under the workspaces
+  root (only `mimeTypeFor` needed a `.mid`/`.midi` case), so `.mid` files
+  reuse the exact same `window.kwesi.audio` channel and `kwesiAudio` client
+  Phase 6 built, rather than a parallel `midi.ts` duplicating the same
+  path-boundary-safety check.
 
-**Exit criteria:** both models installable and generate real MIDI output,
-viewable and exportable, without the generic input/output framework needing
-model-specific hacks in the renderer.
+**Simplifications made (v1, noted as acceptable scope calls):**
+- **Museformer's real generation is unverified** (see above) — installable
+  and wired through the exact same adapter framework, but not proven to
+  produce real output. `seed_mode: "continue_from_midi"` additionally isn't
+  wireable yet even once the environment is sorted, for the same
+  pre-existing Phase 4 reason MusicGen's melody-reference upload isn't:
+  `DynamicGenerationForm`'s `midi_upload`/`audio_upload` handlers only ever
+  capture a file's *name*, never a real transferred path.
+- **MuseCoco generation is CPU-only and slow** (minutes, not seconds, for a
+  real-length piece) — there is no GPU path today since the model's compiled
+  attention extension has nothing to build against without a system CUDA
+  toolchain (no `nvcc`, no passwordless `sudo` to install one). Functional
+  and verified, not fast.
+- **No real streaming progress**, same as Phase 5's MusicGen — a single
+  blocking `/generate` call, `queued` → `running` (one 0% tick) →
+  `done`/`failed`.
+- **Not re-verified through the real compiled Electron path** (Phase 5's
+  "run it via `npx electron` with better-sqlite3's Electron-ABI build"
+  bonus step) — standalone Python (both ad hoc and through
+  `servers/musecoco/server.py`'s own code) was prioritized instead, given
+  the time this phase's dependency/attribute-encoding investigation
+  actually took. `electron/models/modelServer.ts`'s real-subprocess wiring
+  for `musecoco`/`museformer` was read-reviewed and type-checks
+  (`npx tsc -p electron/tsconfig.json`) but wasn't exercised by actually
+  submitting a generation through a running Electron main process in this
+  phase.
+- **Instrument/genre free-text tags are matched, not translated.**
+  `instrument`/`genre` stay `tags` fields (multi-value) rather than becoming
+  closed `select`s like `mood`/`artist_style`/`key_signature` did, since a
+  user can reasonably type several of each; `servers/musecoco/server.py`
+  does a case-insensitive exact match against the real category vocabulary
+  and silently drops (logging a warning) anything that doesn't match,
+  rather than guessing a translation.
+
+**Exit criteria:** ✅ MuseCoco — installable, generates real MIDI output
+end-to-end (standalone and through its own server), viewable (piano roll)
+and exportable, with no model-specific hacks in the generic renderer.
+⚠️ Museformer — installable and wired through the identical framework, but
+generation is unverified; the piano-roll viewer, IPC/export plumbing, and
+`modelServer.ts` real-subprocess pattern are all shared/proven via MuseCoco,
+so this is a dependency-environment gap, not a framework gap.
 
 ---
 

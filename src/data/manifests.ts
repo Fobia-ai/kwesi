@@ -150,29 +150,89 @@ const MUSICGEN: ModelManifest = {
   server: { entrypoint: "server.py", venv: "musicgen", portRange: [17600, 17619] },
 };
 
+// Phase 7 reality check: the real, published checkpoint
+// (XinXuNLPer/MuseCoco_attribute2music, vendored inference code at
+// servers/musecoco/vendor/2-attribute2music_model) is the STAGE-2
+// attribute-to-music generator only — the stage-1 text-to-attribute
+// checkpoint was never released, so "description" below is informational
+// only and is never actually sent to the real server (kept in the form
+// since a user may still want to jot down intent, but servers/musecoco/
+// server.py ignores it). Every other field's `value`s were rewritten to
+// match the real attribute vocabulary reverse-engineered from
+// midi_data_extractor/attribute_unit/*.py and 1-text2attribute_model/
+// att_key.json in the vendored repo — see servers/musecoco/README.md for
+// the full trace. Key findings that don't match the original v1 guesses:
+// - key_signature: the model only conditions on major/minor (attribute
+//   "K1"), not a specific tonic — the note-letter options were dropped.
+// - time_signature: the model's real vocabulary is exactly
+//   (4/4, 2/4, 3/4, 1/4, 6/8, 3/8, other) — 1/4 and 3/8 were added.
+// - bar_count: the real "B1s1" conditioning attribute only distinguishes
+//   1-4/5-8/9-12/13-16 bars (bins, not a raw count) — capped at 16 here;
+//   the model can still emit a longer/shorter piece in practice since the
+//   generation length is really governed by the server's token budget, not
+//   this hint, but 16 is the honest ceiling for what this field *means* to
+//   the model.
+// - danceability maps to "R1" (yes/no/unspecified, not low/medium/high).
+// - pitch_range maps to "P4", the number of octaves the piece's pitch
+//   spans (0-11), not a register (low/mid/high) — relabeled accordingly.
+// - mood maps to "EM1", Russell's 4-quadrant valence/arousal model
+//   (Q1..Q4), not free-text tags — changed from `tags` to `select`.
+// - artist_style maps to "S2s1", a fixed set of 17 classical composers the
+//   training data was drawn from (not a free-text/tags style reference) —
+//   changed from `tags` to `select`.
+// - instrument/genre stay `tags` (multi-select) but only match real
+//   category words (see helpText); servers/musecoco/server.py does a
+//   case-insensitive exact match against the real vocabulary and silently
+//   drops/logs anything unmatched rather than guessing.
 const MUSECOCO: ModelManifest = {
   modelId: "musecoco",
   displayName: "MuseCoco",
   licenseTier: "mit",
   checkpointVariants: ["default"],
-  hardware: { minVramGb: 0, cpuFallback: true, notes: "~200M params, CPU-feasible; no VRAM figure published." },
+  hardware: { minVramGb: 0, cpuFallback: true, notes: "~1B params (the real checkpoint is a 14.5GB linear_mask-1billion snapshot, larger than the catalog doc's original ~200M estimate) — CPU-feasible, verified end-to-end on CPU in Phase 7 since no CUDA toolchain was available to build the model's fast_transformers extension." },
   inputs: [
-    { key: "description", type: "textarea", label: "Free text description", placeholder: "A hopeful piano ballad" },
-    { key: "instrument", type: "tags", label: "Instruments" },
-    { key: "genre", type: "tags", label: "Genre" },
-    { key: "mood", type: "tags", label: "Mood" },
+    {
+      key: "description",
+      type: "textarea",
+      label: "Free text description (not used by real inference)",
+      placeholder: "A hopeful piano ballad",
+      helpText: "No published stage-1 text-to-attribute checkpoint exists, so this is notes-to-self only — set the structured fields below to actually steer generation.",
+    },
+    {
+      key: "instrument",
+      type: "tags",
+      label: "Instruments",
+      helpText: "Matched case-insensitively against: piano, keyboard, percussion, organ, guitar, bass, violin, viola, cello, harp, strings, voice, trumpet, trombone, tuba, horn, brass, sax, oboe, bassoon, clarinet, piccolo, flute, pipe, synthesizer, ethnic_instruments, sound_effects, drum. Unmatched tags are ignored.",
+    },
+    {
+      key: "genre",
+      type: "tags",
+      label: "Genre",
+      helpText: "Matched case-insensitively against: new_age, electronic, rap, religious, international, easy_listening, avant_garde, rnb, latin, children, jazz, classical, comedy_spoken, pop_rock, reggae, stage, folk, blues, vocal, holiday, country, symphony. Unmatched tags are ignored.",
+    },
+    {
+      key: "mood",
+      type: "select",
+      label: "Mood",
+      default: "unspecified",
+      options: [
+        { value: "unspecified", label: "Not specified" },
+        { value: "Q1", label: "Excited / happy (high energy, positive)" },
+        { value: "Q2", label: "Tense / angry (high energy, negative)" },
+        { value: "Q3", label: "Sad / depressed (low energy, negative)" },
+        { value: "Q4", label: "Calm / peaceful (low energy, positive)" },
+      ],
+    },
     { key: "tempo_bpm", type: "number", label: "Tempo (BPM)", min: 40, max: 240, default: 120 },
     {
       key: "key_signature",
       type: "select",
       label: "Key",
-      default: "c-major",
+      default: "unspecified",
       options: [
-        { value: "c-major", label: "C major" },
-        { value: "g-major", label: "G major" },
-        { value: "d-major", label: "D major" },
-        { value: "a-minor", label: "A minor" },
-        { value: "e-minor", label: "E minor" },
+        { value: "unspecified", label: "Not specified" },
+        { value: "major", label: "Major" },
+        { value: "minor", label: "Minor" },
       ],
     },
     {
@@ -182,36 +242,65 @@ const MUSECOCO: ModelManifest = {
       default: "4/4",
       options: [
         { value: "4/4", label: "4/4" },
-        { value: "3/4", label: "3/4" },
-        { value: "6/8", label: "6/8" },
         { value: "2/4", label: "2/4" },
+        { value: "3/4", label: "3/4" },
+        { value: "1/4", label: "1/4" },
+        { value: "6/8", label: "6/8" },
+        { value: "3/8", label: "3/8" },
       ],
     },
-    { key: "bar_count", type: "number", label: "Bar count", min: 4, max: 128, default: 32 },
+    { key: "bar_count", type: "number", label: "Bar count (conditioning hint)", min: 1, max: 16, default: 8, helpText: "The model only conditions on 4-bar bins (1-4, 5-8, 9-12, 13-16); actual generated length is governed by the server's token budget, not strictly this value." },
     {
       key: "danceability",
       type: "select",
       label: "Danceability",
-      default: "medium",
+      default: "unspecified",
       options: [
-        { value: "low", label: "Low" },
-        { value: "medium", label: "Medium" },
-        { value: "high", label: "High" },
+        { value: "unspecified", label: "Not specified" },
+        { value: "yes", label: "Danceable" },
+        { value: "no", label: "Not danceable" },
       ],
     },
     {
       key: "pitch_range",
       type: "select",
-      label: "Pitch range",
-      default: "mid",
+      label: "Pitch range (octave span)",
+      default: "unspecified",
       options: [
-        { value: "low", label: "Low" },
-        { value: "mid", label: "Mid" },
-        { value: "high", label: "High" },
-        { value: "full", label: "Full" },
+        { value: "unspecified", label: "Not specified" },
+        { value: "narrow", label: "Narrow (~1 octave)" },
+        { value: "medium", label: "Medium (~4 octaves)" },
+        { value: "wide", label: "Wide (~7 octaves)" },
+        { value: "full", label: "Full range (~10+ octaves)" },
       ],
     },
-    { key: "artist_style", type: "tags", label: "Artist style reference" },
+    {
+      key: "artist_style",
+      type: "select",
+      label: "Composer style reference",
+      default: "unspecified",
+      helpText: "The real model only recognizes this fixed set of 17 classical composers from its training data — anything else is unsupported.",
+      options: [
+        { value: "unspecified", label: "Not specified" },
+        { value: "beethoven", label: "Beethoven" },
+        { value: "mozart", label: "Mozart" },
+        { value: "chopin", label: "Chopin" },
+        { value: "schubert", label: "Schubert" },
+        { value: "schumann", label: "Schumann" },
+        { value: "bach-js", label: "Bach (J.S.)" },
+        { value: "haydn", label: "Haydn" },
+        { value: "brahms", label: "Brahms" },
+        { value: "Handel", label: "Handel" },
+        { value: "tchaikovsky", label: "Tchaikovsky" },
+        { value: "mendelssohn", label: "Mendelssohn" },
+        { value: "dvorak", label: "Dvorak" },
+        { value: "liszt", label: "Liszt" },
+        { value: "stravinsky", label: "Stravinsky" },
+        { value: "mahler", label: "Mahler" },
+        { value: "prokofiev", label: "Prokofiev" },
+        { value: "shostakovich", label: "Shostakovich" },
+      ],
+    },
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "musecoco-venv", portRange: [17620, 17629] },

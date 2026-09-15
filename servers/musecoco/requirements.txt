@@ -1,0 +1,23 @@
+# MuseCoco attribute2music real inference — Python 3.8, exact working pins
+# from a from-scratch venv rebuild (uv-managed, see README.md). The
+# catalog doc's declared pin (torch==1.11.0) is honored; everything else
+# below is what the real import chain in servers/musecoco/vendor/
+# 2-attribute2music_model actually needs at inference time, trimmed from
+# the vendored repo's own broader requirements.txt (which also lists
+# training/evaluation-only packages like wandb, evaluate, seaborn,
+# tensorboardX — none of those are imported by the generation path this
+# server exercises, so they're deliberately left out).
+#
+# Install with: pip install --index-url https://download.pytorch.org/whl/cu113 torch==1.11.0
+# then:         pip install -r servers/musecoco/requirements.txt
+fairseq==0.10.2
+pytorch-fast-transformers==0.4.0
+miditoolkit==0.1.16
+scipy
+numpy==1.23.4
+msgpack
+absl-py
+music21
+fastapi
+uvicorn[standard]
+pydantic

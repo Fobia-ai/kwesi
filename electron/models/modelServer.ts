@@ -1,13 +1,16 @@
 // Phase 4 built this as a mock Model Server Manager (see the block comment
 // that used to sit here, now split out below) — every model_id walked a
 // timed queued -> running -> done/failed status loop with no real Python
-// process. Phase 5 replaces that mock body for `modelId === "musicgen"`
+// process. Phase 5 replaced that mock body for `modelId === "musicgen"`
 // only: a real child_process spawns servers/musicgen/server.py in its own
 // venv, is health-checked over HTTP, and a submitted generation becomes a
-// real POST /generate call that writes a real WAV file. Every other
-// model_id (musecoco, museformer, ace-step-1.5, yue2, rave) is completely
-// untouched and still walks the Phase 4 mock path below — this is
-// intentionally MusicGen-only per kwesi.docs/04-roadmap.md Phase 5.
+// real POST /generate call that writes a real WAV file. Phase 7 adds
+// `musecoco` and `museformer` alongside it, each with its own venv/port and
+// its own runReal<Model>Job — MuseCoco's real path is proven (see
+// servers/musecoco/README.md); Museformer's is wired the same way but
+// unverified (see servers/museformer/README.md). Every other model_id
+// (ace-step-1.5, yue2, rave) is untouched and still walks the Phase 4 mock
+// path below.
 import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -56,8 +59,19 @@ export function getServerStatus(modelId: string): ServerStatusValue {
 // already duplicates-with-a-comment instead of importing
 // src/data/modelVariants.ts. Keep these two in sync by hand if either changes.
 const MUSICGEN_MODEL_ID = "musicgen";
-const MUSICGEN_ENTRYPOINT = "server.py";
-const MUSICGEN_PORT = 17600; // first port in the manifest's [17600, 17619] range
+const MUSECOCO_MODEL_ID = "musecoco";
+const MUSEFORMER_MODEL_ID = "museformer";
+const REAL_SERVER_ENTRYPOINT = "server.py"; // same bare filename under servers/<model_id>/ for every real model
+
+// First port in each model's manifest portRange (src/data/manifests.ts) —
+// mirrors that file rather than importing it, same reason MusicGen's port
+// constant already does (electron/tsconfig.json's rootDir can't reach
+// src/); keep these in sync by hand if either changes.
+const REAL_SERVER_PORTS: Record<string, number> = {
+  [MUSICGEN_MODEL_ID]: 17600,
+  [MUSECOCO_MODEL_ID]: 17620,
+  [MUSEFORMER_MODEL_ID]: 17630,
+};
 
 interface RealServerHandle {
   proc: ChildProcess;
@@ -71,7 +85,7 @@ const realServers = new Map<string, RealServerHandle>();
 const startingPromises = new Map<string, Promise<RealServerHandle>>();
 
 function isRealServerModel(modelId: string): boolean {
-  return modelId === MUSICGEN_MODEL_ID;
+  return modelId in REAL_SERVER_PORTS;
 }
 
 // dist-electron/models/modelServer.js -> dist-electron -> project root.
@@ -109,16 +123,16 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
   const python = venvPythonPath(modelId);
   if (!fs.existsSync(python)) {
     throw new Error(
-      `MusicGen venv not found at ${venvDir(modelId)} (expected interpreter at ${python}). ` +
-        `See servers/musicgen/README.md to create it.`,
+      `${modelId} venv not found at ${venvDir(modelId)} (expected interpreter at ${python}). ` +
+        `See servers/${modelId}/README.md to create it.`,
     );
   }
-  const entrypoint = path.join(projectRootDir(), "servers", modelId, MUSICGEN_ENTRYPOINT);
+  const entrypoint = path.join(projectRootDir(), "servers", modelId, REAL_SERVER_ENTRYPOINT);
   if (!fs.existsSync(entrypoint)) {
-    throw new Error(`MusicGen server entrypoint not found at ${entrypoint}`);
+    throw new Error(`${modelId} server entrypoint not found at ${entrypoint}`);
   }
 
-  const port = MUSICGEN_PORT;
+  const port = REAL_SERVER_PORTS[modelId];
   const proc = spawn(python, [entrypoint, "--port", String(port)], {
     env: { ...process.env, KWESI_MODELS_DIR: modelsRootDir() },
     stdio: ["ignore", "pipe", "pipe"],
@@ -136,7 +150,7 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
   const healthy = await waitForHealthy(port, 60_000);
   if (!healthy) {
     proc.kill("SIGTERM");
-    throw new Error(`MusicGen server did not become healthy on port ${port} within 60s`);
+    throw new Error(`${modelId} server did not become healthy on port ${port} within 60s`);
   }
 
   return { proc, port };
@@ -240,8 +254,16 @@ async function runJob(
   modelId: string,
   generation: repo.GenerationRow,
 ): Promise<void> {
-  if (isRealServerModel(modelId)) {
+  if (modelId === MUSICGEN_MODEL_ID) {
     await runRealMusicGenJob(workspaceId, generation);
+    return;
+  }
+  if (modelId === MUSECOCO_MODEL_ID) {
+    await runRealMuseCocoJob(workspaceId, generation);
+    return;
+  }
+  if (modelId === MUSEFORMER_MODEL_ID) {
+    await runRealMuseformerJob(workspaceId, generation);
     return;
   }
   await runMockJob(workspaceId, modelId, generation);
@@ -320,6 +342,69 @@ async function runRealMusicGenJob(workspaceId: string, generation: repo.Generati
     repo.updateGenerationStatus(generationId, "failed", { error });
     broadcast({ type: "failed", generationId, projectId, error });
   }
+}
+
+// --- Phase 7 real MuseCoco / Museformer generation ---------------------------
+// Both servers speak the same request shape: { input_params, output_path,
+// min_generated_tokens?, max_generated_tokens? } -> { output_path, ... },
+// since both are symbolic/MIDI models with the same "structured attributes
+// in, .mid out" contract — unlike MusicGen's prompt/duration/melody shape.
+// See servers/musecoco/README.md and servers/museformer/README.md for what's
+// proven-real vs. unverified per model.
+
+async function runRealMidiJob(
+  modelId: string,
+  workspaceId: string,
+  generation: repo.GenerationRow,
+): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+
+  try {
+    const { port } = await ensureRealServerRunning(modelId);
+
+    repo.updateGenerationStatus(generationId, "running");
+    broadcast({ type: "running", generationId, projectId, progressPct: 0 });
+
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const dir = generationDir(workspaceId, projectId, generationId);
+    ensureDir(dir);
+    const outputPath = path.join(dir, "output.mid");
+
+    const res = await fetch(`http://127.0.0.1:${port}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Real CPU generation for these models is slow (minutes, not
+      // seconds) — see servers/musecoco/README.md's measured timing — so
+      // this needs a much longer budget than MusicGen's audio call.
+      signal: AbortSignal.timeout(30 * 60 * 1000),
+      body: JSON.stringify({ input_params: inputParams, output_path: outputPath }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`${modelId} server returned ${res.status}: ${text}`);
+    }
+
+    const data = (await res.json()) as { output_path: string; duration_ms: number };
+    repo.updateGenerationStatus(generationId, "done", {
+      outputFiles: [data.output_path],
+      durationMs: data.duration_ms,
+    });
+    broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    repo.updateGenerationStatus(generationId, "failed", { error });
+    broadcast({ type: "failed", generationId, projectId, error });
+  }
+}
+
+async function runRealMuseCocoJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  await runRealMidiJob(MUSECOCO_MODEL_ID, workspaceId, generation);
+}
+
+async function runRealMuseformerJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  await runRealMidiJob(MUSEFORMER_MODEL_ID, workspaceId, generation);
 }
 
 // --- Phase 4 mock generation (every model except musicgen) -------------------

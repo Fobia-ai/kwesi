@@ -363,7 +363,22 @@ training and with what input kind, and
   Phase 4 — real progress just doesn't stream sub-steps mid-inference (see
   `kwesi.docs/04-roadmap.md` Phase 5's simplifications). Every other
   model_id still walks the exact Phase 4 mock path described above,
-  unmodified.
+  unmodified. **Phase 7 status:** `modelId === "musecoco"` now follows the
+  identical real subprocess/HTTP pattern — its own venv
+  (`$KWESI_VENVS_DIR/musecoco`, a `uv`-managed Python 3.8 environment since
+  no system Python 3.8 or passwordless `sudo` was available), its own port
+  (`17620`), health-checked the same way, routing generations to a real
+  `POST /generate` that runs the actual vendored MuseCoco fairseq task/
+  generator and writes a real `.mid` file. Proven with a real, valid,
+  non-empty MIDI output (verified via `mido`) — running on CPU, since the
+  model's compiled attention extension has no system CUDA toolchain to
+  build against here (see `servers/musecoco/README.md`). `modelId ===
+  "museformer"` is wired through the exact same `isRealServerModel`/
+  real-subprocess path (own venv/port `17630`) but is **not verified** —
+  `servers/museformer/server.py` was never actually run; its decoder
+  depends on custom kernels with an unconfirmed CPU story (see
+  `servers/museformer/README.md`). `ace-step-1.5`/`yue2`/`rave` still walk
+  the exact Phase 4 mock path, unmodified.
 - A sibling **Training Job Manager** handles the training side (see
   "Training pipeline architecture" above): same venv/subprocess pattern,
   but for long-running `train.py` jobs that must survive app restarts via

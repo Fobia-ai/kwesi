@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findAudioFile, parseOutputFiles, classifyAudioStat, suggestedExportName } from "../audioFiles";
+import { findAudioFile, findMidiFile, parseOutputFiles, classifyAudioStat, suggestedExportName } from "../audioFiles";
 
 describe("findAudioFile", () => {
   it("finds a wav file among mixed outputs", () => {
@@ -16,6 +16,24 @@ describe("findAudioFile", () => {
 
   it("returns undefined for an empty list", () => {
     expect(findAudioFile([])).toBeUndefined();
+  });
+});
+
+describe("findMidiFile", () => {
+  it("finds a mid file among mixed outputs", () => {
+    expect(findMidiFile(["/gen/output.wav", "/gen/output.mid"])).toBe("/gen/output.mid");
+  });
+
+  it("matches the .midi extension too", () => {
+    expect(findMidiFile(["/gen/output.midi"])).toBe("/gen/output.midi");
+  });
+
+  it("is case-insensitive", () => {
+    expect(findMidiFile(["/gen/OUTPUT.MID"])).toBe("/gen/OUTPUT.MID");
+  });
+
+  it("returns undefined when no midi extension is present", () => {
+    expect(findMidiFile(["/gen/output.wav"])).toBeUndefined();
   });
 });
 

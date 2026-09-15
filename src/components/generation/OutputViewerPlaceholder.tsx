@@ -11,7 +11,13 @@ interface OutputViewerPlaceholderProps {
   error?: string | null;
 }
 
-function ViewerSlot({ kind, phaseLabel }: { kind: "audio" | "midi"; phaseLabel: string }) {
+// Both the waveform player (Phase 6, src/components/audio/WaveformPlayer.tsx)
+// and the piano-roll viewer (Phase 7, src/components/midi/PianoRollViewer.tsx)
+// are real now — this slot is only reached as a fallback when a "done"
+// generation has no real output file matching its declared output_kind yet
+// (e.g. a still-mocked model, per kwesi.docs/04-roadmap.md's per-phase
+// simplifications), not a "not built yet" placeholder anymore.
+function ViewerSlot({ kind }: { kind: "audio" | "midi" }) {
   const Icon = kind === "audio" ? WaveformIcon : PianoRollIcon;
   const label = kind === "audio" ? "Waveform player" : "Piano-roll viewer";
   return (
@@ -19,9 +25,7 @@ function ViewerSlot({ kind, phaseLabel }: { kind: "audio" | "midi"; phaseLabel: 
       <div className="text-ink-muted">
         <Icon width={24} height={24} />
       </div>
-      <p className="text-xs text-ink-muted">
-        {label} will appear here ({phaseLabel}).
-      </p>
+      <p className="text-xs text-ink-muted">{label} will appear here once a real output file exists.</p>
     </div>
   );
 }
@@ -55,12 +59,8 @@ export function OutputViewerPlaceholder({ outputKind, status, progressPct, error
 
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
-      {(outputKind === "audio" || outputKind === "audio+midi") && (
-        <ViewerSlot kind="audio" phaseLabel="Phase 6" />
-      )}
-      {(outputKind === "midi" || outputKind === "audio+midi") && (
-        <ViewerSlot kind="midi" phaseLabel={outputKind === "audio+midi" ? "Phase 8" : "Phase 7"} />
-      )}
+      {(outputKind === "audio" || outputKind === "audio+midi") && <ViewerSlot kind="audio" />}
+      {(outputKind === "midi" || outputKind === "audio+midi") && <ViewerSlot kind="midi" />}
     </GlassPanel>
   );
 }
