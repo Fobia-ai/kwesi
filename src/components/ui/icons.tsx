@@ -148,6 +148,14 @@ export function CloseIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M6 9l6 6 6-6" />
+    </Base>
+  );
+}
+
 export function GitHubIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" {...props}>

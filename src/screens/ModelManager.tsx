@@ -5,11 +5,18 @@ import { kwesiModels, type ModelsProgressEvent, type QueueRow } from "../lib/mod
 import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
 import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/kwesiBridge";
+import { getManifest, outputKindOf } from "../data/manifests";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { PillButton } from "../components/ui/PillButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { ModelsIcon, ExternalLinkIcon, TrainingIcon } from "../components/ui/icons";
+import { ModelsIcon, ExternalLinkIcon, TrainingIcon, ChevronDownIcon, DownloadIcon } from "../components/ui/icons";
+
+const OUTPUT_KIND_LABEL: Record<string, string> = {
+  audio: "Audio",
+  midi: "MIDI",
+  "audio+midi": "Audio + MIDI",
+};
 
 const STATUS_LABEL: Record<string, string> = {
   not_installed: "Not installed",
@@ -56,6 +63,166 @@ function ProgressBar({ variant }: { variant: ModelVariantRow }) {
         <span className="shrink-0">
           {pct !== null ? `${pct}% · ${formatBytes(done)} / ${formatBytes(total)}` : formatBytes(done)}
         </span>
+      </div>
+    </div>
+  );
+}
+
+interface ModelAccordionRowProps {
+  model: ModelRow;
+  catalogEntry: (typeof CATALOG)[number] | undefined;
+  variants: ModelVariantRow[];
+  onInstall: (modelId: string, variant: ModelVariantRow) => void;
+  onRetry: (modelId: string, variant: ModelVariantRow) => void;
+  onCancel: (variant: ModelVariantRow) => void;
+  onRequestRemove: (modelId: string, modelDisplayName: string, variant: ModelVariantRow) => void;
+}
+
+/**
+ * One accordion section per catalog model — collapsed shows just the
+ * identity (name, license/trainable badges, description, output kind);
+ * expanded reveals its checkpoint variants as a smooth grid "table" rather
+ * than the flat always-open list this used to be. Height animates via the
+ * CSS grid-template-rows 0fr/1fr trick (no JS measuring, no library).
+ */
+function ModelAccordionRow({
+  model,
+  catalogEntry,
+  variants,
+  onInstall,
+  onRetry,
+  onCancel,
+  onRequestRemove,
+}: ModelAccordionRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  const manifest = getManifest(model.id);
+  const outputLabel = manifest ? OUTPUT_KIND_LABEL[outputKindOf(manifest)] : null;
+  const installedCount = variants.filter((v) => v.install_status === "installed").length;
+
+  return (
+    <div className="border-b border-ink/10 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors duration-150 hover:bg-ink/[0.03]"
+      >
+        <ChevronDownIcon
+          width={16}
+          height={16}
+          className={`shrink-0 text-ink-muted transition-transform duration-200 ease-smooth ${
+            expanded ? "rotate-180" : ""
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold">{model.display_name}</span>
+            <span className="rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+              {licenseLabel(model.license_tier)}
+            </span>
+            {model.trainable === 1 && (
+              <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                Trainable
+              </span>
+            )}
+            {installedCount > 0 && (
+              <span className="text-[11px] text-ink-muted">
+                {installedCount} installed
+              </span>
+            )}
+          </div>
+          {catalogEntry && <p className="mt-0.5 truncate text-xs text-ink-muted">{catalogEntry.description}</p>}
+        </div>
+        {outputLabel && (
+          <span className="shrink-0 rounded-chip bg-ink/[0.06] px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+            {outputLabel}
+          </span>
+        )}
+      </button>
+
+      <div
+        className="grid transition-[grid-template-rows] duration-300 ease-smooth"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          {variants.length === 0 ? (
+            <p className="px-5 pb-4 text-xs text-ink-muted">No installable variants.</p>
+          ) : (
+            <div className="px-5 pb-4">
+              <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 px-3 pb-2 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+                <span>Variant</span>
+                <span>Status</span>
+                <span className="text-right">Size</span>
+                <span className="text-right">Action</span>
+              </div>
+              <div className="rounded-[10px] bg-ink/[0.03]">
+                {variants.map((variant, index) => (
+                  <div key={variant.id}>
+                    <div
+                      className={`grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 px-3 py-2.5 transition-colors duration-150 hover:bg-ink/[0.04] ${
+                        index > 0 ? "border-t border-ink/[0.06]" : ""
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm">{variant.variant_name}</span>
+                        {variant.source === "manual" && variant.manual_note && (
+                          <p className="truncate text-xs text-ink-muted">{variant.manual_note}</p>
+                        )}
+                        {variant.error && variant.install_status === "failed" && (
+                          <p className="truncate text-xs text-red-600">{variant.error}</p>
+                        )}
+                      </div>
+                      <StatusBadge status={variant.install_status} />
+                      <span className="text-right text-xs text-ink-muted">{formatBytes(variant.disk_size_bytes)}</span>
+                      <div className="flex justify-end">
+                        {variant.source === "manual" && variant.install_status !== "installed" ? (
+                          <button
+                            type="button"
+                            onClick={() => variant.manual_url && openExternal(variant.manual_url)}
+                            title="Open the real download location"
+                            aria-label="Open the real download location"
+                            className="flex h-8 w-8 items-center justify-center rounded-[8px] text-ink-muted transition-colors duration-150 hover:bg-ink/[0.06] hover:text-ink"
+                          >
+                            <ExternalLinkIcon width={16} height={16} />
+                          </button>
+                        ) : variant.install_status === "installed" ? (
+                          <PillButton
+                            variant="ghost"
+                            className="!px-3 !py-1.5 text-xs"
+                            onClick={() => onRequestRemove(model.id, model.display_name, variant)}
+                          >
+                            Remove
+                          </PillButton>
+                        ) : variant.install_status === "downloading" || variant.install_status === "queued" ? (
+                          <PillButton
+                            variant="ghost"
+                            className="!px-3 !py-1.5 text-xs"
+                            onClick={() => onCancel(variant)}
+                          >
+                            Cancel
+                          </PillButton>
+                        ) : variant.install_status === "failed" ? (
+                          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => onRetry(model.id, variant)}>
+                            Retry
+                          </PillButton>
+                        ) : (
+                          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => onInstall(model.id, variant)}>
+                            <DownloadIcon width={14} height={14} /> Download
+                          </PillButton>
+                        )}
+                      </div>
+                    </div>
+                    {(variant.install_status === "downloading" || variant.install_status === "queued") && (
+                      <div className="px-3 pb-2.5">
+                        <ProgressBar variant={variant} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -278,100 +445,18 @@ export function ModelManagerScreen() {
         </div>
       ) : (
         <div className="flex flex-col">
-          {models.map((model) => {
-            const catalogEntry = catalogById.get(model.id);
-            const variants = variantsByModel[model.id] ?? [];
-            return (
-              <div key={model.id} className="border-b border-ink/10 p-5">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="text-sm font-semibold">{model.display_name}</span>
-                  <span className="rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
-                    {licenseLabel(model.license_tier)}
-                  </span>
-                  {model.trainable === 1 && (
-                    <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
-                      Trainable
-                    </span>
-                  )}
-                </div>
-                {catalogEntry && <p className="mb-3 text-xs text-ink-muted">{catalogEntry.description}</p>}
-
-                {variants.length === 0 ? (
-                  <p className="text-xs text-ink-muted">No installable variants.</p>
-                ) : (
-                  <div className="mt-3 flex flex-col gap-2">
-                    {variants.map((variant) => (
-                      <div key={variant.id} className="rounded-[10px] bg-ink/[0.03] px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="truncate text-sm">{variant.variant_name}</span>
-                              <StatusBadge status={variant.install_status} />
-                              {variant.install_status === "installed" && (
-                                <span className="shrink-0 text-xs text-ink-muted">
-                                  {formatBytes(variant.disk_size_bytes)}
-                                </span>
-                              )}
-                            </div>
-                            {variant.source === "manual" && variant.manual_note && (
-                              <p className="mt-1 text-xs text-ink-muted">{variant.manual_note}</p>
-                            )}
-                            {variant.error && variant.install_status === "failed" && (
-                              <p className="mt-1 truncate text-xs text-red-600">{variant.error}</p>
-                            )}
-                          </div>
-
-                          <div className="flex shrink-0 items-center gap-2">
-                            {variant.source === "manual" && variant.install_status !== "installed" ? (
-                              <button
-                                type="button"
-                                onClick={() => variant.manual_url && openExternal(variant.manual_url)}
-                                title="Open the real download location"
-                                aria-label="Open the real download location"
-                                className="flex h-8 w-8 items-center justify-center rounded-[8px] text-ink-muted transition-colors duration-150 hover:bg-ink/[0.06] hover:text-ink"
-                              >
-                                <ExternalLinkIcon width={16} height={16} />
-                              </button>
-                            ) : variant.install_status === "installed" ? (
-                              <PillButton
-                                variant="ghost"
-                                className="!px-3 !py-1.5 text-xs"
-                                onClick={() => requestRemove(model.id, model.display_name, variant)}
-                              >
-                                Remove
-                              </PillButton>
-                            ) : variant.install_status === "downloading" || variant.install_status === "queued" ? (
-                              <PillButton
-                                variant="ghost"
-                                className="!px-3 !py-1.5 text-xs"
-                                onClick={() => handleCancel(variant)}
-                              >
-                                Cancel
-                              </PillButton>
-                            ) : variant.install_status === "failed" ? (
-                              <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => handleRetry(model.id, variant)}>
-                                Retry
-                              </PillButton>
-                            ) : (
-                              <PillButton
-                                className="!px-3 !py-1.5 text-xs"
-                                onClick={() => handleInstall(model.id, variant)}
-                              >
-                                Install
-                              </PillButton>
-                            )}
-                          </div>
-                        </div>
-                        {(variant.install_status === "downloading" || variant.install_status === "queued") && (
-                          <ProgressBar variant={variant} />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {models.map((model) => (
+            <ModelAccordionRow
+              key={model.id}
+              model={model}
+              catalogEntry={catalogById.get(model.id)}
+              variants={variantsByModel[model.id] ?? []}
+              onInstall={handleInstall}
+              onRetry={handleRetry}
+              onCancel={handleCancel}
+              onRequestRemove={requestRemove}
+            />
+          ))}
         </div>
       )}
 
