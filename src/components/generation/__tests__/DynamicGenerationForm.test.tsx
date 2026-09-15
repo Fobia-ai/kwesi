@@ -5,18 +5,24 @@ import { MemoryRouter } from "react-router-dom";
 import { DynamicGenerationForm } from "../DynamicGenerationForm";
 import { getManifest, type ModelManifest } from "../../../data/manifests";
 import { kwesiHardware } from "../../../lib/hardware";
+import type { ArtistProfile } from "../../../lib/artistProfiles";
 
 vi.mock("../../../lib/hardware", () => ({
   kwesiHardware: { gpuVram: vi.fn() },
 }));
 
-function renderForm(installedVariantNames: string[], onSubmit = vi.fn()) {
+const MOCK_PROFILES: ArtistProfile[] = [
+  { id: "artist-1", name: "Test Artist", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
+];
+
+function renderForm(installedVariantNames: string[], onSubmit = vi.fn(), artistProfiles = MOCK_PROFILES) {
   const manifest = getManifest("musicgen")!;
   render(
     <MemoryRouter>
       <DynamicGenerationForm
         manifest={manifest}
         installedVariantNames={installedVariantNames}
+        artistProfiles={artistProfiles}
         onSubmit={onSubmit}
       />
     </MemoryRouter>,
@@ -56,10 +62,38 @@ describe("DynamicGenerationForm", () => {
     };
     render(
       <MemoryRouter>
-        <DynamicGenerationForm manifest={emptyVariantManifest} installedVariantNames={[]} onSubmit={vi.fn()} />
+        <DynamicGenerationForm
+          manifest={emptyVariantManifest}
+          installedVariantNames={[]}
+          artistProfiles={MOCK_PROFILES}
+          onSubmit={vi.fn()}
+        />
       </MemoryRouter>,
     );
     expect(screen.getByText(/No trained model available yet/)).toBeInTheDocument();
+  });
+
+  it("shows a prompt to create an artist profile when none exist yet", () => {
+    renderForm(["small"], vi.fn(), []);
+    expect(screen.getByText(/No artist profiles yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create one in Settings" })).toBeInTheDocument();
+  });
+
+  it("includes the selected artist profile in submitted values", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const profiles: ArtistProfile[] = [
+      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
+      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
+    ];
+    renderForm(["small"], onSubmit, profiles);
+
+    await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+    await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+    await user.selectOptions(screen.getByLabelText(/Artist profile/), "artist-2");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(onSubmit).toHaveBeenCalledWith("small", expect.objectContaining({ artist_profile_id: "artist-2" }));
   });
 
   it("only shows the melody reference field once the melody variant is selected", async () => {

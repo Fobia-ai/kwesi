@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { minVramGbFor, type ManifestInput, type ModelManifest } from "../../data/manifests";
 import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
+import type { ArtistProfile } from "../../lib/artistProfiles";
 import { PillButton } from "../ui/PillButton";
 import { EmptyState } from "../ui/EmptyState";
+import { AvatarImage } from "../ui/AvatarImage";
 import { ModelsIcon } from "../ui/icons";
 
 export type GenerationFormValues = Record<string, unknown>;
@@ -18,6 +20,9 @@ interface DynamicGenerationFormProps {
   // (WorkspaceDetail.tsx derives it from `model_variant` rows where
   // `source === "trained"`), not catalog data.
   extraVariantNames?: string[];
+  // Every generation is required to be attributed to one of these — see
+  // Settings.tsx's Artists tab for where they're managed.
+  artistProfiles: ArtistProfile[];
   disabled?: boolean;
   onSubmit: (checkpointVariant: string | null, values: GenerationFormValues) => void;
 }
@@ -215,6 +220,7 @@ export function DynamicGenerationForm({
   manifest,
   installedVariantNames,
   extraVariantNames,
+  artistProfiles,
   disabled,
   onSubmit,
 }: DynamicGenerationFormProps) {
@@ -228,13 +234,13 @@ export function DynamicGenerationForm({
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
   const [values, setValues] = useState<GenerationFormValues>(() => {
-    // `music_name` is a generic, required field every generation gets
-    // regardless of model — not part of any manifest's `inputs[]` (those are
-    // per-model parameters), so it's seeded here rather than in the loop
-    // below. It's what generations are actually titled by throughout the
-    // app (WorkspaceDetail's list/detail panes), instead of falling back to
-    // truncating whatever the prompt happened to be.
-    const initial: GenerationFormValues = { music_name: "" };
+    // `music_name` and `artist_profile_id` are generic, required fields
+    // every generation gets regardless of model — not part of any
+    // manifest's `inputs[]` (those are per-model parameters), so they're
+    // seeded here rather than in the loop below. music_name is what
+    // generations are actually titled by throughout the app; the profile is
+    // shown alongside it (WorkspaceDetail's list/detail panes).
+    const initial: GenerationFormValues = { music_name: "", artist_profile_id: artistProfiles[0]?.id ?? "" };
     for (const input of manifest.inputs) initial[input.key] = defaultValueFor(input);
     return initial;
   });
@@ -273,9 +279,22 @@ export function DynamicGenerationForm({
     );
   }
 
+  if (artistProfiles.length === 0) {
+    return (
+      <EmptyState
+        icon={<ModelsIcon width={24} height={24} />}
+        title="No artist profiles yet — every generation needs one."
+        action={<PillButton onClick={() => navigate("/settings")}>Create one in Settings</PillButton>}
+      />
+    );
+  }
+
   const shown = visibleInputs(manifest.inputs, selectedVariant);
   const missingMusicName = !String(values.music_name ?? "").trim();
-  const missingRequired = missingMusicName || shown.some((input) => !isSatisfied(input, values[input.key]));
+  const missingArtistProfile = !String(values.artist_profile_id ?? "").trim();
+  const missingRequired =
+    missingMusicName || missingArtistProfile || shown.some((input) => !isSatisfied(input, values[input.key]));
+  const selectedArtistProfile = artistProfiles.find((p) => p.id === values.artist_profile_id) ?? null;
   const requiredVramGb = minVramGbFor(manifest, selectedVariant || null);
   const hardwareGate = evaluateHardwareGate(manifest, requiredVramGb, gpu);
 
@@ -294,6 +313,27 @@ export function DynamicGenerationForm({
           placeholder="e.g. Midnight Drive"
           className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
         />
+      </label>
+
+      <label className="flex flex-col gap-1.5 text-sm">
+        Artist profile
+        <span className="text-red-500"> *</span>
+        <div className="flex items-center gap-2">
+          {selectedArtistProfile && (
+            <AvatarImage avatarPath={selectedArtistProfile.avatarPath} name={selectedArtistProfile.name} size={28} />
+          )}
+          <select
+            value={(values.artist_profile_id as string) ?? ""}
+            onChange={(e) => setValue("artist_profile_id", e.target.value)}
+            className="kwesi-glass min-w-0 flex-1 rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          >
+            {artistProfiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </label>
 
       {usableVariants.length > 0 && (

@@ -76,6 +76,23 @@ CREATE TABLE IF NOT EXISTS profile (
   avatar_path TEXT
 );
 
+-- An artist profile is a persona generations get attributed to (name +
+-- optional bio/avatar) -- distinct from the single local "profile" row
+-- above, which is the app user's own account-free identity. Multiple
+-- artist profiles can exist; a generation references one by id, stored in
+-- its own input_params JSON (input_params.artist_profile_id) rather than a
+-- dedicated generation column, the same way music_name lives there --
+-- avoids a generation-table migration for a field that's pure display
+-- metadata, not something any job/server logic reads.
+CREATE TABLE IF NOT EXISTS artist_profile (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  bio TEXT,
+  avatar_path TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS training_run (
   id TEXT PRIMARY KEY,
   model_id TEXT NOT NULL REFERENCES model(id),

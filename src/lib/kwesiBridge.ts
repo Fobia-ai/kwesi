@@ -111,6 +111,36 @@ declare global {
         get: () => Promise<{ display_name: string | null; email: string | null; avatar_path: string | null }>;
         save: (displayName: string | null, email: string | null) => Promise<void>;
       };
+      artistProfiles: {
+        list: () => Promise<
+          Array<{
+            id: string;
+            name: string;
+            bio: string | null;
+            avatar_path: string | null;
+            created_at: number;
+            updated_at: number;
+          }>
+        >;
+        create: (
+          name: string,
+          bio: string | null,
+        ) => Promise<{
+          id: string;
+          name: string;
+          bio: string | null;
+          avatar_path: string | null;
+          created_at: number;
+          updated_at: number;
+        }>;
+        update: (id: string, name: string, bio: string | null) => Promise<void>;
+        delete: (id: string) => Promise<void>;
+        setAvatar: (id: string, sourcePath: string) => Promise<{ ok: boolean; avatarPath?: string; reason?: string }>;
+        removeAvatar: (id: string) => Promise<void>;
+        readAvatar: (
+          avatarPath: string,
+        ) => Promise<{ ok: boolean; bytes?: Uint8Array; mimeType?: string; reason?: string }>;
+      };
       crashLog: {
         report: (
           kind: "window-error" | "unhandledrejection",

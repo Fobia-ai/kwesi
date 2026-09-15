@@ -4,14 +4,16 @@ import { GitHubIcon } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
+import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { useAppLock } from "../components/security/AppLock";
 import { PillButton } from "../components/ui/PillButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Modal } from "../components/ui/Modal";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { PageHeader } from "../components/ui/PageHeader";
+import { AvatarImage } from "../components/ui/AvatarImage";
 
-const TABS = ["Profile", "General", "Generation", "Models in use", "Security", "About"] as const;
+const TABS = ["Profile", "Artists", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
 
 function ProfileTab() {
@@ -61,6 +63,239 @@ function ProfileTab() {
         </PillButton>
         {status && <span className="text-xs text-ink-muted">{status}</span>}
       </div>
+    </div>
+  );
+}
+
+// Same real-path-or-nothing pattern DynamicGenerationForm.tsx and
+// Training.tsx each already have their own copy of — small enough (and
+// specific enough per call site) that this app duplicates it rather than
+// sharing one helper across three files.
+function resolveUploadedFilePath(file: File | undefined): string {
+  if (!file) return "";
+  const realPath = window.kwesi?.getFilePathForUpload(file);
+  return realPath && realPath.length > 0 ? realPath : "";
+}
+
+/**
+ * Handles both create and edit. Avatar upload only appears in edit mode —
+ * setAvatar needs a real profile id to attach the file to, and creating one
+ * as a side effect of picking a file (before the user has even confirmed
+ * the name) would leave an orphaned profile+avatar behind if they cancel.
+ * Create is name+bio only; add a photo afterward via Edit.
+ */
+function ArtistProfileFormModal({
+  profile,
+  onClose,
+  onSaved,
+}: {
+  profile: ArtistProfile | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(profile?.name ?? "");
+  const [bio, setBio] = useState(profile?.bio ?? "");
+  const [avatarPath, setAvatarPath] = useState(profile?.avatarPath ?? null);
+  const [saving, setSaving] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  async function handlePickAvatar(file: File | undefined) {
+    if (!profile) return;
+    const sourcePath = resolveUploadedFilePath(file);
+    if (!sourcePath) {
+      setAvatarError("Couldn't resolve a real path for that file.");
+      return;
+    }
+    setAvatarBusy(true);
+    setAvatarError(null);
+    const result = await kwesiArtistProfiles.setAvatar(profile.id, sourcePath);
+    setAvatarBusy(false);
+    if (!result.ok) {
+      setAvatarError(result.reason ?? "Couldn't set that image.");
+      return;
+    }
+    setAvatarPath(result.avatarPath ?? null);
+    onSaved();
+  }
+
+  async function handleRemoveAvatar() {
+    if (!profile) return;
+    setAvatarBusy(true);
+    await kwesiArtistProfiles.removeAvatar(profile.id);
+    setAvatarBusy(false);
+    setAvatarPath(null);
+    onSaved();
+  }
+
+  async function handleSave() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      if (profile) {
+        await kwesiArtistProfiles.update(profile.id, name.trim(), bio.trim() || null);
+      } else {
+        await kwesiArtistProfiles.create(name.trim(), bio.trim() || null);
+      }
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={profile ? "Edit artist profile" : "New artist profile"} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        {profile && (
+          <div className="flex items-center gap-3">
+            <AvatarImage avatarPath={avatarPath} name={name || "?"} size={56} />
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-2">
+                <label className="cursor-pointer text-xs text-accent hover:underline">
+                  {avatarPath ? "Change photo" : "Add photo"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    disabled={avatarBusy}
+                    onChange={(e) => {
+                      void handlePickAvatar(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {avatarPath && (
+                  <button
+                    type="button"
+                    disabled={avatarBusy}
+                    onClick={handleRemoveAvatar}
+                    className="text-xs text-ink-muted hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {avatarError && <p className="text-xs text-red-600">{avatarError}</p>}
+            </div>
+          </div>
+        )}
+
+        <label className="flex flex-col gap-1.5 text-sm">
+          Name
+          <span className="text-red-500"> *</span>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Midnight Muse"
+            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          Bio <span className="text-ink-muted">(optional)</span>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={3}
+            placeholder="A short description of this artist persona"
+            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          />
+        </label>
+
+        <div className="mt-2 flex justify-end gap-2">
+          <PillButton variant="ghost" onClick={onClose}>
+            Cancel
+          </PillButton>
+          <PillButton disabled={!name.trim() || saving} onClick={handleSave}>
+            {profile ? "Save" : "Create"}
+          </PillButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ArtistsTab() {
+  const [profiles, setProfiles] = useState<ArtistProfile[] | null>(null);
+  const [showForm, setShowForm] = useState<"new" | ArtistProfile | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ArtistProfile | null>(null);
+
+  async function refresh() {
+    setProfiles(await kwesiArtistProfiles.list());
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleDelete() {
+    if (!pendingDelete) return;
+    await kwesiArtistProfiles.delete(pendingDelete.id);
+    setPendingDelete(null);
+    refresh();
+  }
+
+  return (
+    <div className="flex max-w-lg flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-ink-muted">
+          Personas generations can be attributed to — pick one when creating a generation.
+        </p>
+        <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => setShowForm("new")}>
+          + New Profile
+        </PillButton>
+      </div>
+
+      {profiles === null ? null : profiles.length === 0 ? (
+        <p className="rounded-[10px] bg-ink/[0.04] px-3 py-2.5 text-xs text-ink-muted">
+          No artist profiles yet — create one to start attributing generations to it.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {profiles.map((profile) => (
+            <li
+              key={profile.id}
+              className="flex items-center gap-3 rounded-[10px] bg-ink/[0.03] px-3 py-2.5"
+            >
+              <AvatarImage avatarPath={profile.avatarPath} name={profile.name} size={36} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{profile.name}</p>
+                {profile.bio && <p className="truncate text-xs text-ink-muted">{profile.bio}</p>}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => setShowForm(profile)}>
+                  Edit
+                </PillButton>
+                <button
+                  onClick={() => setPendingDelete(profile)}
+                  className="rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600"
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showForm && (
+        <ArtistProfileFormModal
+          profile={showForm === "new" ? null : showForm}
+          onClose={() => setShowForm(null)}
+          onSaved={refresh}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete "${pendingDelete.name}"?`}
+          description="Generations already attributed to this profile will show it as removed rather than being deleted themselves."
+          confirmLabel="Delete"
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={handleDelete}
+        />
+      )}
     </div>
   );
 }
@@ -252,6 +487,7 @@ export function SettingsScreen() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
       {tab === "Profile" && <ProfileTab />}
+      {tab === "Artists" && <ArtistsTab />}
       {tab === "Security" && <SecurityTab />}
 
       {tab === "About" && (

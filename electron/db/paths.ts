@@ -6,6 +6,7 @@ let modelsRoot = "";
 let venvsRoot = "";
 let logsRoot = "";
 let trainedModelsRoot = "";
+let artistAvatarsRoot = "";
 
 export function initPaths(kwesiWorkspacesDir: string) {
   workspacesRoot = kwesiWorkspacesDir;
@@ -33,6 +34,11 @@ export function initTrainedModelsPaths(kwesiTrainedModelsDirEnv: string) {
   trainedModelsRoot = kwesiTrainedModelsDirEnv;
 }
 
+export function initArtistAvatarsPaths(kwesiArtistAvatarsDirEnv: string) {
+  artistAvatarsRoot = kwesiArtistAvatarsDirEnv;
+  ensureDir(artistAvatarsRoot);
+}
+
 export function modelsRootDir(): string {
   return modelsRoot;
 }
@@ -47,6 +53,14 @@ export function venvsRootDir(): string {
 
 export function logsRootDir(): string {
   return logsRoot;
+}
+
+export function artistAvatarsRootDir(): string {
+  return artistAvatarsRoot;
+}
+
+export function artistAvatarPath(profileId: string, ext: string): string {
+  return path.join(artistAvatarsRoot, `${profileId}${ext}`);
 }
 
 export function venvDir(modelId: string): string {

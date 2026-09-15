@@ -10,6 +10,7 @@ import {
   initVenvsPaths,
   initLogsPaths,
   initTrainedModelsPaths,
+  initArtistAvatarsPaths,
 } from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
 import { registerModelsIpcHandlers } from "./ipc/models.js";
@@ -19,6 +20,7 @@ import { registerHardwareIpcHandlers } from "./ipc/hardware.js";
 import { registerTrainingIpcHandlers } from "./ipc/training.js";
 import { registerSecurityIpcHandlers } from "./ipc/security.js";
 import { registerProfileIpcHandlers } from "./ipc/profile.js";
+import { registerArtistProfilesIpcHandlers } from "./ipc/artistProfiles.js";
 import { registerCrashLogIpcHandlers } from "./ipc/crashLog.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
@@ -46,6 +48,7 @@ initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
+initArtistAvatarsPaths(kwesiEnv.KWESI_ARTIST_AVATARS_DIR);
 
 // Phase 13: local-only crash/error log (KWESI_LOGS_DIR/crashes.log) -- see
 // electron/logging/crashLog.ts. Installed as early as possible so nothing
@@ -60,6 +63,7 @@ registerHardwareIpcHandlers();
 registerTrainingIpcHandlers();
 registerSecurityIpcHandlers(kwesiEnv.KWESI_LOCK_IDLE_TIMEOUT_MINUTES);
 registerProfileIpcHandlers();
+registerArtistProfilesIpcHandlers();
 registerCrashLogIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the

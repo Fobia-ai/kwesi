@@ -15,6 +15,7 @@ export interface KwesiEnv {
   KWESI_CACHE_DIR: string;
   KWESI_LOGS_DIR: string;
   KWESI_TRAINED_MODELS_DIR: string;
+  KWESI_ARTIST_AVATARS_DIR: string;
   KWESI_MODEL_SERVER_PORT_RANGE: string;
   KWESI_LOCK_IDLE_TIMEOUT_MINUTES: number;
 }
@@ -34,6 +35,8 @@ export function resolveKwesiEnv(userDataDir: string, musicDir: string): KwesiEnv
     KWESI_LOGS_DIR: process.env.KWESI_LOGS_DIR || path.join(home, "logs"),
     KWESI_TRAINED_MODELS_DIR:
       process.env.KWESI_TRAINED_MODELS_DIR || path.join(modelsDir, "custom"),
+    KWESI_ARTIST_AVATARS_DIR:
+      process.env.KWESI_ARTIST_AVATARS_DIR || path.join(home, "artist-avatars"),
     KWESI_MODEL_SERVER_PORT_RANGE: process.env.KWESI_MODEL_SERVER_PORT_RANGE || "17600-17999",
     KWESI_LOCK_IDLE_TIMEOUT_MINUTES: Number(process.env.KWESI_LOCK_IDLE_TIMEOUT_MINUTES ?? 10),
   };

@@ -17,6 +17,8 @@ import {
 } from "../lib/db";
 import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
+import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
+import { AvatarImage } from "../components/ui/AvatarImage";
 import { getManifest, outputKindOf, type ModelManifest } from "../data/manifests";
 import { LICENSE_LABEL } from "../data/catalog";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
@@ -157,12 +159,14 @@ function NewGenerationPanel({
   modelId,
   installedVariantNames,
   extraVariantNames,
+  artistProfiles,
   onClose,
   onSubmit,
 }: {
   modelId: string;
   installedVariantNames: string[];
   extraVariantNames: string[];
+  artistProfiles: ArtistProfile[];
   onClose: () => void;
   onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
 }) {
@@ -174,6 +178,7 @@ function NewGenerationPanel({
           manifest={manifest}
           installedVariantNames={installedVariantNames}
           extraVariantNames={extraVariantNames}
+          artistProfiles={artistProfiles}
           onSubmit={onSubmit}
         />
       ) : (
@@ -253,12 +258,14 @@ function GenerationList({
   onSelect,
   onNew,
   projectName,
+  artistProfiles,
 }: {
   generations: GenerationRow[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   projectName: string;
+  artistProfiles: ArtistProfile[];
 }) {
   return (
     <div className="flex min-h-0 w-60 shrink-0 flex-col border-r border-ink/10 xl:w-[19rem]">
@@ -286,22 +293,27 @@ function GenerationList({
         <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
           {generations.map((generation) => {
             const selected = generation.id === selectedId;
+            const params = parseParams(generation);
+            const artist = artistProfiles.find((p) => p.id === params.artist_profile_id) ?? null;
             return (
               <li key={generation.id}>
                 <button
                   onClick={() => onSelect(generation.id)}
-                  className={`w-full rounded-[10px] px-3 py-2.5 text-left transition-colors duration-150 ${
+                  className={`flex w-full items-start gap-2 rounded-[10px] px-3 py-2.5 text-left transition-colors duration-150 ${
                     selected ? "bg-ink/[0.1]" : "hover:bg-ink/[0.05]"
                   }`}
                 >
-                  <p className={`truncate text-xs ${selected ? "text-ink" : "text-ink-muted"}`}>
-                    {generationTitle(generation)}
-                  </p>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <StatusChip status={generation.status} />
-                    <span className="truncate text-[10px] text-ink-muted">
-                      {formatRelativeTime(generation.created_at)}
-                    </span>
+                  {artist && <AvatarImage avatarPath={artist.avatarPath} name={artist.name} size={22} />}
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-xs ${selected ? "text-ink" : "text-ink-muted"}`}>
+                      {generationTitle(generation)}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <StatusChip status={generation.status} />
+                      <span className="truncate text-[10px] text-ink-muted">
+                        {formatRelativeTime(generation.created_at)}
+                      </span>
+                    </div>
                   </div>
                 </button>
               </li>
@@ -316,7 +328,10 @@ function GenerationList({
 function ParamsGrid({ generation, manifest }: { generation: GenerationRow; manifest: ModelManifest | undefined }) {
   const params = parseParams(generation);
   const rows = Object.entries(params)
-    .filter(([key]) => key !== "music_name" && !PROMPT_KEYS.includes(key) && !LYRICS_KEYS.includes(key))
+    .filter(
+      ([key]) =>
+        key !== "music_name" && key !== "artist_profile_id" && !PROMPT_KEYS.includes(key) && !LYRICS_KEYS.includes(key),
+    )
     .map(([key, value]) => ({
       key,
       label: manifest?.inputs.find((input) => input.key === key)?.label ?? key,
@@ -347,11 +362,13 @@ function GenerationDetail({
   generation,
   projectName,
   modelId,
+  artistProfiles,
   onDelete,
 }: {
   generation: GenerationRow;
   projectName: string;
   modelId: string;
+  artistProfiles: ArtistProfile[];
   onDelete: () => void;
 }) {
   const [progressPct, setProgressPct] = useState(0);
@@ -383,6 +400,7 @@ function GenerationDetail({
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
   const musicName = generationTitle(generation);
+  const artist = artistProfiles.find((p) => p.id === params.artist_profile_id) ?? null;
   const playerTitle =
     typeof params.music_name === "string" && params.music_name.trim()
       ? params.music_name.trim()
@@ -392,9 +410,12 @@ function GenerationDetail({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-ink/10 px-6 py-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">{musicName}</h2>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <div className="flex min-w-0 items-start gap-3">
+          {artist && <AvatarImage avatarPath={artist.avatarPath} name={artist.name} size={40} className="mt-0.5" />}
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold">{musicName}</h2>
+            {artist && <p className="truncate text-xs text-ink-muted">by {artist.name}</p>}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <StatusChip status={generation.status} />
             {generation.checkpoint_variant && <Chip>{generation.checkpoint_variant}</Chip>}
             {done && <LicenseBadge modelId={modelId} />}
@@ -404,6 +425,7 @@ function GenerationDetail({
                 · {(generation.duration_ms / 1000).toFixed(1)}s to generate
               </span>
             )}
+            </div>
           </div>
         </div>
         <button
@@ -491,10 +513,12 @@ function ProjectPane({
   project,
   modelId,
   variants,
+  artistProfiles,
 }: {
   project: ProjectRow;
   modelId: string;
   variants: ModelVariantRow[];
+  artistProfiles: ArtistProfile[];
 }) {
   const [generations, setGenerations] = useState<GenerationRow[] | null>(null);
   const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(null);
@@ -570,6 +594,7 @@ function ProjectPane({
         onSelect={setSelectedGenerationId}
         onNew={() => setShowGenerationPanel(true)}
         projectName={project.name}
+        artistProfiles={artistProfiles}
       />
 
       {selectedGeneration ? (
@@ -578,6 +603,7 @@ function ProjectPane({
           generation={selectedGeneration}
           projectName={project.name}
           modelId={modelId}
+          artistProfiles={artistProfiles}
           onDelete={() => removeGeneration(selectedGeneration.id)}
         />
       ) : (
@@ -597,6 +623,7 @@ function ProjectPane({
           modelId={modelId}
           installedVariantNames={installedVariantNames}
           extraVariantNames={trainedVariantNames}
+          artistProfiles={artistProfiles}
           onClose={() => setShowGenerationPanel(false)}
           onSubmit={submitGeneration}
         />
@@ -612,6 +639,7 @@ export function WorkspaceDetailScreen() {
   const [workspace, setWorkspace] = useState<WorkspaceRow | null>(null);
   const [projects, setProjects] = useState<ProjectRow[] | null>(null);
   const [variants, setVariants] = useState<ModelVariantRow[]>([]);
+  const [artistProfiles, setArtistProfiles] = useState<ArtistProfile[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<ProjectRow | null>(null);
@@ -630,6 +658,10 @@ export function WorkspaceDetailScreen() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
+
+  useEffect(() => {
+    kwesiArtistProfiles.list().then(setArtistProfiles);
+  }, []);
 
   // Keep a project selected whenever one exists — an empty pane next to a
   // populated rail is just dead space.
@@ -694,6 +726,7 @@ export function WorkspaceDetailScreen() {
               project={selectedProject}
               modelId={workspace?.model_id ?? ""}
               variants={variants}
+              artistProfiles={artistProfiles}
             />
           )}
         </GlassPanel>

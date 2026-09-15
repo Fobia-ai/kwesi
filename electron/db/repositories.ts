@@ -583,3 +583,53 @@ export function setSetting(key: string, value: string): void {
 export function deleteSetting(key: string): void {
   getDatabase().prepare("DELETE FROM settings WHERE key = ?").run(key);
 }
+
+// --- Artist profiles ---------------------------------------------------------
+
+export interface ArtistProfileRow {
+  id: string;
+  name: string;
+  bio: string | null;
+  avatar_path: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export function listArtistProfiles(): ArtistProfileRow[] {
+  return getDatabase()
+    .prepare("SELECT * FROM artist_profile ORDER BY name COLLATE NOCASE ASC")
+    .all() as ArtistProfileRow[];
+}
+
+export function getArtistProfile(id: string): ArtistProfileRow | undefined {
+  return getDatabase().prepare("SELECT * FROM artist_profile WHERE id = ?").get(id) as
+    | ArtistProfileRow
+    | undefined;
+}
+
+export function createArtistProfile(name: string, bio: string | null): ArtistProfileRow {
+  const id = randomUUID();
+  const now = Date.now();
+  getDatabase()
+    .prepare(
+      "INSERT INTO artist_profile (id, name, bio, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .run(id, name, bio, now, now);
+  return { id, name, bio, avatar_path: null, created_at: now, updated_at: now };
+}
+
+export function updateArtistProfile(id: string, name: string, bio: string | null): void {
+  getDatabase()
+    .prepare("UPDATE artist_profile SET name = ?, bio = ?, updated_at = ? WHERE id = ?")
+    .run(name, bio, Date.now(), id);
+}
+
+export function setArtistProfileAvatarPath(id: string, avatarPath: string | null): void {
+  getDatabase()
+    .prepare("UPDATE artist_profile SET avatar_path = ?, updated_at = ? WHERE id = ?")
+    .run(avatarPath, Date.now(), id);
+}
+
+export function deleteArtistProfile(id: string): void {
+  getDatabase().prepare("DELETE FROM artist_profile WHERE id = ?").run(id);
+}

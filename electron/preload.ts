@@ -106,6 +106,17 @@ contextBridge.exposeInMainWorld("kwesi", {
     save: (displayName: string | null, email: string | null) =>
       ipcRenderer.invoke("kwesi:profile:save", displayName, email),
   },
+  artistProfiles: {
+    list: () => ipcRenderer.invoke("kwesi:artistProfiles:list"),
+    create: (name: string, bio: string | null) => ipcRenderer.invoke("kwesi:artistProfiles:create", name, bio),
+    update: (id: string, name: string, bio: string | null) =>
+      ipcRenderer.invoke("kwesi:artistProfiles:update", id, name, bio),
+    delete: (id: string) => ipcRenderer.invoke("kwesi:artistProfiles:delete", id),
+    setAvatar: (id: string, sourcePath: string) =>
+      ipcRenderer.invoke("kwesi:artistProfiles:setAvatar", id, sourcePath),
+    removeAvatar: (id: string) => ipcRenderer.invoke("kwesi:artistProfiles:removeAvatar", id),
+    readAvatar: (avatarPath: string) => ipcRenderer.invoke("kwesi:artistProfiles:readAvatar", avatarPath),
+  },
   crashLog: {
     report: (
       kind: "window-error" | "unhandledrejection",
