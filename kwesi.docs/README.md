@@ -25,9 +25,35 @@ into a custom checkpoint usable in any new workspace.
 
 ## Status
 
-- UI reference basis: `referenceImages/` (Voicebox-style app + an Invoke-style Model Manager) for **structural/layout** patterns only — icon rail, card lists, bottom generation bar, chained dropdowns, install queue. The actual **visual skin** is glassmorphic, Apple/iOS-style (translucent blurred panels, light/dark adaptive, one restrained accent color, smooth motion) — see [02-architecture.md](02-architecture.md). More references may be added — re-check this folder before starting Phase 1 in case new images landed.
-- Stack **confirmed**: Electron + React + local Python sidecar servers per model, one isolated venv per model. See [02-architecture.md](02-architecture.md) for the Tauri comparison and rationale.
-- App lock **confirmed**: relaunch + idle-timeout (default 10 min, configurable).
-- All data directories are **environment-variable-driven** with sensible defaults (`KWESI_HOME`, `KWESI_MODELS_DIR`, `KWESI_EXPORTS_DIR`, etc.) — see [02-architecture.md](02-architecture.md).
-- Model catalog is researched and cross-checked against real repos (Sept 2026); a few dependency/output-format details are flagged `NEEDS VERIFICATION` per model and should be re-confirmed against the actual repo at integration time, not just trusted from this doc.
-- No open decisions currently blocking Phase 1.
+Phases 0–11 of 13 are done — see [04-roadmap.md](04-roadmap.md) for the
+precise per-phase/per-model breakdown. In short: the app shell, data layer,
+Model Manager (real Hugging Face downloads), the manifest-driven dynamic
+generation UI, and real local inference are all working end to end for
+MusicGen, MuseCoco, ACE-Step 1.5, and RAVE (Museformer inference is code-
+complete but unverified — blocked on an unconfirmed Triton/CPU-fallback
+question; YuE2 inference is proven standalone but not wired into the app).
+A real training pipeline exists too — RAVE (the pilot), MusicGen, and
+ACE-Step can all be fine-tuned on your own audio for real, with the
+resulting checkpoint immediately usable in a new workspace. Every real
+integration in this project has been independently re-verified (not just
+taken on a build report's word) with actual generated audio/MIDI files,
+checked for validity and non-silence.
+
+Remaining: Phase 12 (local profile + optional app-lock passcode) and
+Phase 13 (packaging/distribution installers) — see
+[04-roadmap.md](04-roadmap.md).
+
+- Stack **confirmed and built**: Electron + React + local Python sidecar
+  servers per model, one isolated venv per model (several models needed
+  more than one venv per model — see each `servers/<model>/README.md` for
+  the real dependency archaeology, since more than one turned out to have
+  version pins narrower than initially assumed).
+- All data directories are **environment-variable-driven** with sensible
+  defaults (`KWESI_HOME`, `KWESI_MODELS_DIR`, `KWESI_EXPORTS_DIR`,
+  `KWESI_VENVS_DIR`, `KWESI_TRAINED_MODELS_DIR`, etc.) — see
+  [02-architecture.md](02-architecture.md).
+- Model catalog was researched against real repos (Sept 2026) and has
+  since been re-verified repeatedly against actual running code during
+  integration — see [03-model-catalog.md](03-model-catalog.md) for what
+  was corrected along the way (e.g. MuseCoco's real param count, ACE-Step's
+  real checkpoint names, RAVE's real pretrained timbre list).

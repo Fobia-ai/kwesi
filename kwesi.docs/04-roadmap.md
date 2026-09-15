@@ -26,7 +26,7 @@ window boots on all three target OSes from source.
 
 ---
 
-## Phase 1 — App Shell & Design System
+## Phase 1 — App Shell & Design System ✅ complete
 **Objective:** the chrome every other screen lives inside, styled to match
 the reference apps' visual language (not their content).
 
@@ -51,7 +51,7 @@ catalog entries and gates correctly; nothing here is model-aware yet.
 
 ---
 
-## Phase 2 — Workspace & Project Data Layer
+## Phase 2 — Workspace & Project Data Layer ✅ complete
 **Objective:** the structural backbone — workspaces, projects, generations —
 with no model execution wired up yet (generations can be created as inert
 placeholder rows to test the hierarchy).
