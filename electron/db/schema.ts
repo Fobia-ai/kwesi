@@ -13,13 +13,27 @@ CREATE TABLE IF NOT EXISTS model (
   venv_path TEXT
 );
 
+-- install_status: not_installed | queued | downloading | installed | failed.
+-- The bytes_*/current_file/error columns track an in-flight (or last-
+-- failed) download's progress -- see electron/models/downloadQueue.ts. A
+-- variant found "queued"/"downloading" with no active job at app startup
+-- (e.g. after a crash) is swept to "failed" in database.ts rather than left
+-- lying silently -- see kwesi.docs/02-architecture.md.
 CREATE TABLE IF NOT EXISTS model_variant (
   id TEXT PRIMARY KEY,
   model_id TEXT NOT NULL REFERENCES model(id),
   variant_name TEXT NOT NULL,
   install_status TEXT NOT NULL DEFAULT 'not_installed',
   install_path TEXT,
-  disk_size_bytes INTEGER
+  disk_size_bytes INTEGER,
+  repo_id TEXT,
+  source TEXT NOT NULL DEFAULT 'huggingface',
+  manual_note TEXT,
+  manual_url TEXT,
+  bytes_downloaded INTEGER,
+  bytes_total INTEGER,
+  current_file TEXT,
+  error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS workspace (
@@ -91,4 +105,5 @@ CREATE TABLE IF NOT EXISTS trained_model (
 CREATE INDEX IF NOT EXISTS idx_project_workspace ON project(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_generation_project ON generation(project_id);
 CREATE INDEX IF NOT EXISTS idx_model_variant_model ON model_variant(model_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_model_variant_unique ON model_variant(model_id, variant_name);
 `;

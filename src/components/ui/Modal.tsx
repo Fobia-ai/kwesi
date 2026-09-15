@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { GlassPanel } from "./GlassPanel";
+import { useEscapeKey } from "../../lib/useEscapeKey";
 
 interface ModalProps {
   title: string;
@@ -8,6 +9,8 @@ interface ModalProps {
 }
 
 export function Modal({ title, onClose, children }: ModalProps) {
+  useEscapeKey(onClose);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"

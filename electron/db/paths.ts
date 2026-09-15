@@ -2,9 +2,22 @@ import path from "node:path";
 import fs from "node:fs";
 
 let workspacesRoot = "";
+let modelsRoot = "";
 
 export function initPaths(kwesiWorkspacesDir: string) {
   workspacesRoot = kwesiWorkspacesDir;
+}
+
+export function initModelsPaths(kwesiModelsDir: string) {
+  modelsRoot = kwesiModelsDir;
+}
+
+export function modelsRootDir(): string {
+  return modelsRoot;
+}
+
+export function modelVariantDir(modelId: string, variantName: string): string {
+  return path.join(modelsRoot, modelId, variantName);
 }
 
 export function workspaceDir(workspaceId: string): string {

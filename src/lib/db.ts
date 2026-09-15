@@ -1,4 +1,5 @@
 import { CATALOG } from "../data/catalog";
+import { listForModel as listMockModelVariants } from "./modelVariantStore";
 
 export interface ModelRow {
   id: string;
@@ -15,6 +16,14 @@ export interface ModelVariantRow {
   install_status: string;
   install_path: string | null;
   disk_size_bytes: number | null;
+  repo_id: string | null;
+  source: string;
+  manual_note: string | null;
+  manual_url: string | null;
+  bytes_downloaded: number | null;
+  bytes_total: number | null;
+  current_file: string | null;
+  error: string | null;
 }
 
 export interface WorkspaceRow {
@@ -117,44 +126,12 @@ function createMockDb(): KwesiDbApi {
     venv_path: null,
   }));
 
-  // Mirrors electron/db/seedModels.ts closely enough to exercise the UI —
-  // doesn't need to be identical verbatim.
-  const MOCK_VARIANT_NAMES: Record<string, string[]> = {
-    "ace-step-1.5": [
-      "acestep-v15-base",
-      "acestep-v15-sft",
-      "acestep-v15-turbo",
-      "acestep-v15-xl-base",
-      "acestep-v15-xl-sft",
-      "acestep-v15-xl-turbo",
-      "acestep-5hz-lm-0.6b",
-      "acestep-5hz-lm-4b",
-    ],
-    yue2: ["yue2-3b", "yue2-vae", "yue2-vae-legacy"],
-    musicgen: ["small", "medium", "large", "melody", "style"],
-    musecoco: ["default"],
-    museformer: ["default"],
-    rave: [],
-  };
-
-  const modelVariants: ModelVariantRow[] = Object.entries(MOCK_VARIANT_NAMES).flatMap(
-    ([modelId, variantNames]) =>
-      variantNames.map((variantName) => ({
-        id: `${modelId}:${variantName}`,
-        model_id: modelId,
-        variant_name: variantName,
-        install_status: "not_installed",
-        install_path: null,
-        disk_size_bytes: null,
-      })),
-  );
-
   return {
     async listModels() {
       return models;
     },
     async listModelVariants(modelId) {
-      return modelVariants.filter((v) => v.model_id === modelId);
+      return listMockModelVariants(modelId);
     },
     async listWorkspaces() {
       return load().workspaces.sort((a, b) => b.created_at - a.created_at);

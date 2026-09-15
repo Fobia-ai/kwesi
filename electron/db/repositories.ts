@@ -19,6 +19,18 @@ export interface ModelVariantRow {
   install_status: string;
   install_path: string | null;
   disk_size_bytes: number | null;
+  repo_id: string | null;
+  source: string;
+  manual_note: string | null;
+  manual_url: string | null;
+  bytes_downloaded: number | null;
+  bytes_total: number | null;
+  current_file: string | null;
+  error: string | null;
+}
+
+export interface QueueRow extends ModelVariantRow {
+  model_display_name: string;
 }
 
 export interface WorkspaceRow {
@@ -180,4 +192,93 @@ export function deleteGeneration(id: string, deleteFiles: boolean): void {
   if (deleteFiles && generation) {
     removeDirIfExists(generationDir(generation.workspace_id, generation.project_id, id));
   }
+}
+
+// --- Phase 3: Model Manager install lifecycle ------------------------------
+// Additions only — the functions above this line are Phase 2 and untouched.
+
+export function getModelVariant(modelId: string, variantName: string): ModelVariantRow | undefined {
+  return getDatabase()
+    .prepare("SELECT * FROM model_variant WHERE model_id = ? AND variant_name = ?")
+    .get(modelId, variantName) as ModelVariantRow | undefined;
+}
+
+export function getModelVariantById(id: string): ModelVariantRow | undefined {
+  return getDatabase().prepare("SELECT * FROM model_variant WHERE id = ?").get(id) as
+    | ModelVariantRow
+    | undefined;
+}
+
+/** Every model+variant currently queued, downloading, or failed — drives the Install Queue panel. */
+export function listInstallQueue(): QueueRow[] {
+  return getDatabase()
+    .prepare(
+      `SELECT v.*, m.display_name AS model_display_name
+       FROM model_variant v JOIN model m ON m.id = v.model_id
+       WHERE v.install_status IN ('queued', 'downloading', 'failed')
+       ORDER BY v.variant_name`,
+    )
+    .all() as QueueRow[];
+}
+
+/** Workspaces bound to a model family — used to warn (not block) on variant removal. */
+export function listWorkspacesUsingModel(modelId: string): { id: string; name: string }[] {
+  return getDatabase()
+    .prepare("SELECT id, name FROM workspace WHERE model_id = ? ORDER BY name")
+    .all(modelId) as { id: string; name: string }[];
+}
+
+export function setVariantQueued(id: string): void {
+  getDatabase()
+    .prepare(
+      `UPDATE model_variant SET install_status = 'queued', error = NULL,
+       bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL WHERE id = ?`,
+    )
+    .run(id);
+}
+
+export function setVariantDownloading(id: string): void {
+  getDatabase()
+    .prepare("UPDATE model_variant SET install_status = 'downloading', error = NULL WHERE id = ?")
+    .run(id);
+}
+
+export function updateVariantProgress(
+  id: string,
+  bytesDownloaded: number,
+  bytesTotal: number | null,
+  currentFile: string,
+): void {
+  getDatabase()
+    .prepare(
+      "UPDATE model_variant SET bytes_downloaded = ?, bytes_total = ?, current_file = ? WHERE id = ?",
+    )
+    .run(bytesDownloaded, bytesTotal, currentFile, id);
+}
+
+export function setVariantInstalled(id: string, installPath: string, diskSizeBytes: number): void {
+  getDatabase()
+    .prepare(
+      `UPDATE model_variant SET install_status = 'installed', install_path = ?, disk_size_bytes = ?,
+       bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL, error = NULL WHERE id = ?`,
+    )
+    .run(installPath, diskSizeBytes, id);
+}
+
+export function setVariantFailed(id: string, error: string): void {
+  getDatabase()
+    .prepare(
+      `UPDATE model_variant SET install_status = 'failed', error = ?,
+       bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL WHERE id = ?`,
+    )
+    .run(error, id);
+}
+
+export function resetVariantToNotInstalled(id: string): void {
+  getDatabase()
+    .prepare(
+      `UPDATE model_variant SET install_status = 'not_installed', install_path = NULL, disk_size_bytes = NULL,
+       bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL, error = NULL WHERE id = ?`,
+    )
+    .run(id);
 }

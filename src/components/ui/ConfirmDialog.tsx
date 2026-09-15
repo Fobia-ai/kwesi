@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PillButton } from "./PillButton";
 import { GlassPanel } from "./GlassPanel";
+import { useEscapeKey } from "../../lib/useEscapeKey";
 
 interface ConfirmDialogProps {
   title: string;
@@ -19,6 +20,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  useEscapeKey(onCancel);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
       <GlassPanel strong radius="panel" className="w-full max-w-sm p-5">

@@ -3,8 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveKwesiEnv } from "./kwesiEnv.js";
 import { openDatabase } from "./db/database.js";
-import { initPaths } from "./db/paths.js";
+import { initPaths, initModelsPaths } from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
+import { registerModelsIpcHandlers } from "./ipc/models.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
@@ -16,7 +17,9 @@ const kwesiEnv = resolveKwesiEnv(app.getPath("userData"), app.getPath("music"));
 
 openDatabase(kwesiEnv.KWESI_DB_PATH);
 initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
+initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
 registerDbIpcHandlers();
+registerModelsIpcHandlers();
 
 let mainWindow: BrowserWindow | null = null;
 

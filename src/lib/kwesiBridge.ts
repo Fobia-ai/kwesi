@@ -21,6 +21,16 @@ declare global {
         ) => Promise<GenerationRow>;
         deleteGeneration: (id: string, deleteFiles: boolean) => Promise<void>;
       };
+      models: {
+        install: (modelId: string, variantName: string) => Promise<{ ok: boolean; reason?: string }>;
+        retry: (modelId: string, variantName: string) => Promise<{ ok: boolean; reason?: string }>;
+        cancel: (variantId: string) => Promise<boolean>;
+        remove: (modelId: string, variantName: string) => Promise<{ ok: boolean; reason?: string }>;
+        listQueue: () => Promise<(ModelVariantRow & { model_display_name: string })[]>;
+        workspacesUsingModel: (modelId: string) => Promise<{ id: string; name: string }[]>;
+        diskFreeBytes: () => Promise<number | null>;
+        onProgress: (callback: (event: unknown) => void) => () => void;
+      };
     };
   }
 }

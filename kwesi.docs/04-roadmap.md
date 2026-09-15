@@ -72,24 +72,58 @@ level with correct cascade behavior, no data orphaned on disk silently.
 
 ---
 
-## Phase 3 — Model Manager Core
+## Phase 3 — Model Manager Core ✅ complete
 **Objective:** browse, download, install, and remove models — modeled on
 the Invoke reference screenshot's two-pane layout.
 
-- Model catalog list (left pane) sourced from the manifests in
-  [03-model-catalog.md](03-model-catalog.md); each row shows install
-  status, license-tier badge, disk footprint.
-- Add/download flow (right pane): resumable download with progress, into
-  the model's own folder + venv creation kicked off after download.
-- Install Queue view (matches the reference's bottom table): status per
-  in-flight install, retry on failure.
-- Remove-model flow: deletes weights + venv from disk, blocks removal (or
-  warns clearly) if a workspace is currently bound to that model.
-- Disk space pre-check before starting a download.
+- Model catalog list sourced from the manifests in
+  [03-model-catalog.md](03-model-catalog.md) (one card per model family,
+  variants listed within, per the actual "What to build" spec used to
+  implement this phase rather than a literal two-pane/bottom-table
+  layout); each variant row shows install status, and disk footprint once
+  installed. `electron/db/seedModels.ts` (mirrored for the browser-preview
+  mock in `src/data/modelVariants.ts`) carries the real, HF-verified
+  `repo_id`/`source` per variant transcribed from `scripts/download_models.py`.
+- Download flow: real Hugging Face downloads from the Electron main
+  process (`electron/models/hfClient.ts` + `downloadQueue.ts`) — no
+  `huggingface_hub`/Python dependency, just the public HF model API +
+  `fetch`, streamed straight to `KWESI_MODELS_DIR/<model_id>/<variant>/`.
+  Progress (bytes downloaded/total, current file) is relayed to the
+  renderer over a plain IPC event channel rather than SSE, since this is
+  same-process IPC, not a separate local server (see
+  [02-architecture.md](02-architecture.md), which has been updated to
+  match). No Hugging Face account/token needed — every catalog repo used
+  is confirmed public.
+- Install Queue: a DB-backed view (any variant `queued`/`downloading`/
+  `failed`) with progress bars, cancel, and retry — not a separate
+  in-memory-only concept, so it survives a page reload correctly. Venv
+  creation is **not yet wired up** here — that lands with Phase 4/5's
+  Model Server Manager, since Phase 3 explicitly only needed to prove the
+  install lifecycle, not execution.
+- Remove-variant flow: deletes the variant's files and resets its DB row;
+  warns (never blocks) if a workspace is bound to the model family, naming
+  it, since a workspace isn't tied to one specific variant.
+- Disk space pre-check via `fs.promises.statfs` before a download starts;
+  if the check itself is unavailable/fails, the download proceeds rather
+  than being silently blocked.
 
-**Exit criteria:** can download, see progress, install, and remove at least
-one real model's weights end-to-end (doesn't need to run yet — just
-install lifecycle).
+**Simplifications made (v1, noted as acceptable scope calls):**
+- **No true resumable range-request downloads.** A retry (or a fresh
+  install after a cancel/crash) restarts the variant's folder from scratch
+  rather than resuming from a byte offset. Real resume would need
+  per-file byte offsets persisted across restarts and reconciled against
+  Hugging Face's ETags — meaningfully more scope than a first cut of the
+  install queue needs.
+- **No venv creation kicked off after download** — that's Phase 4/5's
+  concern (Model Server Manager + per-model venvs), not duplicated here.
+- Two variants (Museformer's `default`, RAVE's `pretrained-examples`) are
+  not downloadable from the app at all — both are shown as disabled rows
+  with a pointer link to their real (non-Hugging-Face) location, matching
+  `scripts/download_models.py`'s own skip behavior.
+
+**Exit criteria:** can download, see progress, install, and remove real
+model weights end-to-end (MusicGen and 13 other Hugging-Face-backed
+variants) — install lifecycle only, doesn't run yet.
 
 ---
 

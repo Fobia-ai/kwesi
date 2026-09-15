@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 contextBridge.exposeInMainWorld("kwesi", {
   openExternal: (url: string) => ipcRenderer.invoke("kwesi:open-external", url),
@@ -23,5 +23,23 @@ contextBridge.exposeInMainWorld("kwesi", {
       ipcRenderer.invoke("kwesi:db:generations:createPlaceholder", projectId, checkpointVariant),
     deleteGeneration: (id: string, deleteFiles: boolean) =>
       ipcRenderer.invoke("kwesi:db:generations:delete", id, deleteFiles),
+  },
+  models: {
+    install: (modelId: string, variantName: string) =>
+      ipcRenderer.invoke("kwesi:models:install", modelId, variantName),
+    retry: (modelId: string, variantName: string) =>
+      ipcRenderer.invoke("kwesi:models:retry", modelId, variantName),
+    cancel: (variantId: string) => ipcRenderer.invoke("kwesi:models:cancel", variantId),
+    remove: (modelId: string, variantName: string) =>
+      ipcRenderer.invoke("kwesi:models:remove", modelId, variantName),
+    listQueue: () => ipcRenderer.invoke("kwesi:models:queue:list"),
+    workspacesUsingModel: (modelId: string) =>
+      ipcRenderer.invoke("kwesi:models:workspacesUsingModel", modelId),
+    diskFreeBytes: () => ipcRenderer.invoke("kwesi:models:diskFreeBytes"),
+    onProgress: (callback: (event: unknown) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("kwesi:models:progress", listener);
+      return () => ipcRenderer.removeListener("kwesi:models:progress", listener);
+    },
   },
 });

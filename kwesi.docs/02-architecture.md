@@ -12,7 +12,7 @@
 | Local database | SQLite via `better-sqlite3`, or Prisma over SQLite | Workspaces, projects, generations, model registry, settings. All local, no server. |
 | Model execution | Per-model **local Python subprocess server** (FastAPI), one isolated **virtual environment per model** | Directly required by the research: YuE2's own sub-components need mutually incompatible Transformers versions (4.57.6 vs 4.45.2 vs 4.53.2), and MuseCoco pins PyTorch 1.11 against ACE-Step's modern PyTorch. A single shared Python env cannot satisfy all models at once — process + venv isolation per model is not optional, it's forced by the model set itself. |
 | IPC between shell and model servers | Local HTTP + Server-Sent Events (progress/streaming) on `localhost:<port>` per running model server | Mirrors the exact pattern visible in the Voicebox reference Settings screen: `Server URL: http://localhost:17493` with an `Online` status pill. Reuse that proven pattern rather than inventing custom IPC. |
-| Model weight downloads | Resumable HTTP downloads from Hugging Face Hub / GitHub releases, checksum-verified, tracked in an install queue table | Matches the Invoke reference's Install Queue UI. |
+| Model weight downloads | HTTP downloads from the Hugging Face Hub's public API/CDN (Node `fetch`, no `huggingface_hub`/Python dependency), tracked via `model_variant`'s install-state columns rather than a separate table (see "Data model" below) | Matches the Invoke reference's Install Queue UI. **Implementation note (Phase 3):** not truly resumable in v1 — a retry restarts a variant's files from scratch rather than resuming from a byte offset; no checksum verification yet. Both are acceptable v1 simplifications, not the target end state. |
 
 ## App shell layout (from the reference screenshots)
 
@@ -148,8 +148,17 @@ model
 
 model_variant
   id, model_id (fk -> model), variant_name,
-  install_status (not_installed|downloading|installed),
-  install_path, disk_size_bytes
+  install_status (not_installed|queued|downloading|installed|failed),
+  install_path, disk_size_bytes,
+  repo_id, source (huggingface|manual), manual_note, manual_url,
+  -- bytes_downloaded/bytes_total/current_file/error track an in-flight (or
+  -- last-failed) download's progress -- Phase 3 keeps this on the variant
+  -- row itself rather than a separate download_job table, since exactly
+  -- one queue position is ever active per variant. A variant found
+  -- queued/downloading with no active job at startup (crash/quit
+  -- mid-download) is swept to failed rather than left lying -- see
+  -- "Model weight downloads" below.
+  bytes_downloaded, bytes_total, current_file, error
 
 settings
   key, value   -- app lock passcode hash, storage locations, theme, etc.
