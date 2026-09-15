@@ -74,8 +74,8 @@ list). Findings, and what changed in `src/data/manifests.ts` as a result
 
 | Attribute | Real encoding | Manifest field |
 |---|---|---|
-| `I1s2` | 28 instrument categories, each independently yes/no/NA (multi-hot) | `instrument` (tags, matched against the 28 category words) |
-| `S4` | 24 genre categories, each independently yes/no/NA (multi-hot) | `genre` (tags, same treatment) |
+| `I1s2` | 28 instrument categories, each independently yes/no/NA (multi-hot) | `instrument` (tags, matched against the 28 category words -- **known bug**, see below) |
+| `S4` | 22 genre categories, each independently yes/no/NA (multi-hot) — corrected from this table's earlier "24" | `genre` (multiselect against the real 22-value vocabulary — was `tags`, see below) |
 | `EM1` | Russell 4-quadrant mood (Q1-Q4) + NA | `mood` (select, was free-text tags) |
 | `K1` | major / minor / NA only -- no specific tonic | `key_signature` (select: Major/Minor, was C major/G major/etc.) |
 | `TS1s1` | exactly `(4,4) (2,4) (3,4) (1,4) (6,8) (3,8) other NA` | `time_signature` (select, added 1/4 and 3/8) |
@@ -90,6 +90,25 @@ NA -- they exist in the model's attribute vocabulary but nothing in the
 catalog doc's original MuseCoco spec called for them, and NA is a
 first-class, fully-supported value for every attribute (this is how the
 model was trained to handle partial specification).
+
+**A real bug, found while wiring artist-profile genres into the generation
+form**: `match_categories()` (`server.py`) does
+`{str(t).strip().lower()... for t in tags}` -- it expects `tags` to already
+be a list, and iterates whatever it's given. The manual curl example further
+down this README has always sent `"genre":["classical"]` (a real JSON
+array), matching the server's actual contract -- but the app's own
+`DynamicGenerationForm` rendered `genre` as a `"tags"` input (one
+comma-separated text field), so `values.genre` was a plain *string* like
+`"pop, jazz"`. Iterating a Python string yields characters, not words, so
+every real generation through the app was silently matching zero genre
+categories no matter what was typed. Fixed by making `genre` a real
+`"multiselect"` manifest input (`src/data/manifests.ts`) backed by the exact
+22-value vocabulary above, sent as a proper array — verified via `debug`
+button-state assertions and a real generation through the app (not just
+that it renders): see `kwesi.docs/03-model-catalog.md`'s MuseCoco entry.
+`instrument` has the identical bug and is still open -- flagged as a
+separate follow-up rather than fixed here, since today's change was scoped
+to genre.
 
 ## Why `prefix_tokens` is required (the actual bug hunted down in Phase 7)
 

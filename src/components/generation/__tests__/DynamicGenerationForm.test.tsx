@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { DynamicGenerationForm } from "../DynamicGenerationForm";
@@ -23,8 +23,13 @@ const MOCK_PROFILES: ArtistProfile[] = [
   },
 ];
 
-function renderForm(installedVariantNames: string[], onSubmit = vi.fn(), artistProfiles = MOCK_PROFILES) {
-  const manifest = getManifest("musicgen")!;
+function renderForm(
+  installedVariantNames: string[],
+  onSubmit = vi.fn(),
+  artistProfiles = MOCK_PROFILES,
+  modelId = "musicgen",
+) {
+  const manifest = getManifest(modelId)!;
   render(
     <MemoryRouter>
       <DynamicGenerationForm
@@ -221,5 +226,58 @@ describe("DynamicGenerationForm", () => {
     renderForm(["small"]);
     await waitFor(() => expect(kwesiHardware.gpuVram).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  describe("model genre field", () => {
+    // MuseCoco has two genre-shaped pickers on screen at once: the generic
+    // "Genres for this track" (artist-catalog strings) and MuseCoco's own
+    // fixed-vocabulary field — both can contain a button named "Electronic",
+    // so these tests scope queries to MuseCoco's own <fieldset> (accessible
+    // name "Genre", its <legend>) rather than querying the whole screen.
+    function museCocoGenreGroup() {
+      return within(screen.getByRole("group", { name: "Genre" }));
+    }
+
+    it("pre-checks MuseCoco's genre options that map from the artist's genres", () => {
+      renderForm(["default"], vi.fn(), MOCK_PROFILES, "musecoco");
+      // MOCK_PROFILES' artist has ["Pop", "Electronic"] -- "Pop / Rock" maps
+      // from "Pop", "Electronic" maps from "Electronic"; "New Age" has no
+      // app-genre equivalent and should stay unchecked.
+      const group = museCocoGenreGroup();
+      expect(group.getByRole("button", { name: "Pop / Rock", pressed: true })).toBeInTheDocument();
+      expect(group.getByRole("button", { name: "Electronic", pressed: true })).toBeInTheDocument();
+      expect(group.getByRole("button", { name: "New Age", pressed: false })).toBeInTheDocument();
+    });
+
+    it("lets the user add a MuseCoco-only genre with no app-genre equivalent and submits the real server tokens", async () => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderForm(["default"], onSubmit, MOCK_PROFILES, "musecoco");
+
+      await user.click(museCocoGenreGroup().getByRole("button", { name: "New Age" }));
+      await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({ genre: expect.arrayContaining(["pop_rock", "electronic", "new_age"]) }),
+      );
+    });
+
+    it("pre-fills ACE-Step's free-text genre tags from the artist's genres", () => {
+      renderForm(["acestep-v15-base"], vi.fn(), MOCK_PROFILES, "ace-step-1.5");
+      expect(screen.getByLabelText(/Genre tags/)).toHaveValue("Pop, Electronic");
+    });
+
+    it("doesn't clobber a manually-edited genre field just from re-rendering", async () => {
+      const user = userEvent.setup();
+      renderForm(["acestep-v15-base"], vi.fn(), MOCK_PROFILES, "ace-step-1.5");
+
+      const genreInput = screen.getByLabelText(/Genre tags/);
+      await user.clear(genreInput);
+      await user.type(genreInput, "Custom genre text");
+
+      expect(genreInput).toHaveValue("Custom genre text");
+    });
   });
 });

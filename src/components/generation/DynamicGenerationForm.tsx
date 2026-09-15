@@ -51,12 +51,14 @@ function resolveUploadedFilePath(file: File | undefined): string {
 export function defaultValueFor(input: ManifestInput): unknown {
   if ("default" in input && input.default !== undefined) return input.default;
   if (input.type === "number") return "";
+  if (input.type === "multiselect") return [];
   return "";
 }
 
 export function isSatisfied(input: ManifestInput, value: unknown): boolean {
   if (!input.required) return true;
   if (input.type === "audio_upload" || input.type === "midi_upload") return typeof value === "string" && value.length > 0;
+  if (input.type === "multiselect") return Array.isArray(value) && value.length > 0;
   return value !== undefined && value !== null && String(value).trim().length > 0;
 }
 
@@ -127,6 +129,22 @@ export function FieldControl({
           ))}
         </select>
       );
+    case "multiselect": {
+      const selected = (value as string[] | undefined) ?? [];
+      return (
+        <GenrePicker
+          options={input.options}
+          selected={selected}
+          onToggle={(optionValue) =>
+            onChange(
+              selected.includes(optionValue)
+                ? selected.filter((v) => v !== optionValue)
+                : [...selected, optionValue],
+            )
+          }
+        />
+      );
+    }
     case "tags":
       return (
         <input
@@ -269,11 +287,34 @@ export function DynamicGenerationForm({
 
   useEffect(() => {
     const artist = artistProfiles.find((p) => p.id === values.artist_profile_id);
-    setValues((prev) => ({ ...prev, artist_genres: artist ? [...artist.genres] : [] }));
-    // Re-seeds the genre selection to the newly chosen artist's own set
-    // whenever the artist changes — the previous artist's genres wouldn't
-    // apply. Keyed only on the id (not artistProfiles itself, a stable prop
-    // reference per render) so this doesn't re-fire on unrelated re-renders.
+    const artistGenres = artist ? [...artist.genres] : [];
+    setValues((prev) => {
+      const next: GenerationFormValues = { ...prev, artist_genres: artistGenres };
+      // Also seeds the model's own genre-conditioning field (if it has one
+      // — MuseCoco's `genre`, ACE-Step's `genre_tags`, YuE2's `style_genre`)
+      // from the same artist genres, so the user doesn't have to re-enter
+      // genres they already set on the artist. A multiselect only pre-checks
+      // options that actually map to one of the artist's genres
+      // (autoSelectFromAppGenres); a free-text "tags" field gets them joined
+      // as a starting point. Either way this only runs when the artist
+      // changes, not on every edit, so the user's own edits afterward stick.
+      const genreField = manifest.inputs.find((input) => input.isModelGenreField);
+      if (genreField) {
+        if (genreField.type === "multiselect") {
+          const map = genreField.autoSelectFromAppGenres ?? {};
+          next[genreField.key] = genreField.options
+            .map((opt) => opt.value)
+            .filter((value) => (map[value] ?? []).some((g) => artistGenres.includes(g)));
+        } else {
+          next[genreField.key] = artistGenres.join(", ");
+        }
+      }
+      return next;
+    });
+    // Re-seeds whenever the artist changes — the previous artist's genres
+    // wouldn't apply. Keyed only on the id (not artistProfiles/manifest,
+    // stable references per render) so this doesn't re-fire on unrelated
+    // re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.artist_profile_id]);
 
@@ -362,8 +403,8 @@ export function DynamicGenerationForm({
       </label>
 
       {selectedArtistProfile && selectedArtistProfile.genres.length > 0 && (
-        <div className="flex flex-col gap-1.5 text-sm">
-          <span>Genres for this track</span>
+        <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0 text-sm">
+          <legend className="p-0 text-sm">Genres for this track</legend>
           <p className="text-xs text-ink-muted">
             From {selectedArtistProfile.name}'s genres — optional, defaults to all of them.
           </p>
@@ -372,7 +413,7 @@ export function DynamicGenerationForm({
             selected={(values.artist_genres as string[]) ?? []}
             onToggle={toggleGenre}
           />
-        </div>
+        </fieldset>
       )}
 
       {usableVariants.length > 0 && (
@@ -392,14 +433,39 @@ export function DynamicGenerationForm({
         </label>
       )}
 
-      {shown.map((input) => (
-        <label key={input.key} className="flex flex-col gap-1.5 text-sm">
-          {input.label}
-          {input.required && <span className="text-red-500"> *</span>}
+      {shown.map((input) => {
+        const control = (
           <FieldControl input={input} value={values[input.key]} onChange={(v) => setValue(input.key, v)} />
-          {input.helpText && <span className="text-xs text-ink-muted">{input.helpText}</span>}
-        </label>
-      ))}
+        );
+        const help = input.helpText && <span className="text-xs text-ink-muted">{input.helpText}</span>;
+        const requiredMark = input.required && <span className="text-red-500"> *</span>;
+        // A multiselect renders several independent buttons, not one form
+        // control — wrapping that in <label> (fine for a single input/
+        // select) makes each button's own accessible name ambiguous, since
+        // implicit label association pulls in the surrounding label text.
+        // <fieldset>/<legend> is the correct grouping semantics for that
+        // case instead.
+        if (input.type === "multiselect") {
+          return (
+            <fieldset key={input.key} className="m-0 flex flex-col gap-1.5 border-0 p-0 text-sm">
+              <legend className="p-0 text-sm">
+                {input.label}
+                {requiredMark}
+              </legend>
+              {control}
+              {help}
+            </fieldset>
+          );
+        }
+        return (
+          <label key={input.key} className="flex flex-col gap-1.5 text-sm">
+            {input.label}
+            {requiredMark}
+            {control}
+            {help}
+          </label>
+        );
+      })}
 
       <HardwareGateBanner status={hardwareGate} />
 

@@ -19,7 +19,7 @@ import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { AvatarImage } from "../components/ui/AvatarImage";
-import { getManifest, outputKindOf, type ModelManifest } from "../data/manifests";
+import { getManifest, outputKindOf, type ModelManifest, type ManifestSelectOption } from "../data/manifests";
 import { LICENSE_LABEL } from "../data/catalog";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../components/generation/OutputViewerPlaceholder";
@@ -118,11 +118,18 @@ function generationTitle(generation: GenerationRow): string {
   return generation.checkpoint_variant ?? "Generation";
 }
 
-function formatParamValue(value: unknown): string | null {
+// `select`/`multiselect` inputs store a raw option value (e.g. MuseCoco
+// genre's server token "rap"), not the friendly label ("Hip-Hop") shown in
+// the form — map back through the manifest's own options here so the
+// Parameters grid reads the same as the form did, falling back to the raw
+// value for anything that doesn't match (e.g. a value from before a
+// manifest's option list changed).
+function formatParamValue(value: unknown, options?: ManifestSelectOption[]): string | null {
   if (value === null || value === undefined || value === "") return null;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : null;
+  const labelFor = (raw: unknown): string => options?.find((o) => o.value === raw)?.label ?? String(raw);
+  if (Array.isArray(value)) return value.length ? value.map(labelFor).join(", ") : null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  return String(value);
+  return options ? labelFor(value) : String(value);
 }
 
 // --- modals / panels ---------------------------------------------------------
@@ -336,11 +343,11 @@ function ParamsGrid({ generation, manifest }: { generation: GenerationRow; manif
         !PROMPT_KEYS.includes(key) &&
         !LYRICS_KEYS.includes(key),
     )
-    .map(([key, value]) => ({
-      key,
-      label: manifest?.inputs.find((input) => input.key === key)?.label ?? key,
-      value: formatParamValue(value),
-    }))
+    .map(([key, value]) => {
+      const input = manifest?.inputs.find((i) => i.key === key);
+      const options = input?.type === "select" || input?.type === "multiselect" ? input.options : undefined;
+      return { key, label: input?.label ?? key, value: formatParamValue(value, options) };
+    })
     .filter((row) => row.value !== null);
 
   if (rows.length === 0) return null;

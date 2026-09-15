@@ -12,6 +12,8 @@
 // src/data/modelVariants.ts already duplicate-with-a-comment across the
 // Electron/renderer build boundary — don't invent a second manifest shape.
 
+import { MUSECOCO_GENRE_OPTIONS, MUSECOCO_GENRE_AUTO_MAP } from "./musecocoGenres";
+
 export type LicenseTier = "mit" | "cc-by-nc" | "cc-by-nc-sa";
 
 export type ManifestInputType =
@@ -19,6 +21,7 @@ export type ManifestInputType =
   | "textarea"
   | "number"
   | "select"
+  | "multiselect"
   | "tags"
   | "audio_upload"
   | "midi_upload";
@@ -38,6 +41,13 @@ interface ManifestInputBase {
   // this exactly — e.g. MusicGen's melody reference only applies to the
   // "melody" variant.
   onlyForVariant?: string;
+  // Marks this as *the* genre-conditioning input for the model (at most one
+  // per manifest) — DynamicGenerationForm seeds it from the selected artist
+  // profile's own genres (src/data/genres.ts) whenever the artist changes,
+  // so the user doesn't have to re-type/re-select genres they already set
+  // on the artist. Only models with a real genre concept carry this; models
+  // with no genre-shaped input (MusicGen, Museformer, RAVE) don't.
+  isModelGenreField?: boolean;
 }
 
 export interface TextManifestInput extends ManifestInputBase {
@@ -60,6 +70,18 @@ export interface SelectManifestInput extends ManifestInputBase {
   default?: string;
 }
 
+export interface MultiSelectManifestInput extends ManifestInputBase {
+  type: "multiselect";
+  options: ManifestSelectOption[];
+  default?: string[];
+  // Maps each option's own value to the app-level genre names (src/data/
+  // genres.ts) that should pre-check it when seeding from an artist's
+  // genres — e.g. MuseCoco's "pop_rock" option is pre-checked when the
+  // artist has either "Pop" or "Rock" selected. Omit for a multiselect
+  // that isn't genre-related; only meaningful alongside isModelGenreField.
+  autoSelectFromAppGenres?: Record<string, string[]>;
+}
+
 export interface TagsManifestInput extends ManifestInputBase {
   type: "tags";
   placeholder?: string;
@@ -74,6 +96,7 @@ export type ManifestInput =
   | TextManifestInput
   | NumberManifestInput
   | SelectManifestInput
+  | MultiSelectManifestInput
   | TagsManifestInput
   | FileManifestInput;
 
@@ -356,9 +379,21 @@ const MUSECOCO: ModelManifest = {
     },
     {
       key: "genre",
-      type: "tags",
+      type: "multiselect",
       label: "Genre",
-      helpText: "Matched case-insensitively against: new_age, electronic, rap, religious, international, easy_listening, avant_garde, rnb, latin, children, jazz, classical, comedy_spoken, pop_rock, reggae, stage, folk, blues, vocal, holiday, country, symphony. Unmatched tags are ignored.",
+      isModelGenreField: true,
+      // Real, fixed 22-value vocabulary (servers/musecoco/server.py's
+      // S4_CATEGORIES) -- a proper multiselect rather than the free-text
+      // "tags" field this used to be, which also fixes a real bug: the
+      // "tags" control stores one comma-separated *string*, and the
+      // server's match_categories() iterates whatever it's given
+      // character-by-character when it isn't already a list, so free-typed
+      // genre text was silently never matching anything. Auto-populated
+      // from the selected artist's own genres via autoSelectFromAppGenres
+      // (src/data/musecocoGenres.ts) when the artist changes.
+      options: MUSECOCO_GENRE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+      autoSelectFromAppGenres: MUSECOCO_GENRE_AUTO_MAP,
+      helpText: "Pre-filled from the selected artist's genres where they overlap — add or remove any.",
     },
     {
       key: "mood",
@@ -595,7 +630,13 @@ const ACE_STEP: ModelManifest = {
     { key: "bpm", type: "number", label: "BPM (optional)", min: 40, max: 220 },
     { key: "key_signature", type: "text", label: "Key/scale (optional)", placeholder: "e.g. F# minor" },
     { key: "time_signature", type: "text", label: "Time signature (optional)", placeholder: "e.g. 4/4" },
-    { key: "genre_tags", type: "tags", label: "Genre tags" },
+    {
+      key: "genre_tags",
+      type: "tags",
+      label: "Genre tags",
+      isModelGenreField: true,
+      helpText: "Pre-filled from the selected artist's genres — free text, add or remove anything.",
+    },
     { key: "instrument_tags", type: "tags", label: "Instrument/timbre tags" },
     { key: "batch_count", type: "number", label: "Batch count", min: 1, max: 8, default: 1 },
   ],
@@ -683,7 +724,13 @@ const YUE2: ModelManifest = {
   },
   inputs: [
     { key: "lyrics", type: "textarea", label: "Lyrics", required: true },
-    { key: "style_genre", type: "tags", label: "Style / genre" },
+    {
+      key: "style_genre",
+      type: "tags",
+      label: "Style / genre",
+      isModelGenreField: true,
+      helpText: "Pre-filled from the selected artist's genres — free text, add or remove anything.",
+    },
     { key: "reference_audio", type: "audio_upload", label: "Reference audio (cover/transcription, optional)", accept: "audio/*" },
     { key: "max_seconds", type: "number", label: "Max duration cap (sec)", min: 10, max: 300, default: 60 },
     {
