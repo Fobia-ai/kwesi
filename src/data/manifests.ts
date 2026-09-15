@@ -13,6 +13,7 @@
 // Electron/renderer build boundary — don't invent a second manifest shape.
 
 import { MUSECOCO_GENRE_OPTIONS, MUSECOCO_GENRE_AUTO_MAP } from "./musecocoGenres";
+import { LANGUAGES } from "./languages";
 
 export type LicenseTier = "mit" | "cc-by-nc" | "cc-by-nc-sa";
 
@@ -48,6 +49,14 @@ interface ManifestInputBase {
   // on the artist. Only models with a real genre concept carry this; models
   // with no genre-shaped input (MusicGen, Museformer, RAVE) don't.
   isModelGenreField?: boolean;
+  // Same idea as isModelGenreField, for the (much rarer) models that have a
+  // real vocal-language concept — seeded from the artist's own languages
+  // (src/data/languages.ts). Only ACE-Step 1.5 has a real, structured
+  // vocal_language parameter today; YuE2 has a genuine but unstructured
+  // language concept (a free-text descriptor folded into its style field).
+  // Model Manager shows a "Multilingual" pill only for models with a field
+  // carrying this flag — see ModelManagerScreen.
+  isModelLanguageField?: boolean;
 }
 
 export interface TextManifestInput extends ManifestInputBase {
@@ -235,7 +244,16 @@ const MUSICGEN: ModelManifest = {
   modelId: "musicgen",
   displayName: "MusicGen",
   licenseTier: "cc-by-nc",
-  checkpointVariants: ["small", "medium", "large", "melody", "style"],
+  // "style" removed from the catalog: its real checkpoint
+  // (facebook/musicgen-style) needs a StyleConditioner class that doesn't
+  // exist anywhere in the pinned audiocraft==1.3.0 (confirmed by reading
+  // the installed package's conditioners.py directly) -- that support was
+  // added to audiocraft upstream after the 1.3.0 PyPI release this app is
+  // pinned to. Selecting it would fail the moment the checkpoint tried to
+  // load. A real, previously-undiscovered dead variant, not a design
+  // choice -- see electron/db/database.ts's removeDiscontinuedMusicGenStyleVariant
+  // for the one-time cleanup of anyone who already downloaded it.
+  checkpointVariants: ["small", "medium", "large", "melody"],
   hardware: { minVramGb: 4, cpuFallback: false, notes: "~16GB VRAM comfortable for medium; small runs on lighter GPUs." },
   inputs: [
     { key: "prompt", type: "text", label: "Describe the music", required: true, placeholder: "Upbeat lo-fi hip hop with vinyl crackle" },
@@ -639,6 +657,23 @@ const ACE_STEP: ModelManifest = {
   inputs: [
     { key: "prompt", type: "text", label: "Text prompt", required: true, placeholder: "Anthemic stadium rock, driving drums" },
     { key: "lyrics", type: "textarea", label: "Lyrics (structured, optional)" },
+    {
+      key: "vocal_language",
+      type: "select",
+      label: "Vocal language",
+      default: "en",
+      isModelLanguageField: true,
+      // Real field, real vocabulary: release_task_models.py:40
+      // (`vocal_language: str = "en"`), values from constants.py's
+      // VALID_LANGUAGES (src/data/languages.ts). ACE-Step's own API also
+      // has a CoT auto-detect path (`use_cot_language`), but this app spawns
+      // the server with ACESTEP_INIT_LLM=false (electron/models/modelServer.ts)
+      // for faster/lighter startup, so that path can't actually run yet --
+      // not exposed here until the LLM is enabled server-side, rather than
+      // shipping a control that silently no-ops.
+      options: LANGUAGES.map((l) => ({ value: l.code, label: l.name })),
+      helpText: "Pre-filled from the selected artist's primary language.",
+    },
     { key: "reference_audio", type: "audio_upload", label: "Reference audio (style/cover, optional)", accept: "audio/*" },
     { key: "duration_sec", type: "number", label: "Duration (sec)", min: 10, max: 600, default: 120 },
     { key: "bpm", type: "number", label: "BPM (optional)", min: 40, max: 220 },
@@ -744,6 +779,23 @@ const YUE2: ModelManifest = {
       label: "Style / genre",
       isModelGenreField: true,
       helpText: "Pre-filled from the selected artist's genres — free text, add or remove anything.",
+    },
+    {
+      key: "vocal_language",
+      type: "text",
+      label: "Vocal language (optional)",
+      isModelLanguageField: true,
+      // YuE2 has no dedicated language parameter -- its own docs
+      // (docs/generation.md: "Put genre, instruments, vocal character,
+      // language, and tempo in style") fold language into the free-text
+      // `style` field alongside genre, same shape as ACE-Step's
+      // genre_tags/instrument_tags folding into its prompt. This field is
+      // app-level only for now: YuE2 isn't wired into real generation yet
+      // (still runs the Phase 4 mock, electron/models/modelServer.ts), so
+      // there's nothing to fold it into server-side today -- once it is
+      // wired, mirror buildAceStepPrompt's pattern to merge this into
+      // style_genre's text rather than sending it as its own field.
+      helpText: "Pre-filled from the selected artist's primary language, by name — free text.",
     },
     { key: "reference_audio", type: "audio_upload", label: "Reference audio (cover/transcription, optional)", accept: "audio/*" },
     { key: "max_seconds", type: "number", label: "Max duration cap (sec)", min: 10, max: 300, default: 60 },

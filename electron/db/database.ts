@@ -33,6 +33,25 @@ function migrateModelVariantColumns(database: Database.Database) {
   }
 }
 
+// One-time, narrowly-targeted cleanup for MusicGen's discontinued "style"
+// variant (see the comment on MUSICGEN in src/data/manifests.ts for why it
+// was removed) -- deliberately NOT a general "prune anything missing from
+// SEED_MODELS" sweep, since trained-model variants (source: "trained",
+// inserted by trainingManager.ts) legitimately exist outside SEED_MODELS
+// too and must never be touched by a cleanup like this. Deletes the real
+// downloaded checkpoint from disk (if it was ever installed) and the DB
+// row itself, not just resetting install_status the way removeVariant()
+// (electron/models/downloadQueue.ts, the normal user-facing Remove button)
+// does -- this variant is gone from the catalog, not just uninstalled.
+function removeDiscontinuedMusicGenStyleVariant(database: Database.Database) {
+  const row = database
+    .prepare("SELECT id, install_path FROM model_variant WHERE model_id = 'musicgen' AND variant_name = 'style'")
+    .get() as { id: string; install_path: string | null } | undefined;
+  if (!row) return;
+  if (row.install_path) fs.rmSync(row.install_path, { recursive: true, force: true });
+  database.prepare("DELETE FROM model_variant WHERE id = ?").run(row.id);
+}
+
 // Runs on every startup (not just first-run) so the catalog in
 // seedModels.ts stays the source of truth as it evolves -- new models/
 // variants get inserted, existing catalog metadata (display name, repo_id,
@@ -93,6 +112,9 @@ function migrateArtistProfileColumns(database: Database.Database) {
   if (!existing.has("genres")) {
     database.exec(`ALTER TABLE artist_profile ADD COLUMN genres TEXT NOT NULL DEFAULT '[]'`);
   }
+  if (!existing.has("languages")) {
+    database.exec(`ALTER TABLE artist_profile ADD COLUMN languages TEXT NOT NULL DEFAULT '[]'`);
+  }
 }
 
 // A variant left "queued"/"downloading" here means the app quit or crashed
@@ -123,6 +145,7 @@ export function openDatabase(dbPath: string): Database.Database {
   db.exec(SCHEMA_SQL);
   migrateModelVariantColumns(db);
   migrateArtistProfileColumns(db);
+  removeDiscontinuedMusicGenStyleVariant(db);
   syncSeedModels(db, SEED_MODELS);
   resetInterruptedDownloads(db);
 

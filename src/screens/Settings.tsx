@@ -6,6 +6,7 @@ import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { GENRES } from "../data/genres";
+import { LANGUAGES } from "../data/languages";
 import { useAppLock } from "../components/security/AppLock";
 import { PillButton } from "../components/ui/PillButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -13,7 +14,7 @@ import { Modal } from "../components/ui/Modal";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { PageHeader } from "../components/ui/PageHeader";
 import { AvatarImage } from "../components/ui/AvatarImage";
-import { GenrePicker } from "../components/ui/GenrePicker";
+import { ChipMultiSelect } from "../components/ui/ChipMultiSelect";
 
 const TABS = ["Profile", "Artists", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
@@ -98,11 +99,16 @@ function ArtistProfileFormModal({
   const [name, setName] = useState(profile?.name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [genres, setGenres] = useState<string[]>(profile?.genres ?? []);
+  const [languages, setLanguages] = useState<string[]>(profile?.languages ?? []);
   const [avatarPath, setAvatarPath] = useState(profile?.avatarPath ?? null);
   const [saving, setSaving] = useState(false);
 
   function toggleGenre(genre: string) {
     setGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+  }
+
+  function toggleLanguage(code: string) {
+    setLanguages((prev) => (prev.includes(code) ? prev.filter((l) => l !== code) : [...prev, code]));
   }
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -140,9 +146,9 @@ function ArtistProfileFormModal({
     setSaving(true);
     try {
       if (profile) {
-        await kwesiArtistProfiles.update(profile.id, name.trim(), bio.trim() || null, genres);
+        await kwesiArtistProfiles.update(profile.id, name.trim(), bio.trim() || null, genres, languages);
       } else {
-        await kwesiArtistProfiles.create(name.trim(), bio.trim() || null, genres);
+        await kwesiArtistProfiles.create(name.trim(), bio.trim() || null, genres, languages);
       }
       onSaved();
       onClose();
@@ -217,7 +223,21 @@ function ArtistProfileFormModal({
           <p className="text-xs text-ink-muted">
             What this artist makes — offered back as choices whenever you generate as them.
           </p>
-          <GenrePicker options={GENRES} selected={genres} onToggle={toggleGenre} />
+          <ChipMultiSelect options={GENRES} selected={genres} onToggle={toggleGenre} />
+        </div>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span>
+            Languages <span className="text-ink-muted">(optional)</span>
+          </span>
+          <p className="text-xs text-ink-muted">
+            Only relevant for models with a real language concept — pre-fills their language field when
+            you generate as this artist.
+          </p>
+          <ChipMultiSelect
+            options={LANGUAGES.map((l) => ({ value: l.code, label: l.name }))}
+            selected={languages}
+            onToggle={toggleLanguage}
+          />
         </div>
 
         <div className="mt-2 flex justify-end gap-2">
@@ -279,7 +299,7 @@ function ArtistsTab() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{profile.name}</p>
                 {profile.bio && <p className="truncate text-xs text-ink-muted">{profile.bio}</p>}
-                {profile.genres.length > 0 && (
+                {(profile.genres.length > 0 || profile.languages.length > 0) && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {profile.genres.map((genre) => (
                       <span
@@ -287,6 +307,14 @@ function ArtistsTab() {
                         className="rounded-chip bg-ink/[0.06] px-1.5 py-0.5 text-[10px] text-ink-muted"
                       >
                         {genre}
+                      </span>
+                    ))}
+                    {profile.languages.map((code) => (
+                      <span
+                        key={code}
+                        className="rounded-chip bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
+                      >
+                        {LANGUAGES.find((l) => l.code === code)?.name ?? code}
                       </span>
                     ))}
                   </div>

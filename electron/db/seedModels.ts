@@ -89,7 +89,7 @@ export const SEED_MODELS: SeedModel[] = [
       { name: "medium", source: "huggingface", repoId: "facebook/musicgen-medium" },
       { name: "large", source: "huggingface", repoId: "facebook/musicgen-large" },
       { name: "melody", source: "huggingface", repoId: "facebook/musicgen-melody" },
-      { name: "style", source: "huggingface", repoId: "facebook/musicgen-style" },
+      // "style" removed -- see the comment on MUSICGEN in src/data/manifests.ts.
     ],
   },
   {

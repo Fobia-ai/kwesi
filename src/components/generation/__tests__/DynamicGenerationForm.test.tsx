@@ -18,6 +18,7 @@ const MOCK_PROFILES: ArtistProfile[] = [
     bio: null,
     avatarPath: null,
     genres: ["Pop", "Electronic"],
+    languages: [],
     createdAt: 0,
     updatedAt: 0,
   },
@@ -96,8 +97,8 @@ describe("DynamicGenerationForm", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const profiles: ArtistProfile[] = [
-      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], createdAt: 0, updatedAt: 0 },
-      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Rock"], createdAt: 0, updatedAt: 0 },
+      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], languages: [], createdAt: 0, updatedAt: 0 },
+      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Rock"], languages: [], createdAt: 0, updatedAt: 0 },
     ];
     renderForm(["small"], onSubmit, profiles);
 
@@ -133,8 +134,8 @@ describe("DynamicGenerationForm", () => {
   it("re-seeds the genre picker to the new artist's genres after switching artists", async () => {
     const user = userEvent.setup();
     const profiles: ArtistProfile[] = [
-      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], createdAt: 0, updatedAt: 0 },
-      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Metal"], createdAt: 0, updatedAt: 0 },
+      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], languages: [], createdAt: 0, updatedAt: 0 },
+      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Metal"], languages: [], createdAt: 0, updatedAt: 0 },
     ];
     renderForm(["small"], vi.fn(), profiles);
 
@@ -278,6 +279,93 @@ describe("DynamicGenerationForm", () => {
       await user.type(genreInput, "Custom genre text");
 
       expect(genreInput).toHaveValue("Custom genre text");
+    });
+  });
+
+  describe("model language field", () => {
+    it("pre-fills ACE-Step's vocal_language select from the artist's primary language", () => {
+      const profiles: ArtistProfile[] = [
+        {
+          id: "artist-1",
+          name: "Alpha",
+          bio: null,
+          avatarPath: null,
+          genres: [],
+          languages: ["es", "fr"],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ];
+      renderForm(["acestep-v15-base"], vi.fn(), profiles, "ace-step-1.5");
+      // Primary (first) language only -- "es", not "fr".
+      expect(screen.getByLabelText(/Vocal language/)).toHaveValue("es");
+    });
+
+    it("leaves ACE-Step's vocal_language at its manifest default when the artist has no language set", () => {
+      renderForm(["acestep-v15-base"], vi.fn(), MOCK_PROFILES, "ace-step-1.5");
+      expect(screen.getByLabelText(/Vocal language/)).toHaveValue("en");
+    });
+
+    it("pre-fills YuE2's free-text language hint from the artist's primary language, by name", () => {
+      const profiles: ArtistProfile[] = [
+        {
+          id: "artist-1",
+          name: "Alpha",
+          bio: null,
+          avatarPath: null,
+          genres: [],
+          languages: ["ja"],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ];
+      renderForm(["yue2-3b"], vi.fn(), profiles, "yue2");
+      expect(screen.getByLabelText(/Vocal language/)).toHaveValue("Japanese");
+    });
+
+    it("doesn't block submission when the artist has no language set", async () => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderForm(["yue2-3b"], onSubmit, MOCK_PROFILES, "yue2");
+
+      await user.type(screen.getByLabelText(/Lyrics/), "Some real lyrics");
+      await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(onSubmit).toHaveBeenCalledWith("yue2-3b", expect.objectContaining({ vocal_language: "" }));
+    });
+
+    it("re-seeds the language field after switching to an artist with a different language", async () => {
+      const user = userEvent.setup();
+      const profiles: ArtistProfile[] = [
+        {
+          id: "artist-1",
+          name: "Alpha",
+          bio: null,
+          avatarPath: null,
+          genres: [],
+          languages: ["es"],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: "artist-2",
+          name: "Beta",
+          bio: null,
+          avatarPath: null,
+          genres: [],
+          languages: ["ja"],
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ];
+      renderForm(["acestep-v15-base"], vi.fn(), profiles, "ace-step-1.5");
+
+      expect(screen.getByLabelText(/Vocal language/)).toHaveValue("es");
+
+      await user.selectOptions(screen.getByLabelText(/Artist profile/), "artist-2");
+
+      expect(screen.getByLabelText(/Vocal language/)).toHaveValue("ja");
     });
   });
 

@@ -25,7 +25,8 @@ export function Modal({ title, onClose, children }: ModalProps) {
       <GlassPanel
         strong
         radius="panel"
-        className="w-full max-w-sm p-5"
+        className="w-full max-w-sm overflow-y-auto p-5"
+        style={{ maxHeight: "90vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-4 text-base font-semibold">{title}</h2>

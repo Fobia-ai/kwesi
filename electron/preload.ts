@@ -108,10 +108,10 @@ contextBridge.exposeInMainWorld("kwesi", {
   },
   artistProfiles: {
     list: () => ipcRenderer.invoke("kwesi:artistProfiles:list"),
-    create: (name: string, bio: string | null, genres: string[]) =>
-      ipcRenderer.invoke("kwesi:artistProfiles:create", name, bio, genres),
-    update: (id: string, name: string, bio: string | null, genres: string[]) =>
-      ipcRenderer.invoke("kwesi:artistProfiles:update", id, name, bio, genres),
+    create: (name: string, bio: string | null, genres: string[], languages: string[]) =>
+      ipcRenderer.invoke("kwesi:artistProfiles:create", name, bio, genres, languages),
+    update: (id: string, name: string, bio: string | null, genres: string[], languages: string[]) =>
+      ipcRenderer.invoke("kwesi:artistProfiles:update", id, name, bio, genres, languages),
     delete: (id: string) => ipcRenderer.invoke("kwesi:artistProfiles:delete", id),
     setAvatar: (id: string, sourcePath: string) =>
       ipcRenderer.invoke("kwesi:artistProfiles:setAvatar", id, sourcePath),

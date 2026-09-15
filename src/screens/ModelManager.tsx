@@ -126,6 +126,11 @@ function ModelAccordionRow({
                 Trainable
               </span>
             )}
+            {manifest?.inputs.some((input) => input.isModelLanguageField) && (
+              <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                Multilingual
+              </span>
+            )}
             {installedCount > 0 && (
               <span className="text-[11px] text-ink-muted">
                 {installedCount} installed

@@ -165,11 +165,9 @@ MODELS = {
                 "source": "huggingface",
                 "repo_id": "facebook/musicgen-melody",
             },
-            "style": {
-                # CONFIRMED
-                "source": "huggingface",
-                "repo_id": "facebook/musicgen-style",
-            },
+            # "style" removed: its real checkpoint needs a StyleConditioner
+            # class that doesn't exist in the pinned audiocraft==1.3.0 --
+            # see the comment on MUSICGEN in src/data/manifests.ts.
         },
     },
     "musecoco": {

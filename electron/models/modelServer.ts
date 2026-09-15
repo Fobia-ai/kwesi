@@ -707,6 +707,8 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     const batchCount =
       typeof inputParams.batch_count === "number" ? Math.min(8, Math.max(1, Math.round(inputParams.batch_count))) : 1;
     const lyrics = typeof inputParams.lyrics === "string" ? inputParams.lyrics : "";
+    const vocalLanguage =
+      typeof inputParams.vocal_language === "string" && inputParams.vocal_language ? inputParams.vocal_language : "en";
     const referenceAudioPath = resolveAceStepReferenceAudioPath(inputParams);
 
     const dir = generationDir(workspaceId, projectId, generationId);
@@ -720,6 +722,7 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
       body: JSON.stringify({
         prompt: buildAceStepPrompt(inputParams),
         lyrics,
+        vocal_language: vocalLanguage,
         audio_duration: durationSec,
         bpm,
         key_scale: keyScale,

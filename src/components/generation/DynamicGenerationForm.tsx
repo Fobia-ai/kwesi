@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { minVramGbFor, type ManifestInput, type ModelManifest } from "../../data/manifests";
+import { LANGUAGES } from "../../data/languages";
 import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
 import type { ArtistProfile } from "../../lib/artistProfiles";
 import { PillButton } from "../ui/PillButton";
 import { EmptyState } from "../ui/EmptyState";
 import { AvatarImage } from "../ui/AvatarImage";
-import { GenrePicker } from "../ui/GenrePicker";
+import { ChipMultiSelect } from "../ui/ChipMultiSelect";
 import { ModelsIcon } from "../ui/icons";
 
 export type GenerationFormValues = Record<string, unknown>;
@@ -132,7 +133,7 @@ export function FieldControl({
     case "multiselect": {
       const selected = (value as string[] | undefined) ?? [];
       return (
-        <GenrePicker
+        <ChipMultiSelect
           options={input.options}
           selected={selected}
           onToggle={(optionValue) =>
@@ -309,6 +310,20 @@ export function DynamicGenerationForm({
           next[genreField.key] = artistGenres.join(", ");
         }
       }
+      // Same idea for the model's own language field (ACE-Step's
+      // vocal_language select, YuE2's free-text hint), seeded from the
+      // artist's primary (first) language — but only when the artist
+      // actually declares one. Unlike genre's multiselect, where "nothing
+      // selected" is a perfectly valid state to reset to, a select field has
+      // no sensible empty value and a free-text hint shouldn't get blanked
+      // out just because this particular artist has no language set, so an
+      // artist with no languages simply leaves whatever was there before.
+      const languageField = manifest.inputs.find((input) => input.isModelLanguageField);
+      if (languageField && artist && artist.languages.length > 0) {
+        const primaryCode = artist.languages[0];
+        next[languageField.key] =
+          languageField.type === "select" ? primaryCode : (LANGUAGES.find((l) => l.code === primaryCode)?.name ?? primaryCode);
+      }
       return next;
     });
     // Re-seeds whenever the artist changes — the previous artist's genres
@@ -426,7 +441,7 @@ export function DynamicGenerationForm({
           <p className="text-xs text-ink-muted">
             From {selectedArtistProfile.name}'s genres — optional, defaults to all of them.
           </p>
-          <GenrePicker
+          <ChipMultiSelect
             options={selectedArtistProfile.genres}
             selected={(values.artist_genres as string[]) ?? []}
             onToggle={toggleGenre}

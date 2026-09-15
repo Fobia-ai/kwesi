@@ -91,12 +91,18 @@ CREATE TABLE IF NOT EXISTS profile (
 -- join table since the catalog is small, fixed, and never queried by genre
 -- -- it's read back whole every time (Settings' editor, the generation
 -- form's per-artist genre picker), not filtered/joined against.
+-- languages: JSON array of ISO codes from src/data/languages.ts (the real
+-- ACE-Step vocal_language vocabulary, used as the app's own catalog too --
+-- see that file's comment) -- optional, unlike genres: most artists use
+-- models with no language concept at all, so this isn't required at the UI
+-- layer the way genres is.
 CREATE TABLE IF NOT EXISTS artist_profile (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   bio TEXT,
   avatar_path TEXT,
   genres TEXT NOT NULL DEFAULT '[]',
+  languages TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

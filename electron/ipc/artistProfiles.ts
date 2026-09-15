@@ -91,13 +91,15 @@ async function readAvatar(avatarPath: string): Promise<ReadAvatarResult> {
 
 export function registerArtistProfilesIpcHandlers() {
   ipcMain.handle("kwesi:artistProfiles:list", () => repo.listArtistProfiles());
-  ipcMain.handle("kwesi:artistProfiles:create", (_e, name: string, bio: string | null, genres: string[]) =>
-    repo.createArtistProfile(name, bio, genres),
+  ipcMain.handle(
+    "kwesi:artistProfiles:create",
+    (_e, name: string, bio: string | null, genres: string[], languages: string[]) =>
+      repo.createArtistProfile(name, bio, genres, languages),
   );
   ipcMain.handle(
     "kwesi:artistProfiles:update",
-    (_e, id: string, name: string, bio: string | null, genres: string[]) =>
-      repo.updateArtistProfile(id, name, bio, genres),
+    (_e, id: string, name: string, bio: string | null, genres: string[], languages: string[]) =>
+      repo.updateArtistProfile(id, name, bio, genres, languages),
   );
   ipcMain.handle("kwesi:artistProfiles:delete", async (_e, id: string) => {
     const existing = repo.getArtistProfile(id);

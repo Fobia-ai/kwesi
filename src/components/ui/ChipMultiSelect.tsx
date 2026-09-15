@@ -1,29 +1,29 @@
-export interface GenrePickerOption {
+export interface ChipOption {
   value: string;
   label: string;
 }
 
-interface GenrePickerProps {
+interface ChipMultiSelectProps {
   // A plain string list (the value IS the label — the common case, e.g. the
-  // artist genre catalog) or explicit {value,label} pairs for when what's
-  // shown and what's actually stored/sent differ (e.g. MuseCoco's options,
-  // where the label is a friendly name but the value is the server's own
-  // token like "pop_rock" or "rnb").
-  options: readonly string[] | readonly GenrePickerOption[];
+  // artist genre/language catalogs) or explicit {value,label} pairs for
+  // when what's shown and what's actually stored/sent differ (e.g.
+  // MuseCoco's genre options, where the label is a friendly name but the
+  // value is the server's own token like "pop_rock" or "rnb").
+  options: readonly string[] | readonly ChipOption[];
   selected: string[];
   onToggle: (value: string) => void;
 }
 
-function normalize(options: GenrePickerProps["options"]): GenrePickerOption[] {
+function normalize(options: ChipMultiSelectProps["options"]): ChipOption[] {
   return options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
 }
 
-/** Toggleable chip multi-select — shared between an artist profile's genre
- * set (Settings > Artists, chosen from the full catalog), a generation's own
+/** Toggleable chip multi-select — general-purpose "pick any number from a
+ * fixed list of options": an artist profile's genre and language sets
+ * (Settings > Artists, chosen from the full catalog), a generation's own
  * genre selection scoped to that artist's subset (DynamicGenerationForm),
- * and a model's own fixed-vocabulary genre field (MuseCoco), since all three
- * are "pick any number from a fixed list of options." */
-export function GenrePicker({ options, selected, onToggle }: GenrePickerProps) {
+ * and a model's own fixed-vocabulary genre field (MuseCoco). */
+export function ChipMultiSelect({ options, selected, onToggle }: ChipMultiSelectProps) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {normalize(options).map((option) => {

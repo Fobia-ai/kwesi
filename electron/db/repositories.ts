@@ -591,10 +591,11 @@ export interface ArtistProfileRow {
   name: string;
   bio: string | null;
   avatar_path: string | null;
-  // Raw JSON text (an array of src/data/genres.ts strings) — parsed at the
-  // renderer client layer (src/lib/artistProfiles.ts), same convention as
-  // GenerationRow.input_params.
+  // Raw JSON text (an array of src/data/genres.ts / languages.ts strings) —
+  // parsed at the renderer client layer (src/lib/artistProfiles.ts), same
+  // convention as GenerationRow.input_params.
   genres: string;
+  languages: string;
   created_at: number;
   updated_at: number;
 }
@@ -611,22 +612,43 @@ export function getArtistProfile(id: string): ArtistProfileRow | undefined {
     | undefined;
 }
 
-export function createArtistProfile(name: string, bio: string | null, genres: string[]): ArtistProfileRow {
+export function createArtistProfile(
+  name: string,
+  bio: string | null,
+  genres: string[],
+  languages: string[],
+): ArtistProfileRow {
   const id = randomUUID();
   const now = Date.now();
   const genresJson = JSON.stringify(genres);
+  const languagesJson = JSON.stringify(languages);
   getDatabase()
     .prepare(
-      "INSERT INTO artist_profile (id, name, bio, genres, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO artist_profile (id, name, bio, genres, languages, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .run(id, name, bio, genresJson, now, now);
-  return { id, name, bio, avatar_path: null, genres: genresJson, created_at: now, updated_at: now };
+    .run(id, name, bio, genresJson, languagesJson, now, now);
+  return {
+    id,
+    name,
+    bio,
+    avatar_path: null,
+    genres: genresJson,
+    languages: languagesJson,
+    created_at: now,
+    updated_at: now,
+  };
 }
 
-export function updateArtistProfile(id: string, name: string, bio: string | null, genres: string[]): void {
+export function updateArtistProfile(
+  id: string,
+  name: string,
+  bio: string | null,
+  genres: string[],
+  languages: string[],
+): void {
   getDatabase()
-    .prepare("UPDATE artist_profile SET name = ?, bio = ?, genres = ?, updated_at = ? WHERE id = ?")
-    .run(name, bio, JSON.stringify(genres), Date.now(), id);
+    .prepare("UPDATE artist_profile SET name = ?, bio = ?, genres = ?, languages = ?, updated_at = ? WHERE id = ?")
+    .run(name, bio, JSON.stringify(genres), JSON.stringify(languages), Date.now(), id);
 }
 
 export function setArtistProfileAvatarPath(id: string, avatarPath: string | null): void {
