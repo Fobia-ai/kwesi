@@ -283,7 +283,7 @@ export function ModelManagerScreen() {
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="truncate text-sm">{variant.variant_name}</span>
-                              {variant.source !== "manual" && <StatusBadge status={variant.install_status} />}
+                              <StatusBadge status={variant.install_status} />
                               {variant.install_status === "installed" && (
                                 <span className="shrink-0 text-xs text-ink-muted">
                                   {formatBytes(variant.disk_size_bytes)}
@@ -299,7 +299,7 @@ export function ModelManagerScreen() {
                           </div>
 
                           <div className="flex shrink-0 items-center gap-2">
-                            {variant.source === "manual" ? (
+                            {variant.source === "manual" && variant.install_status !== "installed" ? (
                               <button
                                 type="button"
                                 onClick={() => variant.manual_url && openExternal(variant.manual_url)}

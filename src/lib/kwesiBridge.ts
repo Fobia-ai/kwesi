@@ -31,6 +31,18 @@ declare global {
         diskFreeBytes: () => Promise<number | null>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
+      generation: {
+        submit: (
+          projectId: string,
+          checkpointVariant: string | null,
+          inputParams: Record<string, unknown>,
+          outputKind: string,
+        ) => Promise<{ ok: boolean; reason?: string; generation?: GenerationRow }>;
+        startServer: (modelId: string) => Promise<void>;
+        stopServer: (modelId: string) => Promise<void>;
+        serverStatus: (modelId: string) => Promise<string>;
+        onProgress: (callback: (event: unknown) => void) => () => void;
+      };
     };
   }
 }

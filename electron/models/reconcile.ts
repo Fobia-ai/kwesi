@@ -1,14 +1,18 @@
 // Reconciles model_variant install_status against what's actually on disk
 // at KWESI_MODELS_DIR. Needed because weights can land there from outside
-// the app's own download queue -- e.g. scripts/download_models.py, or a
-// future Cloudflare-hosted re-download path -- and the app should recognize
-// them without requiring a redundant re-install through its own UI.
+// the app's own download queue -- e.g. scripts/download_models.py, a human
+// manually placing a "manual"-source file (RAVE's pretrained .ts exports,
+// Museformer's OneDrive checkpoint), or a future Cloudflare-hosted
+// re-download path -- and the app should recognize them without requiring
+// a redundant re-install through its own UI. Runs over every variant
+// regardless of source; "manual" only affects whether the app itself can
+// initiate a download, not whether it recognizes content already there.
 import { modelVariantDir } from "../db/paths.js";
 import { dirHasContent, dirSizeBytes } from "../lib/fsSize.js";
 import * as repo from "../db/repositories.js";
 
 export async function reconcileInstalledModelsFromDisk(): Promise<void> {
-  const variants = repo.listDownloadableVariants();
+  const variants = repo.listAllModelVariants();
 
   for (const variant of variants) {
     const dir = modelVariantDir(variant.model_id, variant.variant_name);

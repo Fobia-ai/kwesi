@@ -1,5 +1,6 @@
 import { CATALOG } from "../data/catalog";
 import { listForModel as listMockModelVariants } from "./modelVariantStore";
+import * as generationStore from "./generationStore";
 
 export interface ModelRow {
   id: string;
@@ -46,8 +47,12 @@ export interface GenerationRow {
   id: string;
   project_id: string;
   status: string;
+  input_params: string;
   output_kind: string | null;
+  output_files: string;
   created_at: number;
+  duration_ms: number | null;
+  error: string | null;
   checkpoint_variant: string | null;
 }
 
@@ -97,7 +102,6 @@ function createMockDb(): KwesiDbApi {
   interface MockState {
     workspaces: WorkspaceRow[];
     projects: ProjectRow[];
-    generations: GenerationRow[];
   }
 
   function load(): MockState {
@@ -107,7 +111,7 @@ function createMockDb(): KwesiDbApi {
     } catch {
       // ignore — fall through to empty state
     }
-    return { workspaces: [], projects: [], generations: [] };
+    return { workspaces: [], projects: [] };
   }
 
   function save(state: MockState) {
@@ -155,7 +159,7 @@ function createMockDb(): KwesiDbApi {
       const projectIds = state.projects.filter((p) => p.workspace_id === id).map((p) => p.id);
       state.workspaces = state.workspaces.filter((w) => w.id !== id);
       state.projects = state.projects.filter((p) => p.workspace_id !== id);
-      state.generations = state.generations.filter((g) => !projectIds.includes(g.project_id));
+      generationStore.removeForProjects(projectIds);
       save(state);
     },
     async listProjects(workspaceId) {
@@ -174,32 +178,30 @@ function createMockDb(): KwesiDbApi {
     async deleteProject(id) {
       const state = load();
       state.projects = state.projects.filter((p) => p.id !== id);
-      state.generations = state.generations.filter((g) => g.project_id !== id);
+      generationStore.removeForProjects([id]);
       save(state);
     },
     async listGenerations(projectId) {
-      return load()
-        .generations.filter((g) => g.project_id === projectId)
-        .sort((a, b) => b.created_at - a.created_at);
+      return generationStore.listForProject(projectId).sort((a, b) => b.created_at - a.created_at);
     },
     async createPlaceholderGeneration(projectId, checkpointVariant) {
-      const state = load();
       const row: GenerationRow = {
         id: crypto.randomUUID(),
         project_id: projectId,
         status: "done",
+        input_params: "{}",
         output_kind: null,
+        output_files: "[]",
         created_at: Date.now(),
+        duration_ms: null,
+        error: null,
         checkpoint_variant: checkpointVariant ?? null,
       };
-      state.generations.push(row);
-      save(state);
+      generationStore.insert(row);
       return row;
     },
     async deleteGeneration(id) {
-      const state = load();
-      state.generations = state.generations.filter((g) => g.id !== id);
-      save(state);
+      generationStore.remove(id);
     },
   };
 }

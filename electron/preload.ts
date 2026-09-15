@@ -42,4 +42,20 @@ contextBridge.exposeInMainWorld("kwesi", {
       return () => ipcRenderer.removeListener("kwesi:models:progress", listener);
     },
   },
+  generation: {
+    submit: (
+      projectId: string,
+      checkpointVariant: string | null,
+      inputParams: Record<string, unknown>,
+      outputKind: string,
+    ) => ipcRenderer.invoke("kwesi:generation:submit", projectId, checkpointVariant, inputParams, outputKind),
+    startServer: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:start", modelId),
+    stopServer: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:stop", modelId),
+    serverStatus: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:status", modelId),
+    onProgress: (callback: (event: unknown) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("kwesi:generation:progress", listener);
+      return () => ipcRenderer.removeListener("kwesi:generation:progress", listener);
+    },
+  },
 });

@@ -128,18 +128,33 @@ export const SEED_MODELS: SeedModel[] = [
     displayName: "RAVE",
     licenseTier: "cc-by-nc-sa",
     trainable: true,
-    // RAVE has no generic pretrained size variants -- it's normally trained
-    // per-target-timbre via the training pipeline (Phase 10/11). The
-    // pretrained example timbres IRCAM/ACIDS does publish live on a
-    // JS-rendered page that can't be scraped, so this is also "manual".
+    // RAVE has no repo the app can download from -- IRCAM/ACIDS publishes
+    // pretrained example timbre models on a JS-rendered page that can't be
+    // scraped (see 03-model-catalog.md), so every variant here is "manual":
+    // the app's own Install button stays disabled and points at the real
+    // page. That said, once a human downloads one of these .ts (TorchScript
+    // export, not TypeScript) files themselves and drops it in
+    // KWESI_MODELS_DIR/rave/<name>/, the startup reconciliation pass (see
+    // electron/models/reconcile.ts) recognizes it as installed same as any
+    // other variant -- "manual" only gates app-initiated download, not
+    // recognition of what's already on disk. Names match the exact
+    // filenames IRCAM publishes.
     variants: [
-      {
-        name: "pretrained-examples",
-        source: "manual",
-        note:
-          "RAVE is normally trained per-timbre, not downloaded as a generic checkpoint. Pretrained example timbre models are listed here -- that table is JS-rendered client-side and can't be fetched by the app, open it in a browser.",
-        url: "https://acids-ircam.github.io/rave_models_download",
-      },
-    ],
+      "darbouka_onnx",
+      "isis",
+      "musicnet",
+      "nasa",
+      "percussion",
+      "sol_full",
+      "sol_ordinario_fast",
+      "VCTK",
+      "vintage",
+    ].map((name) => ({
+      name,
+      source: "manual" as const,
+      note:
+        "RAVE pretrained models aren't downloadable from the app -- IRCAM/ACIDS publishes them on a JS-rendered page that can't be scraped. Download the .ts file yourself and it'll be recognized once it's on disk.",
+      url: "https://acids-ircam.github.io/rave_models_download",
+    })),
   },
 ];

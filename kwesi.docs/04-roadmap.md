@@ -127,24 +127,62 @@ variants) — install lifecycle only, doesn't run yet.
 
 ---
 
-## Phase 4 — Model Adapter Framework
+## Phase 4 — Model Adapter Framework ✅ complete
 **Objective:** the dynamic-UI engine — the actual "plug and play" promise
 of the app.
 
-- Manifest schema finalized (per [02-architecture.md](02-architecture.md))
-  and a manifest written for every catalog model (data only, no execution
-  yet).
-- Dynamic input-form renderer: walks a manifest's `inputs[]` and renders
-  the bottom generation bar + any needed modal fields, matching the
-  reference's chained-dropdown pattern.
-- Dynamic output-viewer mount point: picks waveform player vs. piano-roll
-  vs. both based on `outputs[]`, with a clean placeholder for each until
-  Phase 6/7 build the real viewers.
-- Model Server Manager in the Electron main process: start/health-
-  check/stop a model's local Python server subprocess, relay SSE progress
-  to the renderer.
-- Generation job queue: request → running → done/failed, persisted to the
-  `generation` table from Phase 2.
+- Manifest schema finalized in `src/data/manifests.ts` (per
+  [02-architecture.md](02-architecture.md)) and a manifest written for
+  every catalog model, transcribed from the real per-model input/output
+  specs in [03-model-catalog.md](03-model-catalog.md) — MusicGen's
+  melody-only reference-audio field, MuseCoco's richest structured-
+  attribute form, Museformer's seed/continuation input (no free-text
+  prompt), ACE-Step's lyrics/BPM/key/tags/reference-audio set, YuE2's dual
+  audio+symbolic output declaration, and RAVE's audio-in/audio-out shape
+  with zero checkpoint variants (data only, no execution yet).
+- Dynamic input-form renderer (`src/components/generation/
+  DynamicGenerationForm.tsx`): walks a manifest's `inputs[]`, renders the
+  right control per input type, respects the `onlyForVariant` conditional
+  (covered by Vitest tests), and only offers checkpoint variants the
+  workspace's model actually has `installed` — an uninstalled/untrained
+  model (e.g. RAVE today) shows an explicit install-prompt or "no trained
+  model available yet" state instead of a broken generate button.
+- Dynamic output-viewer mount point (`src/components/generation/
+  OutputViewerPlaceholder.tsx`): picks waveform player vs. piano-roll vs.
+  both from a generation's `output_kind`, with a clean placeholder for each
+  until Phase 6/7/8 build the real viewers.
+- Model Server Manager in the Electron main process
+  (`electron/models/modelServer.ts`): tracks a start/stop/status lifecycle
+  per model and walks a submitted generation through
+  queued → running → done/failed with periodic progress broadcast over IPC
+  (`electron/ipc/generation.ts`, mirroring `downloadQueue.ts`'s house
+  style). **Intentionally mocked per this phase's own exit criteria** — no
+  Python subprocess is spawned; "running" is a timed status walk with a
+  small random chance of a simulated failure to exercise the error UI.
+  Real process spawning is Phase 5's job.
+- Generation job queue: wired end-to-end through `WorkspaceDetail.tsx`'s
+  "+ New Generation" flow — submitting the dynamic form creates a
+  `generation` row (`queued`, `input_params`/`checkpoint_variant`
+  populated from the form) and the mock Model Server Manager progresses it
+  live, with the UI reflecting queued/running/done/failed via the same
+  progress-event pattern as the Model Manager's install queue.
+
+**Simplifications made (v1, noted as acceptable scope calls):**
+- The mock Model Server Manager writes empty placeholder output files
+  (`output.wav`/`output.mid` with no real bytes) so the on-disk/
+  `output_files` plumbing is exercised now — real audio/MIDI bytes arrive
+  with Phase 5+'s real inference.
+- ACE-Step 1.5's two `5hz-lm-*` prompt-expansion front-ends and YuE2's VAE
+  decoder choice are modeled as manifest inputs/notes rather than
+  selectable `checkpoint_variant`s, since the app's data model has exactly
+  one checkpoint-variant slot per generation and these aren't standalone
+  generation checkpoints.
+- Manifest data lives renderer-side only (`src/data/manifests.ts`); the
+  Electron main process doesn't need a duplicate copy for this phase since
+  the mock Model Server Manager only needs a generation's already-computed
+  `output_kind`, not the full manifest. If a later phase's main-process
+  validation needs manifest data too, mirror it the way
+  `electron/db/seedModels.ts`/`src/data/modelVariants.ts` already do.
 
 **Exit criteria:** switching a workspace's bound model changes the
 generation screen's inputs and output-viewer placeholder correctly for

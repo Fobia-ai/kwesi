@@ -7,6 +7,7 @@ import { openDatabase } from "./db/database.js";
 import { initPaths, initModelsPaths } from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
 import { registerModelsIpcHandlers } from "./ipc/models.js";
+import { registerGenerationIpcHandlers } from "./ipc/generation.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 
 // Loads .env from the project root in dev (electron launched via `electron .`,
@@ -28,6 +29,7 @@ initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
 initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
 registerDbIpcHandlers();
 registerModelsIpcHandlers();
+registerGenerationIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"

@@ -53,8 +53,12 @@ export interface GenerationRow {
   id: string;
   project_id: string;
   status: string;
+  input_params: string;
   output_kind: string | null;
+  output_files: string;
   created_at: number;
+  duration_ms: number | null;
+  error: string | null;
   checkpoint_variant: string | null;
 }
 
@@ -68,10 +72,16 @@ export function listModelVariants(modelId: string): ModelVariantRow[] {
     .all(modelId) as ModelVariantRow[];
 }
 
-/** Every downloadable (non-manual) variant across all models — used to reconcile install state against disk at startup. */
-export function listDownloadableVariants(): ModelVariantRow[] {
+/**
+ * Every model_variant row, regardless of source — used to reconcile install
+ * state against disk at startup. "manual" only gates whether the app can
+ * *initiate* a download for a variant (see electron/models/downloadQueue.ts);
+ * it says nothing about whether the app should *recognize* content a human
+ * placed there themselves, so this deliberately isn't filtered by source.
+ */
+export function listAllModelVariants(): ModelVariantRow[] {
   return getDatabase()
-    .prepare("SELECT * FROM model_variant WHERE source = 'huggingface' ORDER BY model_id, variant_name")
+    .prepare("SELECT * FROM model_variant ORDER BY model_id, variant_name")
     .all() as ModelVariantRow[];
 }
 
@@ -141,9 +151,7 @@ export function deleteProject(id: string, deleteFiles: boolean): void {
 
 export function listGenerations(projectId: string): GenerationRow[] {
   return getDatabase()
-    .prepare(
-      "SELECT id, project_id, status, output_kind, created_at, checkpoint_variant FROM generation WHERE project_id = ? ORDER BY created_at DESC",
-    )
+    .prepare("SELECT * FROM generation WHERE project_id = ? ORDER BY created_at DESC")
     .all(projectId) as GenerationRow[];
 }
 
@@ -181,8 +189,12 @@ export function createPlaceholderGeneration(
     id,
     project_id: projectId,
     status: "done",
+    input_params: "{}",
     output_kind: null,
+    output_files: "[]",
     created_at: now,
+    duration_ms: null,
+    error: null,
     checkpoint_variant: variant,
   };
 }
@@ -288,4 +300,77 @@ export function resetVariantToNotInstalled(id: string): void {
        bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL, error = NULL WHERE id = ?`,
     )
     .run(id);
+}
+
+// --- Phase 4: Generation job queue ------------------------------------------
+// Additions only — the functions above this line are Phase 2/3 and untouched.
+
+export function getProjectContext(
+  projectId: string,
+): { workspaceId: string; modelId: string } | undefined {
+  return getDatabase()
+    .prepare(
+      `SELECT p.workspace_id AS workspaceId, w.model_id AS modelId
+       FROM project p JOIN workspace w ON w.id = p.workspace_id
+       WHERE p.id = ?`,
+    )
+    .get(projectId) as { workspaceId: string; modelId: string } | undefined;
+}
+
+export function createGeneration(
+  projectId: string,
+  checkpointVariant: string | null,
+  inputParams: Record<string, unknown>,
+  outputKind: string,
+): GenerationRow {
+  const db = getDatabase();
+  const context = getProjectContext(projectId);
+  if (!context) throw new Error(`Project ${projectId} not found`);
+
+  const id = randomUUID();
+  const now = Date.now();
+  const inputParamsJson = JSON.stringify(inputParams);
+  db.prepare(
+    `INSERT INTO generation (id, project_id, status, input_params, output_kind, output_files, created_at, checkpoint_variant)
+     VALUES (?, ?, 'queued', ?, ?, '[]', ?, ?)`,
+  ).run(id, projectId, inputParamsJson, outputKind, now, checkpointVariant);
+
+  ensureDir(generationDir(context.workspaceId, projectId, id));
+
+  return {
+    id,
+    project_id: projectId,
+    status: "queued",
+    input_params: inputParamsJson,
+    output_kind: outputKind,
+    output_files: "[]",
+    created_at: now,
+    duration_ms: null,
+    error: null,
+    checkpoint_variant: checkpointVariant,
+  };
+}
+
+export function getGenerationById(id: string): GenerationRow | undefined {
+  return getDatabase().prepare("SELECT * FROM generation WHERE id = ?").get(id) as
+    | GenerationRow
+    | undefined;
+}
+
+export function updateGenerationStatus(
+  id: string,
+  status: string,
+  patch: { outputFiles?: string[]; durationMs?: number; error?: string } = {},
+): void {
+  getDatabase()
+    .prepare(
+      `UPDATE generation SET status = ?, output_files = ?, duration_ms = ?, error = ? WHERE id = ?`,
+    )
+    .run(
+      status,
+      patch.outputFiles ? JSON.stringify(patch.outputFiles) : "[]",
+      patch.durationMs ?? null,
+      patch.error ?? null,
+      id,
+    );
 }

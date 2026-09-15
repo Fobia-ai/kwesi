@@ -74,14 +74,25 @@ export const MODEL_VARIANTS_SEED: SeedModelVariants[] = [
   },
   {
     id: "rave",
+    // Matches electron/db/seedModels.ts: real IRCAM/ACIDS pretrained example
+    // timbre model names, "manual" source since the app can't download them
+    // itself, but recognized once a human drops the .ts file in place.
     variants: [
-      {
-        name: "pretrained-examples",
-        source: "manual",
-        note:
-          "RAVE is normally trained per-timbre, not downloaded as a generic checkpoint. Pretrained example timbre models are listed here — that page is JS-rendered and can't be fetched by the app directly.",
-        url: "https://acids-ircam.github.io/rave_models_download",
-      },
-    ],
+      "darbouka_onnx",
+      "isis",
+      "musicnet",
+      "nasa",
+      "percussion",
+      "sol_full",
+      "sol_ordinario_fast",
+      "VCTK",
+      "vintage",
+    ].map((name) => ({
+      name,
+      source: "manual" as const,
+      note:
+        "RAVE pretrained models aren't downloadable from the app — IRCAM/ACIDS publishes them on a JS-rendered page that can't be scraped. Download the .ts file yourself and it'll be recognized once it's on disk.",
+      url: "https://acids-ircam.github.io/rave_models_download",
+    })),
   },
 ];

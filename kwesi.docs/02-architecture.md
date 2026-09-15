@@ -191,33 +191,42 @@ should never be silent).
 
 This is the contract that makes the "plug and play" UI possible. Every
 catalog model ships one of these (hand-written by us during integration,
-not auto-generated):
+not auto-generated). **Implemented in Phase 4** as TypeScript data in
+`src/data/manifests.ts` (camelCase fields, not the jsonc sketch below
+verbatim, but the same shape) — one manifest per catalog model, kept
+renderer-side only since the Phase 4 mock Model Server Manager doesn't need
+the full manifest (see `04-roadmap.md` Phase 4's simplifications):
 
 ```jsonc
 {
-  "model_id": "musicgen",
-  "display_name": "MusicGen (AudioCraft)",
-  "license_tier": "cc-by-nc",              // surfaced in UI as a badge
-  "checkpoint_variants": ["small", "medium", "large", "melody", "style"],
-  "hardware": { "min_vram_gb": 6, "cpu_fallback": false },
+  "modelId": "musicgen",
+  "displayName": "MusicGen",
+  "licenseTier": "cc-by-nc",              // surfaced in UI as a badge
+  "checkpointVariants": ["small", "medium", "large", "melody", "style"],
+  "hardware": { "minVramGb": 4, "cpuFallback": false },
   "inputs": [
     { "key": "prompt", "type": "text", "required": true, "label": "Describe the music" },
-    { "key": "melody_audio", "type": "audio_upload", "required": false,
-      "label": "Melody reference (optional)", "only_for_variant": "melody" },
+    { "key": "melody_audio", "type": "audio_upload", "accept": "audio/*",
+      "label": "Melody reference (optional)", "onlyForVariant": "melody" },
     { "key": "duration_sec", "type": "number", "min": 1, "max": 30, "default": 8 }
   ],
   "outputs": [
-    { "kind": "audio", "format": "wav", "sample_rate": 32000 }
+    { "kind": "audio", "format": "wav", "sampleRate": 32000 }
   ],
-  "server": { "entrypoint": "server.py", "venv": "musicgen-venv", "port_range": [17600, 17699] }
+  "server": { "entrypoint": "server.py", "venv": "musicgen-venv", "portRange": [17600, 17619] }
 }
 ```
 
-The generation-screen renderer walks `inputs[]` to build the bottom
-parameter bar + form, and walks `outputs[]` to decide which viewer
-component(s) to mount (waveform player vs. piano-roll vs. both). Adding a
-model later means adding a manifest + a server adapter, not touching the
-generic UI code.
+The generation-screen renderer (`src/components/generation/
+DynamicGenerationForm.tsx`) walks `inputs[]` to build the generation form,
+filtering each input by `onlyForVariant` against the selected checkpoint
+variant and by which variants are actually `installed`; a sibling component
+(`OutputViewerPlaceholder.tsx`) walks `outputs[]` (via the `outputKindOf`
+helper) to decide which viewer placeholder(s) to mount (waveform player
+vs. piano-roll vs. both). Adding a model later means adding a manifest + a
+server adapter, not touching the generic UI code. Input types implemented:
+`text`, `textarea`, `number`, `select`, `tags`, `audio_upload`,
+`midi_upload`.
 
 ### Manifest extension: training
 
@@ -335,7 +344,15 @@ training and with what input kind, and
 - Electron main process owns a small **Model Server Manager**: starts a
   model's Python subprocess server on demand (first generation request, or
   eagerly if the user pins a workspace's model), health-checks it, tears it
-  down on app quit or workspace switch to free VRAM/RAM.
+  down on app quit or workspace switch to free VRAM/RAM. **Phase 4 status:**
+  implemented as `electron/models/modelServer.ts` with the real start/stop/
+  status/generate shape described here, but its actual body is a mock — no
+  Python process is spawned, "starting"/"running" are timed in-memory
+  status transitions and a submitted generation is a timed
+  queued → running → done/failed walk (with a small simulated-failure
+  chance) that writes empty placeholder output files. This proves the
+  queue/IPC/UI plumbing described below; Phase 5 replaces the mock body
+  with a real MusicGen subprocess without changing the IPC surface.
 - A sibling **Training Job Manager** handles the training side (see
   "Training pipeline architecture" above): same venv/subprocess pattern,
   but for long-running `train.py` jobs that must survive app restarts via

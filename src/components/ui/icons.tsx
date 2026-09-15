@@ -65,6 +65,23 @@ export function ExternalLinkIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function WaveformIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M3 12h2M7 8v8M11 4v16M15 8v8M19 10v4M21 12h.01" />
+    </Base>
+  );
+}
+
+export function PianoRollIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 4v6M11 4v10M15 4v4M19 4v14" />
+    </Base>
+  );
+}
+
 export function GitHubIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" {...props}>

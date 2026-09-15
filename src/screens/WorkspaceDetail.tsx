@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
@@ -13,6 +13,10 @@ import {
   type GenerationRow,
   type ModelVariantRow,
 } from "../lib/db";
+import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
+import { getManifest, outputKindOf } from "../data/manifests";
+import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
+import { OutputViewerPlaceholder, type GenerationStatus } from "../components/generation/OutputViewerPlaceholder";
 
 function NewProjectModal({
   onClose,
@@ -48,20 +52,100 @@ function NewProjectModal({
   );
 }
 
+function NewGenerationModal({
+  modelId,
+  installedVariantNames,
+  onClose,
+  onSubmit,
+}: {
+  modelId: string;
+  installedVariantNames: string[];
+  onClose: () => void;
+  onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
+}) {
+  const manifest = getManifest(modelId);
+  return (
+    <Modal title="New Generation" onClose={onClose}>
+      {manifest ? (
+        <DynamicGenerationForm
+          manifest={manifest}
+          installedVariantNames={installedVariantNames}
+          onSubmit={onSubmit}
+        />
+      ) : (
+        <p className="text-sm text-ink-muted">No manifest found for this model.</p>
+      )}
+    </Modal>
+  );
+}
+
+function GenerationListItem({ generation, onDeleted }: { generation: GenerationRow; onDeleted: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [progressPct, setProgressPct] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = kwesiGeneration.onProgress((event: GenerationProgressEvent) => {
+      if (event.type === "server_status") return;
+      if (event.generationId !== generation.id) return;
+      if (event.type === "running") setProgressPct(event.progressPct);
+    });
+    return unsubscribe;
+  }, [generation.id]);
+
+  return (
+    <li className="rounded-[8px] bg-ink/[0.03] px-3 py-2 text-xs">
+      <div className="flex items-center justify-between">
+        <button className="text-left" onClick={() => setExpanded((v) => !v)}>
+          {generation.status}
+          {generation.checkpoint_variant ? ` — ${generation.checkpoint_variant}` : ""}
+        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setExpanded((v) => !v)} className="text-ink-muted hover:text-ink">
+            {expanded ? "Hide" : "View"}
+          </button>
+          <button
+            onClick={() => onDeleted()}
+            className="text-ink-muted hover:text-ink"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-2">
+          <OutputViewerPlaceholder
+            outputKind={(generation.output_kind as "audio" | "midi" | "audio+midi") ?? "audio"}
+            status={generation.status as GenerationStatus}
+            progressPct={progressPct}
+            error={generation.error}
+          />
+        </div>
+      )}
+    </li>
+  );
+}
+
 function ProjectCard({
   project,
+  modelId,
   variants,
   onDeleted,
 }: {
   project: ProjectRow;
+  modelId: string;
   variants: ModelVariantRow[];
   onDeleted: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [generations, setGenerations] = useState<GenerationRow[]>([]);
-  const [variant, setVariant] = useState(variants[0]?.variant_name ?? "");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteFilesToo, setDeleteFilesToo] = useState(false);
+  const [showGenerationModal, setShowGenerationModal] = useState(false);
+
+  const installedVariantNames = useMemo(
+    () => variants.filter((v) => v.install_status === "installed").map((v) => v.variant_name),
+    [variants],
+  );
 
   async function refresh() {
     setGenerations(await kwesiDb.listGenerations(project.id));
@@ -72,9 +156,25 @@ function ProjectCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
-  async function addPlaceholder() {
-    await kwesiDb.createPlaceholderGeneration(project.id, variant || undefined);
-    refresh();
+  useEffect(() => {
+    if (!expanded) return;
+    const unsubscribe = kwesiGeneration.onProgress((event: GenerationProgressEvent) => {
+      if (event.type === "server_status") return;
+      if (event.projectId !== project.id) return;
+      refresh();
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, project.id]);
+
+  async function submitGeneration(checkpointVariant: string | null, values: Record<string, unknown>) {
+    const manifest = getManifest(modelId);
+    if (!manifest) return;
+    const result = await kwesiGeneration.submit(project.id, checkpointVariant, values, outputKindOf(manifest));
+    if (result.ok) {
+      setShowGenerationModal(false);
+      refresh();
+    }
   }
 
   async function removeGeneration(id: string) {
@@ -109,28 +209,12 @@ function ProjectCard({
 
       {expanded && (
         <div className="mt-4 border-t border-ink/10 pt-4">
-          {variants.length > 0 && (
-            <div className="mb-3 flex items-center gap-2">
-              <label className="text-xs text-ink-muted">Checkpoint variant</label>
-              <select
-                value={variant}
-                onChange={(e) => setVariant(e.target.value)}
-                className="kwesi-glass rounded-[8px] px-2 py-1 text-xs outline-none"
-              >
-                {variants.map((v) => (
-                  <option key={v.id} value={v.variant_name}>
-                    {v.variant_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <PillButton
             variant="ghost"
             className="!px-4 !py-1.5 text-xs"
-            onClick={addPlaceholder}
+            onClick={() => setShowGenerationModal(true)}
           >
-            + Add generation
+            + New Generation
           </PillButton>
 
           {generations.length === 0 ? (
@@ -138,25 +222,20 @@ function ProjectCard({
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
               {generations.map((g) => (
-                <li
-                  key={g.id}
-                  className="flex items-center justify-between rounded-[8px] bg-ink/[0.03] px-3 py-2 text-xs"
-                >
-                  <span>
-                    {g.status}
-                    {g.checkpoint_variant ? ` — ${g.checkpoint_variant}` : ""}
-                  </span>
-                  <button
-                    onClick={() => removeGeneration(g.id)}
-                    className="text-ink-muted hover:text-ink"
-                  >
-                    Delete
-                  </button>
-                </li>
+                <GenerationListItem key={g.id} generation={g} onDeleted={() => removeGeneration(g.id)} />
               ))}
             </ul>
           )}
         </div>
+      )}
+
+      {showGenerationModal && (
+        <NewGenerationModal
+          modelId={modelId}
+          installedVariantNames={installedVariantNames}
+          onClose={() => setShowGenerationModal(false)}
+          onSubmit={submitGeneration}
+        />
       )}
 
       {confirmingDelete && (
@@ -237,7 +316,13 @@ export function WorkspaceDetailScreen() {
       ) : (
         <div className="flex flex-col gap-2.5">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} variants={variants} onDeleted={refresh} />
+            <ProjectCard
+              key={p.id}
+              project={p}
+              modelId={workspace?.model_id ?? ""}
+              variants={variants}
+              onDeleted={refresh}
+            />
           ))}
         </div>
       )}
