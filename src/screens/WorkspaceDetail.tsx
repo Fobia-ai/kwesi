@@ -4,6 +4,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
+import { SlideOver } from "../components/ui/SlideOver";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { WorkspacesIcon } from "../components/ui/icons";
 import {
@@ -56,7 +57,7 @@ function NewProjectModal({
   );
 }
 
-function NewGenerationModal({
+function NewGenerationPanel({
   modelId,
   installedVariantNames,
   extraVariantNames,
@@ -71,7 +72,7 @@ function NewGenerationModal({
 }) {
   const manifest = getManifest(modelId);
   return (
-    <Modal title="New Generation" onClose={onClose}>
+    <SlideOver title="New Generation" subtitle={manifest?.displayName} onClose={onClose}>
       {manifest ? (
         <DynamicGenerationForm
           manifest={manifest}
@@ -82,7 +83,7 @@ function NewGenerationModal({
       ) : (
         <p className="text-sm text-ink-muted">No manifest found for this model.</p>
       )}
-    </Modal>
+    </SlideOver>
   );
 }
 
@@ -328,7 +329,7 @@ function ProjectCard({
       )}
 
       {showGenerationModal && (
-        <NewGenerationModal
+        <NewGenerationPanel
           modelId={modelId}
           installedVariantNames={installedVariantNames}
           extraVariantNames={trainedVariantNames}

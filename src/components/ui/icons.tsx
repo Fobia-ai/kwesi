@@ -140,6 +140,14 @@ export function LockIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function CloseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Base>
+  );
+}
+
 export function GitHubIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" {...props}>

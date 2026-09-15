@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { PillButton } from "./PillButton";
 import { GlassPanel } from "./GlassPanel";
 import { useEscapeKey } from "../../lib/useEscapeKey";
@@ -22,7 +23,10 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   useEscapeKey(onCancel);
 
-  return (
+  // Portaled to document.body — see Modal.tsx's comment: without this, a
+  // backdrop-filter ancestor (any .kwesi-glass panel) traps this fixed
+  // overlay inside itself instead of covering the viewport.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
       <GlassPanel strong radius="panel" className="w-full max-w-sm p-5">
         <h2 className="text-base font-semibold">{title}</h2>
@@ -39,6 +43,7 @@ export function ConfirmDialog({
           </PillButton>
         </div>
       </GlassPanel>
-    </div>
+    </div>,
+    document.body,
   );
 }
