@@ -8,6 +8,7 @@ import { useAppLock } from "../components/security/AppLock";
 import { PillButton } from "../components/ui/PillButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Modal } from "../components/ui/Modal";
+import { GlassPanel } from "../components/ui/GlassPanel";
 
 const TABS = ["Profile", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
@@ -32,7 +33,7 @@ function ProfileTab() {
   }
 
   return (
-    <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
+    <div className="flex max-w-lg flex-col gap-4">
       <p className="text-xs text-ink-muted">Local profile only — no account, nothing sent anywhere.</p>
       <label className="flex flex-col gap-1.5 text-sm">
         Display name
@@ -159,7 +160,7 @@ function SecurityTab() {
   }
 
   return (
-    <div className="kwesi-glass flex flex-col gap-4 rounded-card p-5">
+    <div className="flex max-w-lg flex-col gap-4">
       <p className="text-xs text-ink-muted">
         Set a passcode to lock Kwesi on relaunch and after inactivity. This is a local UI gate,
         not encryption of your workspace data.
@@ -230,9 +231,10 @@ export function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("Profile");
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col">
-      <h1 className="mb-4 text-xl font-semibold">Settings</h1>
-      <div className="mb-6 flex gap-1 border-b border-ink/10">
+    <div className="flex h-full flex-col">
+      <h1 className="mb-4 shrink-0 text-2xl font-semibold tracking-tight">Settings</h1>
+      <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 gap-1 border-b border-ink/10 px-4">
         {TABS.map((t) => (
           <button
             key={t}
@@ -247,15 +249,16 @@ export function SettingsScreen() {
         ))}
       </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
       {tab === "Profile" && <ProfileTab />}
       {tab === "Security" && <SecurityTab />}
 
       {tab === "About" && (
-        <div className="flex flex-col gap-2.5">
+        <div className="-m-5 flex flex-col">
           {CATALOG.map((entry) => (
             <div
               key={entry.modelId}
-              className="kwesi-glass flex items-center gap-3 rounded-credit px-3.5 py-2.5"
+              className="flex items-center gap-3 border-b border-ink/10 px-5 py-3 last:border-b-0"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -282,6 +285,8 @@ export function SettingsScreen() {
       {(tab === "General" || tab === "Generation" || tab === "Models in use") && (
         <p className="text-sm text-ink-muted">Coming in a later phase — see kwesi.docs/04-roadmap.md.</p>
       )}
+      </div>
+      </GlassPanel>
     </div>
   );
 }

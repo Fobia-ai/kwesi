@@ -98,10 +98,10 @@ export function WorkspacesScreen() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="flex h-full flex-col">
+      <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Workspaces</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
           <p className="text-sm text-ink-muted">
             Each workspace is bound to one model, chosen when it's created.
           </p>
@@ -110,37 +110,46 @@ export function WorkspacesScreen() {
       </div>
 
       {workspaces === null ? null : workspaces.length === 0 ? (
-        <EmptyState
-          icon={<WorkspacesIcon width={28} height={28} />}
-          title="No workspaces yet."
-          action={<PillButton onClick={() => setShowNew(true)}>Create your first workspace</PillButton>}
-        />
+        <GlassPanel radius="panel" className="flex min-h-0 flex-1 items-center justify-center p-8">
+          <EmptyState
+            icon={<WorkspacesIcon width={28} height={28} />}
+            title="No workspaces yet."
+            action={<PillButton onClick={() => setShowNew(true)}>Create your first workspace</PillButton>}
+          />
+        </GlassPanel>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {workspaces.map((w) => (
-            <GlassPanel
-              key={w.id}
-              className="group flex cursor-pointer items-center justify-between px-4 py-3.5 transition-colors duration-150 hover:brightness-105"
-              onClick={() => navigate(`/workspaces/${w.id}`)}
-            >
-              <div>
-                <div className="text-sm font-medium">{w.name}</div>
-                <div className="text-xs text-ink-muted">{w.model_display_name}</div>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeleteFilesToo(false);
-                  setPendingDelete(w);
+        <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {workspaces.map((w) => (
+              <div
+                key={w.id}
+                role="button"
+                tabIndex={0}
+                className="group flex cursor-pointer items-center justify-between border-b border-ink/10 px-5 py-4 transition-colors duration-150 last:border-b-0 hover:bg-ink/[0.05]"
+                onClick={() => navigate(`/workspaces/${w.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") navigate(`/workspaces/${w.id}`);
                 }}
-                className="rounded-[8px] px-2 py-1 text-xs text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-ink/[0.06] hover:text-ink group-hover:opacity-100"
               >
-                Delete
-              </button>
-            </GlassPanel>
-          ))}
-        </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{w.name}</div>
+                  <div className="truncate text-xs text-ink-muted">{w.model_display_name}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteFilesToo(false);
+                    setPendingDelete(w);
+                  }}
+                  className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-red-500/10 hover:text-red-600 group-hover:opacity-100"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
       )}
 
       {showNew && (

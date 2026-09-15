@@ -214,10 +214,10 @@ export function ModelManagerScreen() {
   const catalogById = useMemo(() => new Map(CATALOG.map((c) => [c.modelId, c])), []);
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-6 overflow-y-auto pb-8">
-      <div className="flex items-start justify-between gap-4">
+    <div className="flex h-full flex-col">
+      <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Model Manager</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Model Manager</h1>
           <p className="text-sm text-ink-muted">
             Download and manage checkpoints, streamed straight from Hugging Face.
           </p>
@@ -227,7 +227,9 @@ export function ModelManagerScreen() {
         )}
       </div>
 
-      <GlassPanel className="p-4">
+      <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="border-b border-ink/10 p-5">
         <h2 className="mb-3 text-sm font-semibold">Install Queue</h2>
         {queue.length === 0 ? (
           <p className="text-xs text-ink-muted">Nothing downloading right now.</p>
@@ -268,17 +270,19 @@ export function ModelManagerScreen() {
             ))}
           </div>
         )}
-      </GlassPanel>
+      </div>
 
       {models === null ? null : models.length === 0 ? (
-        <EmptyState icon={<ModelsIcon width={28} height={28} />} title="No models in the catalog." />
+        <div className="border-b border-ink/10 p-5">
+          <EmptyState icon={<ModelsIcon width={28} height={28} />} title="No models in the catalog." />
+        </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col">
           {models.map((model) => {
             const catalogEntry = catalogById.get(model.id);
             const variants = variantsByModel[model.id] ?? [];
             return (
-              <GlassPanel key={model.id} className="p-4">
+              <div key={model.id} className="border-b border-ink/10 p-5">
                 <div className="mb-1 flex items-center gap-2">
                   <span className="text-sm font-semibold">{model.display_name}</span>
                   <span className="rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
@@ -365,13 +369,13 @@ export function ModelManagerScreen() {
                     ))}
                   </div>
                 )}
-              </GlassPanel>
+              </div>
             );
           })}
         </div>
       )}
 
-      <GlassPanel className="p-4">
+      <div className="p-5">
         <h2 className="mb-3 text-sm font-semibold">My Trained Models</h2>
         {trainedModels.length === 0 ? (
           <EmptyState
@@ -396,6 +400,8 @@ export function ModelManagerScreen() {
             })}
           </div>
         )}
+      </div>
+      </div>
       </GlassPanel>
 
       {removeTarget && (
