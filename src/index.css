@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --kwesi-bg: 245 245 247;
+  --kwesi-ink: 22 22 25;
+  --kwesi-ink-muted: 108 108 116;
+  --kwesi-accent: 10 132 255;
+  --kwesi-accent-ink: 255 255 255;
+}
+
+.dark {
+  --kwesi-bg: 12 12 15;
+  --kwesi-ink: 240 240 242;
+  --kwesi-ink-muted: 150 150 158;
+  --kwesi-accent: 64 156 255;
+  --kwesi-accent-ink: 10 10 12;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --kwesi-bg: 12 12 15;
+    --kwesi-ink: 240 240 242;
+    --kwesi-ink-muted: 150 150 158;
+    --kwesi-accent: 64 156 255;
+    --kwesi-accent-ink: 10 10 12;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--kwesi-bg));
+  color: rgb(var(--kwesi-ink));
+  font-family: theme("fontFamily.sans");
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Soft blurred color wash behind the app content — confirmed by the
+   glassmorphism mood-board references: frosted panels read best over a
+   gently colored backdrop, not a flat one. */
+.kwesi-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 15% 10%, rgb(var(--kwesi-accent) / 0.16), transparent 45%),
+    radial-gradient(circle at 85% 30%, rgb(168 85 247 / 0.10), transparent 40%),
+    radial-gradient(circle at 50% 90%, rgb(var(--kwesi-accent) / 0.08), transparent 50%);
+}
+
+.kwesi-glass {
+  background: rgb(255 255 255 / 0.65);
+  border: 1px solid rgb(0 0 0 / 0.06);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+.dark .kwesi-glass {
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.kwesi-glass-strong {
+  background: rgb(255 255 255 / 0.8);
+  border: 1px solid rgb(0 0 0 / 0.06);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+.dark .kwesi-glass-strong {
+  background: rgb(255 255 255 / 0.09);
+  border: 1px solid rgb(255 255 255 / 0.12);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--kwesi-ink) / 0.15);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
