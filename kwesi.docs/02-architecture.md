@@ -59,9 +59,9 @@
     cards and panels, fully pill-shaped on buttons/chips), generous
     whitespace, restrained one-accent-color system rather than a busy
     multi-color UI.
-  - Accent color is **not locked to gold** — pick one clean, modern accent
-    (a single saturated hue, e.g. an iOS-style blue or a brand color still
-    to be chosen) used sparingly for primary actions, active nav state, and
+  - Accent color is **confirmed as monochrome black/white, not a hue** —
+    pure black in light mode / pure white in dark mode, inverting with the
+    theme, used sparingly for primary actions, active nav state, and
     focus states only; everything else stays neutral/translucent.
   - Motion: smooth, physically-eased transitions (spring/ease-out, ~200–
     300ms) for panel opens, view switches, and the generation-progress
@@ -138,10 +138,18 @@ generation
   output_files (json: paths on disk, one per output artifact),
   created_at, duration_ms, error (nullable)
 
+-- Split in two: a workspace binds permanently to a model FAMILY (`model`),
+-- while the checkpoint variant/size is chosen independently per generation
+-- job, so multiple variants of one family can be installed side-by-side
+-- (`model_variant`) instead of one install slot per model.
 model
-  id, display_name, catalog_version, install_status (not_installed|downloading|installed),
-  checkpoint_variant, license_tier (mit|cc-by-nc|cc-by-nc-sa),
-  install_path, disk_size_bytes, venv_path, server_port (nullable, runtime only)
+  id, display_name, license_tier (mit|cc-by-nc|cc-by-nc-sa), trainable,
+  venv_path, server_port (nullable, runtime only)
+
+model_variant
+  id, model_id (fk -> model), variant_name,
+  install_status (not_installed|downloading|installed),
+  install_path, disk_size_bytes
 
 settings
   key, value   -- app lock passcode hash, storage locations, theme, etc.

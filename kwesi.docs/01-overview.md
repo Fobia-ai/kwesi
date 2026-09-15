@@ -36,6 +36,10 @@ played, saved, exported, downloaded, and shared.
 
 Hierarchy: `Workspace (1 model) → Project → Generation (audio and/or MIDI)`
 
+- A workspace binds permanently to a model **family** (e.g. "MusicGen"); the
+  checkpoint variant/size is chosen independently per generation job, in any
+  project within that workspace — it is not fixed at the workspace level.
+
 ## Dynamic, model-driven UI
 
 This is the architectural core of the app. Every model in the catalog has a

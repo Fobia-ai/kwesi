@@ -6,7 +6,7 @@
   --kwesi-bg: 245 245 247;
   --kwesi-ink: 22 22 25;
   --kwesi-ink-muted: 108 108 116;
-  --kwesi-accent: 10 132 255;
+  --kwesi-accent: 20 20 22;
   --kwesi-accent-ink: 255 255 255;
 }
 
@@ -14,8 +14,8 @@
   --kwesi-bg: 12 12 15;
   --kwesi-ink: 240 240 242;
   --kwesi-ink-muted: 150 150 158;
-  --kwesi-accent: 64 156 255;
-  --kwesi-accent-ink: 10 10 12;
+  --kwesi-accent: 245 245 247;
+  --kwesi-accent-ink: 20 20 22;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,8 +23,8 @@
     --kwesi-bg: 12 12 15;
     --kwesi-ink: 240 240 242;
     --kwesi-ink-muted: 150 150 158;
-    --kwesi-accent: 64 156 255;
-    --kwesi-accent-ink: 10 10 12;
+    --kwesi-accent: 245 245 247;
+    --kwesi-accent-ink: 20 20 22;
   }
 }
 
@@ -47,18 +47,19 @@ body {
   overflow: hidden;
 }
 
-/* Soft blurred color wash behind the app content — confirmed by the
+/* Soft blurred neutral wash behind the app content — confirmed by the
    glassmorphism mood-board references: frosted panels read best over a
-   gently colored backdrop, not a flat one. */
+   gently textured backdrop, not a flat one. Monochrome: no hue, just a
+   faint ink-based glow that flips light/dark with --kwesi-ink. */
 .kwesi-backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 15% 10%, rgb(var(--kwesi-accent) / 0.16), transparent 45%),
-    radial-gradient(circle at 85% 30%, rgb(168 85 247 / 0.10), transparent 40%),
-    radial-gradient(circle at 50% 90%, rgb(var(--kwesi-accent) / 0.08), transparent 50%);
+    radial-gradient(circle at 15% 10%, rgb(var(--kwesi-ink) / 0.06), transparent 45%),
+    radial-gradient(circle at 85% 30%, rgb(var(--kwesi-ink) / 0.04), transparent 40%),
+    radial-gradient(circle at 50% 90%, rgb(var(--kwesi-ink) / 0.05), transparent 50%);
 }
 
 .kwesi-glass {

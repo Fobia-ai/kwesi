@@ -102,3 +102,49 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 3. **ACE-Step 1.5** — reintroduces audio output but with a much larger input surface (lyrics, BPM/key, tags, reference audio) and higher hardware tiers to gate in the UI.
 4. **YuE2** last among generators — heaviest hardware requirement, dual audio+symbolic output, and the most complex internal venv isolation (multiple incompatible sub-component environments).
 5. **RAVE** on its own track whenever convenient — architecturally separate (realtime, audio-to-audio, no prompt), doesn't block or get blocked by the others.
+
+---
+
+## Model distribution (developer download + Cloudflare re-hosting)
+
+To avoid requiring end users to have a Hugging Face account or token just
+to use Kwesi, model weights are pulled down **once** by the developer and
+re-hosted on infrastructure we control:
+
+1. The developer runs `scripts/download_models.py` (Python, `huggingface_hub`'s
+   `snapshot_download`) directly in a terminal — this is a developer-only
+   utility, not part of the Electron app and never invoked by end users.
+   It populates a local, gitignored `models/<model_id>/<variant_name>/`
+   folder at the repo root.
+2. That local `models/` folder is then re-uploaded, in full, to Cloudflare
+   R2 (object storage) for redistribution.
+3. In a later phase, the in-app **Model Manager** (Phase 3) will download
+   weights from Cloudflare-hosted URLs instead of Hugging Face directly —
+   so end users never need a Hugging Face account or token. This doc's
+   distribution plan and the in-app download logic are intentionally
+   decoupled: the script above only stages files locally for the developer
+   and does not touch Cloudflare or the app's own download code at all.
+
+Per the `MODELS` config in `scripts/download_models.py`, current status is:
+
+- **Confirmed, downloadable now via Hugging Face:**
+  - MusicGen — all five checkpoints (`musicgen-small`, `musicgen-medium`,
+    `musicgen-large`, `musicgen-melody`, `musicgen-style`) from the
+    `facebook` org.
+  - YuE2 — `yue2-3b` (`m-a-p/YuE2-3B`) and `yue2-vae` (`m-a-p/YuE2-Vae`).
+- **Needs manual sourcing (not confirmed on Hugging Face, or repo id
+  unconfirmed) — the script prints a skip message with a pointer rather
+  than guessing:**
+  - ACE-Step 1.5 — all three checkpoints (`acestep-v15-turbo`,
+    `acestep-v15-sft`, `acestep-v15-xl`); only the GitHub repo
+    (`github.com/ace-step/ACE-Step-1.5`) is confirmed, no HF repo ids yet.
+  - YuE2 — `yue2-vae-legacy`; exact repo id/location unconfirmed, check the
+    `m-a-p` org on Hugging Face.
+  - MuseCoco and Museformer — both from `github.com/microsoft/muzic`;
+    checkpoints are not confirmed to be on Hugging Face at all (may be
+    GitHub release assets or Google Drive links per the original READMEs).
+  - RAVE — pretrained example timbre models are traditionally distributed
+    via IRCAM/ACIDS's own links, not primarily Hugging Face; also, RAVE's
+    native workflow is training/fine-tuning per timbre rather than
+    downloading a single generic checkpoint (see "Training pipeline
+    architecture" in [02-architecture.md](02-architecture.md)).

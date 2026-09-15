@@ -1,8 +1,26 @@
+import type { ModelRow, ModelVariantRow, WorkspaceRow, ProjectRow, GenerationRow } from "./db";
+
 declare global {
   interface Window {
     kwesi?: {
       openExternal: (url: string) => Promise<boolean>;
       getEnv: () => Promise<Record<string, string | number>>;
+      db: {
+        listModels: () => Promise<ModelRow[]>;
+        listModelVariants: (modelId: string) => Promise<ModelVariantRow[]>;
+        listWorkspaces: () => Promise<WorkspaceRow[]>;
+        createWorkspace: (name: string, modelId: string) => Promise<WorkspaceRow>;
+        deleteWorkspace: (id: string, deleteFiles: boolean) => Promise<void>;
+        listProjects: (workspaceId: string) => Promise<ProjectRow[]>;
+        createProject: (workspaceId: string, name: string) => Promise<ProjectRow>;
+        deleteProject: (id: string, deleteFiles: boolean) => Promise<void>;
+        listGenerations: (projectId: string) => Promise<GenerationRow[]>;
+        createPlaceholderGeneration: (
+          projectId: string,
+          checkpointVariant?: string,
+        ) => Promise<GenerationRow>;
+        deleteGeneration: (id: string, deleteFiles: boolean) => Promise<void>;
+      };
     };
   }
 }

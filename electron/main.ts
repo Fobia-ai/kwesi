@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveKwesiEnv } from "./kwesiEnv.js";
+import { openDatabase } from "./db/database.js";
+import { initPaths } from "./db/paths.js";
+import { registerDbIpcHandlers } from "./ipc/db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
@@ -10,6 +13,10 @@ const isDev = process.env.NODE_ENV === "development";
 // KWESI_* env vars with sensible defaults — see kwesi.docs/02-architecture.md
 // "Configuration & environment variables".
 const kwesiEnv = resolveKwesiEnv(app.getPath("userData"), app.getPath("music"));
+
+openDatabase(kwesiEnv.KWESI_DB_PATH);
+initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
+registerDbIpcHandlers();
 
 let mainWindow: BrowserWindow | null = null;
 

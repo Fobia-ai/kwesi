@@ -6,3 +6,10 @@ release
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Developer-only local staging area for model weights pulled by
+# scripts/download_models.py before re-upload to Cloudflare R2.
+/models
+
+# Claude Code harness internals, not project state.
+.claude/
