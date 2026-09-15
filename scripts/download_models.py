@@ -18,12 +18,20 @@ public. If a download fails because a repo turns out to be gated/private,
 the script prints a one-line error suggesting `huggingface-cli login` and
 moves on to the next variant rather than aborting.
 
+As of 2026-09-15, 16 of 18 catalog variants are CONFIRMED real, public,
+ungated Hugging Face repos (verified live against huggingface.co/api/models
+and each project's own README, not guessed). Only two remain "manual":
+museformer/default (hosted on Microsoft OneDrive; a plain scripted request
+403s -- needs a browser) and rave/pretrained-examples (listed on a
+JS-rendered page that can't be scraped as static HTML). Both point at the
+real, verified location rather than a generic project pointer.
+
 Confidence legend used in the MODELS config below:
-  # CONFIRMED                  -> repo_id verified against prior research
+  # CONFIRMED                  -> repo_id verified live against the HF API
   # NEEDS VERIFICATION -- why  -> best guess; double check before relying on it
-Entries with source "manual" mean we do not have (or do not trust) a
-Hugging Face repo id at all; the note/url points at where a human should go
-look instead (GitHub README, release assets, org page, etc).
+Entries with source "manual" mean there is no scriptable Hugging Face repo
+id for this one -- the note/url points at the real (verified) location a
+human needs to visit instead.
 """
 
 import argparse
@@ -55,41 +63,56 @@ MODELS_DIR = "/mnt/fast_data/Projects/kwesi/models"
 MODELS = {
     "ace-step-1.5": {
         "variants": {
-            # The exact HF repo IDs for ACE-Step 1.5 checkpoints are not
-            # confirmed from prior research -- only the GitHub repo is
-            # confirmed. Marking these "manual" rather than guessing a
-            # repo_id and risking a confidently-wrong download.
-            "acestep-v15-turbo": {
-                # NEEDS VERIFICATION -- no confirmed HF repo id; check the
-                # ACE-Step-1.5 GitHub README for HF links before assuming a
-                # pattern like "ACE-Step/ACE-Step-1.5-turbo" is correct.
-                "source": "manual",
-                "note": (
-                    "No confirmed HF repo id for the 2B/8-step turbo "
-                    "checkpoint. Check github.com/ace-step/ACE-Step-1.5 "
-                    "README for the current Hugging Face link."
-                ),
-                "url": "https://github.com/ace-step/ACE-Step-1.5",
+            # CONFIRMED against the live Hugging Face API (curl
+            # huggingface.co/api/models?author=ACE-Step) and the repo's own
+            # README "Model Zoo" table on 2026-09-15 -- all six are real,
+            # public, ungated repos. Note the "turbo" DiT's repo is
+            # literally named "Ace-Step1.5", not "acestep-v15-turbo" -- the
+            # README's own table confirms this mapping, it's not a typo here.
+            "acestep-v15-base": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-v15-base",
+                "note": "2B DiT, 50-step, pre-train only (no SFT).",
             },
             "acestep-v15-sft": {
-                # NEEDS VERIFICATION -- same situation as turbo above.
-                "source": "manual",
-                "note": (
-                    "No confirmed HF repo id for the 2B/50-step SFT "
-                    "checkpoint. Check github.com/ace-step/ACE-Step-1.5 "
-                    "README for the current Hugging Face link."
-                ),
-                "url": "https://github.com/ace-step/ACE-Step-1.5",
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-v15-sft",
+                "note": "2B DiT, 50-step, SFT.",
             },
-            "acestep-v15-xl": {
-                # NEEDS VERIFICATION -- same situation, 4B XL checkpoint.
-                "source": "manual",
-                "note": (
-                    "No confirmed HF repo id for the 4B XL checkpoint. "
-                    "Check github.com/ace-step/ACE-Step-1.5 README for the "
-                    "current Hugging Face link."
-                ),
-                "url": "https://github.com/ace-step/ACE-Step-1.5",
+            "acestep-v15-turbo": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/Ace-Step1.5",
+                "note": "2B DiT, 8-step turbo. Repo name differs from the variant name -- confirmed correct, see README Model Zoo table.",
+            },
+            "acestep-v15-xl-base": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-v15-xl-base",
+                "note": "4B DiT, 50-step, pre-train only.",
+            },
+            "acestep-v15-xl-sft": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-v15-xl-sft",
+                "note": "4B DiT, 50-step, SFT.",
+            },
+            "acestep-v15-xl-turbo": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-v15-xl-turbo",
+                "note": "4B DiT, 8-step turbo.",
+            },
+            # Optional LM prompt-expansion front-ends, not alternate DiT
+            # sizes. Only 0.6B and 4B are confirmed to exist as their own HF
+            # repos as of 2026-09-15 -- no separate 1.7B repo was found under
+            # the ACE-Step org despite being referenced in the README's GPU
+            # recommendation table, so it's left out rather than guessed.
+            "acestep-5hz-lm-0.6b": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-5Hz-lm-0.6B",
+                "note": "Optional LM front-end (prompt/blueprint expansion), not a DiT size.",
+            },
+            "acestep-5hz-lm-4b": {
+                "source": "huggingface",
+                "repo_id": "ACE-Step/acestep-5Hz-lm-4B",
+                "note": "Optional LM front-end (prompt/blueprint expansion), not a DiT size.",
             },
         },
     },
@@ -108,16 +131,10 @@ MODELS = {
                 "note": "Audio decoder.",
             },
             "yue2-vae-legacy": {
-                # NEEDS VERIFICATION -- not sure this has its own separate
-                # HF repo (vs being a revision/branch of m-a-p/YuE2-Vae).
-                "source": "manual",
-                "note": (
-                    "Exact repo id/location for the legacy VAE checkpoint "
-                    "is unconfirmed. Check the m-a-p org on Hugging Face "
-                    "(https://huggingface.co/m-a-p) for a separate "
-                    "YuE2-Vae-legacy repo or a tagged revision."
-                ),
-                "url": "https://huggingface.co/m-a-p",
+                # CONFIRMED against the live Hugging Face API on 2026-09-15 --
+                # it is its own separate repo, not a revision/branch.
+                "source": "huggingface",
+                "repo_id": "m-a-p/YuE2-Vae-legacy",
             },
         },
     },
@@ -153,34 +170,35 @@ MODELS = {
     "musecoco": {
         "variants": {
             "default": {
-                # MuseCoco checkpoints are not confirmed to be on Hugging
-                # Face at all -- the original microsoft/muzic repo has
-                # historically pointed to GitHub release assets / Google
-                # Drive links for weights.
-                "source": "manual",
-                "note": (
-                    "Checkpoints are not confirmed to be on Hugging Face. "
-                    "Check github.com/microsoft/muzic (musecoco subfolder) "
-                    "README directly for GitHub release assets or Google "
-                    "Drive links."
-                ),
-                "url": "https://github.com/microsoft/muzic/tree/main/musecoco",
+                # CONFIRMED -- found via the musecoco subfolder README
+                # ("Download the checkpoint" link) and verified live against
+                # the Hugging Face API on 2026-09-15: public, ungated. This
+                # is the stage-2 attribute-to-music generator (the actual
+                # music generation checkpoint); the stage-1 text-to-attribute
+                # model's checkpoint is not separately published.
+                "source": "huggingface",
+                "repo_id": "XinXuNLPer/MuseCoco_attribute2music",
             },
         },
     },
     "museformer": {
         "variants": {
             "default": {
-                # Same situation as MuseCoco -- checkpoints historically
-                # distributed outside Hugging Face for this repo.
+                # CONFIRMED location, but NOT automatable: the museformer
+                # subfolder README points at a Microsoft OneDrive share link,
+                # not Hugging Face. A plain scripted request to it 403s
+                # (OneDrive share links need a real browser session/redirect
+                # chain) -- verified 2026-09-15. Left as "manual" with the
+                # real direct link rather than a generic GitHub pointer.
                 "source": "manual",
                 "note": (
-                    "Checkpoints are not confirmed to be on Hugging Face. "
-                    "Check github.com/microsoft/muzic (museformer subfolder) "
-                    "README directly for GitHub release assets or Google "
-                    "Drive links."
+                    "Checkpoint is hosted on Microsoft OneDrive, not Hugging "
+                    "Face, and the share link 403s on a plain scripted "
+                    "request -- open it in a browser instead. Put the "
+                    "downloaded checkpoint in checkpoints/mf-lmd6remi-1 per "
+                    "the museformer README."
                 ),
-                "url": "https://github.com/microsoft/muzic/tree/main/museformer",
+                "url": "https://1drv.ms/u/s!Aq3YEPZCcV5ibz9ySjjNsEB74CQ",
             },
         },
     },
@@ -198,12 +216,13 @@ MODELS = {
                 "source": "manual",
                 "note": (
                     "RAVE is normally trained per-timbre, not downloaded as "
-                    "a generic checkpoint. For optional pretrained example "
-                    "timbre models, check github.com/acids-ircam/RAVE "
-                    "README for current download links (historically "
-                    "IRCAM/ACIDS-hosted, not primarily Hugging Face)."
+                    "a generic checkpoint. Pretrained example timbre models "
+                    "are listed at acids-ircam.github.io/rave_models_download "
+                    "-- verified 2026-09-15 that table is JS-rendered (empty "
+                    "when fetched as static HTML), so it can't be scraped "
+                    "here either; open it in a browser."
                 ),
-                "url": "https://github.com/acids-ircam/RAVE",
+                "url": "https://acids-ircam.github.io/rave_models_download",
             },
         },
     },

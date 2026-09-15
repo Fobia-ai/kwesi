@@ -19,14 +19,20 @@ export const SEED_MODELS: SeedModel[] = [
     displayName: "ACE-Step 1.5",
     licenseTier: "mit",
     trainable: true,
+    // Verified 2026-09-15 against the live ACE-Step HF org (see
+    // scripts/download_models.py) -- 6 real DiT checkpoints, not the
+    // earlier guessed base/sft/xl-only shape.
     variants: [
-      "acestep-v15-turbo",
+      "acestep-v15-base",
       "acestep-v15-sft",
-      "acestep-v15-xl",
-      // Optional prompt-expansion front-ends, not alternate generator sizes.
-      "acestep-v15-lm-0.6b",
-      "acestep-v15-lm-1.7b",
-      "acestep-v15-lm-4b",
+      "acestep-v15-turbo",
+      "acestep-v15-xl-base",
+      "acestep-v15-xl-sft",
+      "acestep-v15-xl-turbo",
+      // Optional prompt-expansion front-ends, not alternate DiT sizes.
+      // Only 0.6B/4B are confirmed to exist as their own HF repos.
+      "acestep-5hz-lm-0.6b",
+      "acestep-5hz-lm-4b",
     ],
   },
   {

@@ -120,7 +120,16 @@ function createMockDb(): KwesiDbApi {
   // Mirrors electron/db/seedModels.ts closely enough to exercise the UI —
   // doesn't need to be identical verbatim.
   const MOCK_VARIANT_NAMES: Record<string, string[]> = {
-    "ace-step-1.5": ["acestep-v15-turbo", "acestep-v15-sft", "acestep-v15-xl"],
+    "ace-step-1.5": [
+      "acestep-v15-base",
+      "acestep-v15-sft",
+      "acestep-v15-turbo",
+      "acestep-v15-xl-base",
+      "acestep-v15-xl-sft",
+      "acestep-v15-xl-turbo",
+      "acestep-5hz-lm-0.6b",
+      "acestep-5hz-lm-4b",
+    ],
     yue2: ["yue2-3b", "yue2-vae", "yue2-vae-legacy"],
     musicgen: ["small", "medium", "large", "melody", "style"],
     musecoco: ["default"],

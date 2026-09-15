@@ -41,8 +41,8 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 ---
 
 ### ACE-Step 1.5
-- Repo: `github.com/ace-step/ACE-Step-1.5`. License: MIT (verify canonical org before bundling — similarly-named forks exist).
-- Checkpoints: `acestep-v15-turbo` (2B, 8-step, 4GB+ VRAM), `acestep-v15-sft` (2B, 50-step, 6–8GB), `acestep-v15-xl-*` (4B, 12–24GB). Optional 0.6B/1.7B/4B "5Hz-lm" prompt-expansion front-ends.
+- Repo: `github.com/ace-step/ACE-Step-1.5` (confirmed canonical org via `gh api`). License: MIT.
+- Checkpoints — **verified 2026-09-15 live against the Hugging Face API** (`huggingface.co/api/models?author=ACE-Step`), all public/ungated: `acestep-v15-base` (2B, 50-step, pre-train only), `acestep-v15-sft` (2B, 50-step, SFT), `acestep-v15-turbo` (2B, 8-step — **its actual HF repo is named `ACE-Step/Ace-Step1.5`**, not `acestep-v15-turbo`, confirmed correct via the README's own Model Zoo table, not a typo), `acestep-v15-xl-base`/`acestep-v15-xl-sft`/`acestep-v15-xl-turbo` (4B, same pre-train/SFT/turbo split, 12–24GB). Optional LM prompt-expansion front-ends: only `acestep-5Hz-lm-0.6B` and `acestep-5Hz-lm-4B` are confirmed as real HF repos — no separate 1.7B repo was found despite being referenced in the README's GPU table, so it's dropped from the catalog rather than guessed. See `scripts/download_models.py` for the exact repo IDs.
 - Inputs: text prompt (50+ languages), structured lyrics, reference audio (style/cover), duration (10–600s), BPM, key/scale, time signature, genre tags, 1000+ instrument/timbre tags.
 - Outputs: rendered song audio — **format NEEDS VERIFICATION** (likely WAV/FLAC), 10s–10min, batch up to 8.
 - Hardware: 4GB VRAM min (2B turbo) up to 24GB (XL). Backends: CUDA, ROCm, Apple MLX, Intel XPU, CPU (slow). Batch, not realtime.
@@ -51,7 +51,7 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 ### YuE2
 - Repo: `github.com/multimodal-art-projection/YuE` (hosts YuE2). Weights: `m-a-p/YuE2-3B`, `m-a-p/YuE2-Vae`.
 - License: code Apache 2.0; **weights CC-BY-NC 4.0 — non-commercial only, badge prominently.**
-- Checkpoints: YuE2-3B (semantic→acoustic engine), YuE2-Vae (decoder), YuE2-Vae-legacy, plus companion analysis models SheetSage2 (transcription→ABC/MIDI/chords) and MERT-v2-FullSong/30s (feature encoders).
+- Checkpoints: YuE2-3B (semantic→acoustic engine), YuE2-Vae (decoder), YuE2-Vae-legacy (**confirmed 2026-09-15 as its own separate HF repo `m-a-p/YuE2-Vae-legacy`**, not a revision of YuE2-Vae), plus companion analysis models SheetSage2 (transcription→ABC/MIDI/chords) and MERT-v2-FullSong/30s (feature encoders).
 - Inputs: lyrics text, style/genre spec, optional reference audio (WAV/MP3) for cover/transcription, `max_seconds` duration cap.
 - Outputs: **dual** — stereo audio (via YuE2-Vae) **and** symbolic (ABC notation, MIDI, LAB beat/key/chord/structure annotations). Needs both viewer types mounted at once.
 - Hardware: 24GB+ NVIDIA VRAM (BF16), Linux, batch only — heaviest model in the catalog.
@@ -68,7 +68,7 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 
 ### MuseCoco
 - Repo: `github.com/microsoft/muzic` (subfolder `/musecoco`). License: repo-level MIT, but **NEEDS VERIFICATION** on Hugging Face checkpoint terms before assuming full commercial clearance — Microsoft research releases sometimes carry checkpoint-level restrictions not stated at repo root.
-- Checkpoints: two-stage pipeline (text→attribute understanding, ~then attribute→music generator), ~200M params, released June 2023.
+- Checkpoints: two-stage pipeline (text→attribute understanding, then attribute→music generator), ~200M params, released June 2023. The stage-2 attribute-to-music generator — the actual music generation checkpoint — is **confirmed 2026-09-15** at `XinXuNLPer/MuseCoco_attribute2music` (public, ungated, linked directly from the musecoco subfolder README). The stage-1 text-to-attribute model's checkpoint is not separately published.
 - Inputs: free text description **plus** structured attributes — instrument, genre, mood, tempo, key, time signature, bar count, rhythm/danceability, pitch range, artist style. Richest structured-input model in the catalog; the dynamic form here will have the most fields.
 - Outputs: **MIDI only** — no audio rendering. Needs the piano-roll/MIDI viewer, not a waveform player.
 - Hardware: CPU-feasible given small model size (no VRAM figure published, but ~200M is light).
@@ -79,12 +79,14 @@ being fine-tuned on a user's own material (see [02-architecture.md](02-architect
 - What it is: efficient Transformer (fine+coarse-grained attention) for long-form *symbolic* music generation — models local note detail and long-range structure together.
 - Inputs: symbolic seed/conditioning (MIDI-derived token sequence), **not** a free-text prompt — UI here should be seed-selection/continuation controls, not a text box. This is the one model whose input UI looks meaningfully different from the rest.
 - Outputs: MIDI (symbolic).
+- Checkpoint: **confirmed 2026-09-15** — hosted on Microsoft OneDrive (linked directly from the museformer subfolder README, `checkpoints/mf-lmd6remi-1`), **not** Hugging Face. A plain scripted request to the share link 403s (needs a real browser session), so it can't be automated the way the other models can — see `scripts/download_models.py`.
 - Hardware/Python: **NEEDS VERIFICATION** directly from the subfolder's `requirements.txt` at integration time — treat as similarly old/narrow-pinned as MuseCoco until confirmed.
 
 ### RAVE (IRCAM/ACIDS)
 - Repo: `github.com/acids-ircam/RAVE`, pip package `acids-rave`. License: **CC-BY-NC-SA 4.0 for both code and weights** — strictest tier in the catalog (non-commercial, share-alike derivatives). Badge this clearly.
 - What it is: a timbre-transfer/neural-resynthesis autoencoder, **not** a from-scratch composer. Both input and output are raw audio waveforms — no text or symbolic input at all. Requires a model pretrained/fine-tuned per target timbre/instrument, so the UI needs a "select trained timbre model" control instead of a prompt box.
 - Realtime: yes — `rave export --streaming` (cached convolutions), ships as VST (Win/Mac/Linux beta) and Max/PureData `nn~` external, or CLI batch mode. This is the one catalog entry suited to a **realtime** interaction tier, architecturally distinct from every other (batch-generation) model — plan its UI and its server lifecycle separately.
+- Pretrained example timbre models: listed at `acids-ircam.github.io/rave_models_download` — **confirmed 2026-09-15** that page's model table is JS-rendered client-side (empty when fetched as static HTML), so it can't be scraped/automated; a human needs to open it in a browser.
 - Hardware: training 5–32GB VRAM depending on config; inference/streaming much lighter, CPU-feasible for small models in realtime form.
 - Python: PyTorch + torchaudio (no longer strictly version-pinned), FFmpeg required on the host.
 
@@ -125,26 +127,36 @@ re-hosted on infrastructure we control:
    decoupled: the script above only stages files locally for the developer
    and does not touch Cloudflare or the app's own download code at all.
 
-Per the `MODELS` config in `scripts/download_models.py`, current status is:
+Per the `MODELS` config in `scripts/download_models.py`, **verified live
+against the Hugging Face API and each project's own README on
+2026-09-15** (not guessed):
 
-- **Confirmed, downloadable now via Hugging Face:**
+- **Confirmed, downloadable now via Hugging Face (16 variants):**
   - MusicGen — all five checkpoints (`musicgen-small`, `musicgen-medium`,
     `musicgen-large`, `musicgen-melody`, `musicgen-style`) from the
     `facebook` org.
-  - YuE2 — `yue2-3b` (`m-a-p/YuE2-3B`) and `yue2-vae` (`m-a-p/YuE2-Vae`).
-- **Needs manual sourcing (not confirmed on Hugging Face, or repo id
-  unconfirmed) — the script prints a skip message with a pointer rather
-  than guessing:**
-  - ACE-Step 1.5 — all three checkpoints (`acestep-v15-turbo`,
-    `acestep-v15-sft`, `acestep-v15-xl`); only the GitHub repo
-    (`github.com/ace-step/ACE-Step-1.5`) is confirmed, no HF repo ids yet.
-  - YuE2 — `yue2-vae-legacy`; exact repo id/location unconfirmed, check the
-    `m-a-p` org on Hugging Face.
-  - MuseCoco and Museformer — both from `github.com/microsoft/muzic`;
-    checkpoints are not confirmed to be on Hugging Face at all (may be
-    GitHub release assets or Google Drive links per the original READMEs).
-  - RAVE — pretrained example timbre models are traditionally distributed
-    via IRCAM/ACIDS's own links, not primarily Hugging Face; also, RAVE's
-    native workflow is training/fine-tuning per timbre rather than
-    downloading a single generic checkpoint (see "Training pipeline
-    architecture" in [02-architecture.md](02-architecture.md)).
+  - YuE2 — all three: `yue2-3b` (`m-a-p/YuE2-3B`), `yue2-vae`
+    (`m-a-p/YuE2-Vae`), and `yue2-vae-legacy` (`m-a-p/YuE2-Vae-legacy`,
+    confirmed to be its own separate repo, not a revision).
+  - ACE-Step 1.5 — all eight: `acestep-v15-base`, `acestep-v15-sft`,
+    `acestep-v15-turbo` (real repo name is `ACE-Step/Ace-Step1.5` — this is
+    correct, not a typo, confirmed via the README's own Model Zoo table),
+    `acestep-v15-xl-base`, `acestep-v15-xl-sft`, `acestep-v15-xl-turbo`,
+    and the `acestep-5Hz-lm-0.6B`/`4B` prompt-expansion front-ends (no
+    1.7B repo exists despite being referenced in the README's GPU table).
+  - MuseCoco — the stage-2 attribute-to-music generator at
+    `XinXuNLPer/MuseCoco_attribute2music`.
+- **Genuinely not automatable (real location confirmed, but not
+  scriptable) — the script prints a skip message pointing at the actual
+  place to go, not a guess:**
+  - Museformer — hosted on Microsoft OneDrive
+    (`1drv.ms/u/s!Aq3YEPZCcV5ibz9ySjjNsEB74CQ`, linked from the museformer
+    subfolder README); a plain scripted request to it 403s, so it needs a
+    real browser session.
+  - RAVE — pretrained example timbre models are listed at
+    `acids-ircam.github.io/rave_models_download`, whose model table is
+    JS-rendered client-side (empty when fetched as static HTML) and so
+    can't be scraped either; also, RAVE's native workflow is
+    training/fine-tuning per timbre rather than downloading a single
+    generic checkpoint (see "Training pipeline architecture" in
+    [02-architecture.md](02-architecture.md)).
