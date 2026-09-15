@@ -28,6 +28,7 @@ export function registerDbIpcHandlers() {
   ipcMain.handle("kwesi:db:generations:list", (_e, projectId: string) =>
     repo.listGenerations(projectId),
   );
+  ipcMain.handle("kwesi:db:generations:listAll", () => repo.listAllGenerations());
   ipcMain.handle(
     "kwesi:db:generations:createPlaceholder",
     (_e, projectId: string, checkpointVariant?: string) =>

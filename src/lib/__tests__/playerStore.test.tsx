@@ -20,7 +20,7 @@ function Harness() {
 }
 
 describe("playerReducer", () => {
-  const base: PlayerState = { track: null, status: "idle", currentTime: 0, duration: 0, volume: 1, error: null };
+  const base: PlayerState = { track: null, status: "idle", currentTime: 0, duration: 0, volume: 1, playbackRate: 1, queue: [], error: null };
 
   it("load_start sets loading state and resets time", () => {
     const track = { generationId: "g1", filePath: "/a.wav", title: "A" };

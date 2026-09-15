@@ -155,6 +155,30 @@ export function listGenerations(projectId: string): GenerationRow[] {
     .all(projectId) as GenerationRow[];
 }
 
+export interface LibraryGenerationRow extends GenerationRow {
+  project_name: string;
+  workspace_id: string;
+  workspace_name: string;
+  model_id: string;
+  model_display_name: string;
+}
+
+// Every generation in the app regardless of workspace/project, with enough
+// of its parents joined in to label it — the Home tab's library view.
+export function listAllGenerations(): LibraryGenerationRow[] {
+  return getDatabase()
+    .prepare(
+      `SELECT g.*, p.name AS project_name, w.id AS workspace_id, w.name AS workspace_name,
+              w.model_id AS model_id, m.display_name AS model_display_name
+       FROM generation g
+       JOIN project p ON p.id = g.project_id
+       JOIN workspace w ON w.id = p.workspace_id
+       JOIN model m ON m.id = w.model_id
+       ORDER BY g.created_at DESC`,
+    )
+    .all() as LibraryGenerationRow[];
+}
+
 /**
  * Phase 2 only creates an inert placeholder row + on-disk folder to prove
  * out the 3-level hierarchy and cascade-delete behavior. Real generation

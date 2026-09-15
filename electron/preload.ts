@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("kwesi", {
       ipcRenderer.invoke("kwesi:db:projects:delete", id, deleteFiles),
     listGenerations: (projectId: string) =>
       ipcRenderer.invoke("kwesi:db:generations:list", projectId),
+    listAllGenerations: () => ipcRenderer.invoke("kwesi:db:generations:listAll"),
     createPlaceholderGeneration: (projectId: string, checkpointVariant?: string) =>
       ipcRenderer.invoke("kwesi:db:generations:createPlaceholder", projectId, checkpointVariant),
     deleteGeneration: (id: string, deleteFiles: boolean) =>

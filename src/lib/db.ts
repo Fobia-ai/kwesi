@@ -56,6 +56,16 @@ export interface GenerationRow {
   checkpoint_variant: string | null;
 }
 
+// A generation plus enough of its parents to label it outside its project —
+// what the Home tab's cross-workspace library lists.
+export interface LibraryGenerationRow extends GenerationRow {
+  project_name: string;
+  workspace_id: string;
+  workspace_name: string;
+  model_id: string;
+  model_display_name: string;
+}
+
 // Phase 10 — see src/lib/training.ts for the KwesiTrainingApi wrapper these
 // back; kept here alongside the other *Row types for the same reason
 // src/lib/models.ts imports ModelVariantRow from here rather than
@@ -96,6 +106,7 @@ export interface KwesiDbApi {
   createProject(workspaceId: string, name: string): Promise<ProjectRow>;
   deleteProject(id: string, deleteFiles: boolean): Promise<void>;
   listGenerations(projectId: string): Promise<GenerationRow[]>;
+  listAllGenerations(): Promise<LibraryGenerationRow[]>;
   createPlaceholderGeneration(
     projectId: string,
     checkpointVariant?: string,
@@ -114,6 +125,7 @@ function realDb(bridge: NonNullable<Window["kwesi"]>["db"]): KwesiDbApi {
     createProject: (workspaceId, name) => bridge.createProject(workspaceId, name),
     deleteProject: (id, deleteFiles) => bridge.deleteProject(id, deleteFiles),
     listGenerations: (projectId) => bridge.listGenerations(projectId),
+    listAllGenerations: () => bridge.listAllGenerations(),
     createPlaceholderGeneration: (projectId, checkpointVariant) =>
       bridge.createPlaceholderGeneration(projectId, checkpointVariant),
     deleteGeneration: (id, deleteFiles) => bridge.deleteGeneration(id, deleteFiles),
@@ -213,6 +225,24 @@ function createMockDb(): KwesiDbApi {
     },
     async listGenerations(projectId) {
       return generationStore.listForProject(projectId).sort((a, b) => b.created_at - a.created_at);
+    },
+    async listAllGenerations() {
+      const state = load();
+      const rows: LibraryGenerationRow[] = [];
+      for (const generation of generationStore.listAll()) {
+        const project = state.projects.find((p) => p.id === generation.project_id);
+        const workspace = project && state.workspaces.find((w) => w.id === project.workspace_id);
+        if (!project || !workspace) continue;
+        rows.push({
+          ...generation,
+          project_name: project.name,
+          workspace_id: workspace.id,
+          workspace_name: workspace.name,
+          model_id: workspace.model_id,
+          model_display_name: workspace.model_display_name,
+        });
+      }
+      return rows.sort((a, b) => b.created_at - a.created_at);
     },
     async createPlaceholderGeneration(projectId, checkpointVariant) {
       const row: GenerationRow = {

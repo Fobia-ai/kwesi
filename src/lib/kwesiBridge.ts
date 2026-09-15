@@ -4,6 +4,7 @@ import type {
   WorkspaceRow,
   ProjectRow,
   GenerationRow,
+  LibraryGenerationRow,
   TrainingRunRow,
   TrainedModelRow,
 } from "./db";
@@ -28,6 +29,7 @@ declare global {
         createProject: (workspaceId: string, name: string) => Promise<ProjectRow>;
         deleteProject: (id: string, deleteFiles: boolean) => Promise<void>;
         listGenerations: (projectId: string) => Promise<GenerationRow[]>;
+        listAllGenerations: () => Promise<LibraryGenerationRow[]>;
         createPlaceholderGeneration: (
           projectId: string,
           checkpointVariant?: string,

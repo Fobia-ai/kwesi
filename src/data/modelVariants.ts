@@ -51,7 +51,7 @@ export const MODEL_VARIANTS_SEED: SeedModelVariants[] = [
       { name: "medium", source: "huggingface", repoId: "facebook/musicgen-medium" },
       { name: "large", source: "huggingface", repoId: "facebook/musicgen-large" },
       { name: "melody", source: "huggingface", repoId: "facebook/musicgen-melody" },
-      { name: "style", source: "huggingface", repoId: "facebook/musicgen-style" },
+      // "style" deliberately absent — see manifests.ts's MUSICGEN note.
     ],
   },
   {

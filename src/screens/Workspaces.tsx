@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
@@ -75,9 +75,11 @@ function NewWorkspaceModal({
 
 export function WorkspacesScreen() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[] | null>(null);
   const [models, setModels] = useState<ModelRow[]>([]);
-  const [showNew, setShowNew] = useState(false);
+  // Home's "Create a workspace" lands here with the modal already open.
+  const [showNew, setShowNew] = useState(Boolean((location.state as { openNew?: boolean } | null)?.openNew));
   const [pendingDelete, setPendingDelete] = useState<WorkspaceRow | null>(null);
   const [deleteFilesToo, setDeleteFilesToo] = useState(false);
 

@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
 
+// Drop a `backdrop.jpg` / `.png` / `.webp` into src/assets/ to use a still
+// photograph (a room, a studio — anything with real depth for the glass to
+// float over) instead of the rendered scene below. Picked up at build time.
+const CUSTOM = import.meta.glob<{ default: string }>("../assets/backdrop.{jpg,jpeg,png,webp}", { eager: true });
+const customBackdrop = Object.values(CUSTOM)[0]?.default;
+
 /**
  * Real 3D backdrop, on theme for a music app: glossy sound-wave strands —
  * tubes swept along animated waveforms, receding into depth — raymarched in a
@@ -281,6 +287,14 @@ export function BackdropScene() {
       gl.deleteBuffer(buffer);
     };
   }, []);
+
+  if (customBackdrop) {
+    return (
+      <div className="kwesi-backdrop" aria-hidden="true">
+        <img src={customBackdrop} alt="" className="kwesi-backdrop-image" />
+      </div>
+    );
+  }
 
   return (
     <div className="kwesi-backdrop" aria-hidden="true">

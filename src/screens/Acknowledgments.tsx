@@ -66,7 +66,7 @@ export function AcknowledgmentsScreen() {
           ))}
         </div>
 
-        <PillButton className="mt-10 min-w-[220px]" onClick={() => navigate("/workspaces")}>
+        <PillButton className="mt-10 min-w-[220px]" onClick={() => navigate("/home")}>
           Start Application
         </PillButton>
       </div>

@@ -111,6 +111,38 @@ body {
   display: block;
 }
 
+.kwesi-backdrop-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* The hero's DJ bobs to the music — gently, and not at all when the OS asks
+   for reduced motion. */
+@keyframes kwesi-dj-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-5px) rotate(-1.5deg); }
+}
+
+.kwesi-dj-head {
+  transform-origin: 170px 130px;
+  animation: kwesi-dj-bob 1.6s ease-in-out infinite;
+}
+
+.kwesi-dj-notes {
+  animation: kwesi-dj-bob 2.4s ease-in-out infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kwesi-dj-head,
+  .kwesi-dj-notes {
+    animation: none;
+  }
+}
+
 /* The sheen gradient is layered into `background` rather than a box-shadow
    on purpose: Tailwind's shadow-* utilities (GlassPanel passes
    shadow-glass-sm) are same-specificity and later in the cascade, so a

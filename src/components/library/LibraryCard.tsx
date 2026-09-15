@@ -1,0 +1,596 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { GlassPanel } from "../ui/GlassPanel";
+import { PillButton } from "../ui/PillButton";
+import { AvatarImage } from "../ui/AvatarImage";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { SearchIcon, CloseIcon, MoreIcon, HeadphonesIcon, DownloadIcon } from "../ui/icons";
+import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
+import { PianoRollViewer } from "../midi/PianoRollViewer";
+import { TrackControls } from "./TrackControls";
+import { DjIllustration } from "./DjIllustration";
+import {
+  Chip,
+  StatusChip,
+  LicenseBadge,
+  ParamsGrid,
+  formatRelativeTime,
+  generationTitle,
+  generationPrompt,
+  generationLyrics,
+  generationGenres,
+  generationArtistId,
+} from "./generationDisplay";
+import type { GenerationRow } from "../../lib/db";
+import type { ArtistProfile } from "../../lib/artistProfiles";
+import { kwesiGeneration, type GenerationProgressEvent } from "../../lib/generation";
+import { kwesiAudio } from "../../lib/audio";
+import { usePlayer, type PlayerTrack } from "../../lib/playerStore";
+import { findAudioFile, findMidiFile, parseOutputFiles, suggestedExportName } from "../../lib/audioFiles";
+import { getManifest } from "../../data/manifests";
+
+export interface LibraryItem {
+  generation: GenerationRow;
+  modelId: string;
+  modelDisplayName: string;
+  // Where the track lives, for lists that span projects (the Home tab):
+  // "Workspace › Project". Omitted inside a single project.
+  context?: string;
+}
+
+interface LibraryCardProps {
+  items: LibraryItem[];
+  artistProfiles: ArtistProfile[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  // Always removes the record and every file it produced — there's no
+  // "keep the files" option here, the app's copy is the only one.
+  onDelete: (item: LibraryItem) => Promise<void> | void;
+  // Top-left of the hero: the project switcher (project view) or a plain
+  // label (Home).
+  topLeft?: ReactNode;
+  listTitle: string;
+  onNew?: () => void;
+  // Non-null while a new-generation form is open: rendered as the list's
+  // first row (most recent on top) mirroring the form's track name live.
+  draftTrackName?: string | null;
+  // The form itself, rendered in the hero's slot in place of the overview
+  // while drafting.
+  form?: ReactNode;
+  emptyState: ReactNode;
+}
+
+type HeroTab = "overview" | "lyrics";
+
+function playerTrackFor(item: LibraryItem, artist: ArtistProfile | null): PlayerTrack | null {
+  if (item.generation.status !== "done") return null;
+  const audioFile = findAudioFile(parseOutputFiles(item.generation.output_files));
+  if (!audioFile) return null;
+  return {
+    generationId: item.generation.id,
+    filePath: audioFile,
+    title: generationTitle(item.generation),
+    subtitle: artist?.name ?? item.modelDisplayName,
+    avatarPath: artist?.avatarPath ?? null,
+    avatarName: artist?.name ?? generationTitle(item.generation),
+  };
+}
+
+function matchesQuery(item: LibraryItem, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [generationTitle(item.generation), generationPrompt(item.generation), generationLyrics(item.generation)]
+    .filter((s): s is string => Boolean(s))
+    .join("\n")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+/**
+ * The one card a project (and the Home tab) is made of: a hero on top that's
+ * the player for the selected track (or the new-track form while drafting)
+ * and the track list below it. Selecting a row plays it in full; the
+ * "Overview" / "Lyrics" tabs switch the hero between the player and the
+ * selected track's lyrics.
+ */
+export function LibraryCard({
+  items,
+  artistProfiles,
+  selectedId,
+  onSelect,
+  onDelete,
+  topLeft,
+  listTitle,
+  onNew,
+  draftTrackName = null,
+  form,
+  emptyState,
+}: LibraryCardProps) {
+  const player = usePlayer();
+  const [tab, setTab] = useState<HeroTab>("overview");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<LibraryItem | null>(null);
+  const [saveStatus, setSaveStatus] = useState<{ id: string; text: string } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const isDrafting = draftTrackName !== null;
+  const artistFor = (generation: GenerationRow) =>
+    artistProfiles.find((p) => p.id === generationArtistId(generation)) ?? null;
+
+  const selected = items.find((i) => i.generation.id === selectedId) ?? null;
+  const selectedArtist = selected ? artistFor(selected.generation) : null;
+  const selectedTrack = selected ? playerTrackFor(selected, selectedArtist) : null;
+
+  // Play order = list order, skipping anything that has no audio to play.
+  const queue = useMemo(
+    () =>
+      items
+        .map((item) => playerTrackFor(item, artistFor(item.generation)))
+        .filter((t): t is PlayerTrack => t !== null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, artistProfiles],
+  );
+
+  const visibleItems = useMemo(() => items.filter((item) => matchesQuery(item, query)), [items, query]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  // Live progress for the selected track while it's still generating.
+  const [progressPct, setProgressPct] = useState(0);
+  useEffect(() => {
+    setProgressPct(0);
+    if (!selectedId) return undefined;
+    return kwesiGeneration.onProgress((event: GenerationProgressEvent) => {
+      if (event.type === "running" && event.generationId === selectedId) setProgressPct(event.progressPct);
+    });
+  }, [selectedId]);
+
+  function handleRowClick(item: LibraryItem) {
+    onSelect(item.generation.id);
+    const track = playerTrackFor(item, artistFor(item.generation));
+    if (track) {
+      player.setQueue(queue);
+      void player.play(track);
+    }
+  }
+
+  async function handleSave(item: LibraryItem) {
+    const files = parseOutputFiles(item.generation.output_files);
+    const file = findAudioFile(files) ?? findMidiFile(files);
+    if (!file) return;
+    const id = item.generation.id;
+    setSaveStatus({ id, text: "Saving…" });
+    const result = await kwesiAudio.save(file, suggestedExportName(file, generationTitle(item.generation)), "export");
+    if (result.ok) setSaveStatus({ id, text: `Saved to ${result.path}` });
+    else if (result.reason === "cancelled") setSaveStatus(null);
+    else setSaveStatus({ id, text: result.reason ?? "Save failed" });
+  }
+
+  function clearSearch() {
+    setQuery("");
+    setSearchOpen(false);
+  }
+
+  const showEmpty = items.length === 0 && !isDrafting;
+
+  return (
+    <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {showEmpty ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">{emptyState}</div>
+      ) : (
+        <>
+          <div className="shrink-0 p-3 pb-0">
+            <div className="kwesi-glass relative overflow-hidden rounded-card">
+              {isDrafting && form ? (
+                <div className="flex h-[min(58vh,600px)] flex-col">{form}</div>
+              ) : (
+                <>
+                  <div className="relative z-10 flex items-start justify-between gap-3 px-5 pt-4">
+                    <div className="min-w-0 flex-1">{topLeft}</div>
+                    <div className="flex shrink-0 gap-6">
+                      {(["overview", "lyrics"] as HeroTab[]).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTab(t)}
+                          className={`relative pb-1 text-sm capitalize transition-colors duration-150 ${
+                            tab === t ? "text-ink" : "text-ink-muted hover:text-ink"
+                          }`}
+                        >
+                          {t}
+                          {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="hidden min-w-0 flex-1 lg:block" />
+                  </div>
+
+                  {tab === "overview" ? (
+                    <div className="relative min-h-[288px]">
+                      <DjIllustration className="absolute -bottom-1 right-8 hidden h-[94%] text-ink lg:block" />
+                      <div className="relative z-10 flex flex-col gap-4 px-6 pb-6 pt-6 lg:max-w-[64%]">
+                        {selected ? (
+                          <>
+                            <div className="min-w-0">
+                              <p className="text-xs text-ink-muted">
+                                {selectedArtist ? `by ${selectedArtist.name}` : "Track"}
+                                {selected.context && <span> · {selected.context}</span>}
+                              </p>
+                              <h2 className="mt-0.5 truncate text-3xl font-semibold tracking-tight">
+                                {generationTitle(selected.generation)}
+                              </h2>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <HeadphonesIcon width={15} height={15} />
+                                  {items.length} track{items.length === 1 ? "" : "s"}
+                                </span>
+                                <span>· {selected.modelDisplayName}</span>
+                                {selected.generation.checkpoint_variant && (
+                                  <span>· {selected.generation.checkpoint_variant}</span>
+                                )}
+                                <span>· {formatRelativeTime(selected.generation.created_at)}</span>
+                                {selected.generation.status === "done" && selected.generation.duration_ms !== null && (
+                                  <span title="Time this generation took to run">
+                                    · {(selected.generation.duration_ms / 1000).toFixed(1)}s to generate
+                                  </span>
+                                )}
+                                {selected.generation.status === "done" && <LicenseBadge modelId={selected.modelId} />}
+                              </div>
+                              {generationGenres(selected.generation).length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {generationGenres(selected.generation).map((genre) => (
+                                    <Chip key={genre}>{genre}</Chip>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <HeroPlayback
+                              item={selected}
+                              track={selectedTrack}
+                              queue={queue}
+                              progressPct={progressPct}
+                              lyricsActive={false}
+                              onToggleLyrics={() => setTab("lyrics")}
+                            />
+                          </>
+                        ) : (
+                          <p className="text-sm text-ink-muted">Pick a track below to play it.</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <LyricsView lyrics={selected ? generationLyrics(selected.generation) : undefined} />
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-3 px-6 pb-2 pt-5">
+              <div className="min-w-0">
+                <h3 className="text-xl font-semibold tracking-tight">{listTitle}</h3>
+                <p className="text-[11px] text-ink-muted">
+                  {items.length === 0
+                    ? "No tracks yet"
+                    : query.trim()
+                      ? `${visibleItems.length} of ${items.length} track${items.length === 1 ? "" : "s"}`
+                      : `${items.length} track${items.length === 1 ? "" : "s"}`}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <div
+                  className={`kwesi-glass flex h-9 items-center rounded-chip transition-all duration-300 ease-smooth ${
+                    searchOpen ? "w-64 pl-1 pr-1" : "w-9"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => (searchOpen ? clearSearch() : setSearchOpen(true))}
+                    aria-label={searchOpen ? "Close search" : "Search tracks"}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:text-ink"
+                  >
+                    {searchOpen ? <CloseIcon width={15} height={15} /> : <SearchIcon width={16} height={16} />}
+                  </button>
+                  <input
+                    ref={searchInputRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") clearSearch();
+                    }}
+                    placeholder="Track name, lyrics, or prompt"
+                    aria-label="Search tracks"
+                    className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-muted/70 ${
+                      searchOpen ? "px-1 opacity-100" : "w-0 px-0 opacity-0"
+                    }`}
+                    tabIndex={searchOpen ? 0 : -1}
+                  />
+                  {searchOpen && query && (
+                    <button
+                      type="button"
+                      onClick={() => setQuery("")}
+                      aria-label="Clear search"
+                      className="mr-1 rounded-full px-1.5 text-[10px] uppercase tracking-wide text-ink-muted hover:text-ink"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {onNew && (
+                  <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={onNew} disabled={isDrafting}>
+                    + New
+                  </PillButton>
+                )}
+              </div>
+            </div>
+
+            <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
+              {isDrafting && (
+                <li className="px-3">
+                  <div className="flex items-center gap-3 rounded-[12px] border border-dashed border-ink/15 bg-ink/[0.05] px-3 py-2.5">
+                    <div className="h-9 w-9 shrink-0 rounded-[10px] bg-ink/[0.06]" />
+                    <p className="min-w-0 flex-1 truncate text-sm text-ink">{draftTrackName.trim() || "Untitled track"}</p>
+                    <Chip tone="live">Draft</Chip>
+                  </div>
+                </li>
+              )}
+              {visibleItems.length === 0 && !isDrafting && (
+                <li className="px-3 py-6 text-center text-xs text-ink-muted">No tracks match “{query}”.</li>
+              )}
+              {visibleItems.map((item) => {
+                const generation = item.generation;
+                const artist = artistFor(generation);
+                const isSelected = !isDrafting && generation.id === selectedId;
+                const isPlaying = player.isActive(generation.id) && player.state.status === "playing";
+                const files = parseOutputFiles(generation.output_files);
+                const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? findMidiFile(files));
+                const expanded = expandedId === generation.id;
+                return (
+                  <li key={generation.id} className="border-b border-ink/[0.07] px-3 last:border-b-0">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleRowClick(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleRowClick(item);
+                        }
+                      }}
+                      className={`group flex cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2.5 transition-colors duration-150 ${
+                        isSelected ? "bg-ink/[0.08]" : "hover:bg-ink/[0.04]"
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <AvatarImage avatarPath={artist?.avatarPath ?? null} name={artist?.name ?? generationTitle(generation)} size={36} />
+                        {isPlaying && (
+                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg bg-accent" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate text-sm ${isSelected ? "text-ink" : "text-ink/90"}`}>
+                          {generationTitle(generation)}
+                        </p>
+                        <p className="truncate text-[11px] text-ink-muted">
+                          {[artist?.name, item.context ?? generationPrompt(generation)].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="hidden shrink-0 items-center gap-1.5 md:flex">
+                        {generationGenres(generation)
+                          .slice(0, 2)
+                          .map((genre) => (
+                            <Chip key={genre}>{genre}</Chip>
+                          ))}
+                      </div>
+                      <div className="hidden w-28 shrink-0 items-center xl:flex">
+                        <Chip>{generation.checkpoint_variant ?? item.modelDisplayName}</Chip>
+                      </div>
+                      <div className="w-20 shrink-0">
+                        <StatusChip status={generation.status} />
+                      </div>
+                      <span className="hidden w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-muted sm:block">
+                        {formatRelativeTime(generation.created_at)}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          disabled={!savable}
+                          onClick={() => void handleSave(item)}
+                          title="Save a copy"
+                          aria-label={`Save ${generationTitle(generation)}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink disabled:opacity-30"
+                        >
+                          <DownloadIcon width={15} height={15} />
+                        </button>
+                        <RowMenu
+                          onDetails={() => setExpandedId(expanded ? null : generation.id)}
+                          onSave={savable ? () => void handleSave(item) : undefined}
+                          onDelete={() => setPendingDelete(item)}
+                        />
+                      </div>
+                    </div>
+                    {saveStatus?.id === generation.id && (
+                      <p className="px-3 pb-2 text-[11px] text-ink-muted">{saveStatus.text}</p>
+                    )}
+                    {expanded && <RowDetails item={item} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete "${generationTitle(pendingDelete.generation)}"?`}
+          description="This removes the track and every file it produced. There's no copy kept anywhere else."
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={async () => {
+            const item = pendingDelete;
+            setPendingDelete(null);
+            if (player.isActive(item.generation.id)) player.pause();
+            await onDelete(item);
+          }}
+        />
+      )}
+    </GlassPanel>
+  );
+}
+
+function HeroPlayback({
+  item,
+  track,
+  queue,
+  progressPct,
+  lyricsActive,
+  onToggleLyrics,
+}: {
+  item: LibraryItem;
+  track: PlayerTrack | null;
+  queue: PlayerTrack[];
+  progressPct: number;
+  lyricsActive: boolean;
+  onToggleLyrics: () => void;
+}) {
+  const generation = item.generation;
+  const done = generation.status === "done";
+  const outputKind = (generation.output_kind ?? "audio") as "audio" | "midi" | "audio+midi";
+  const files = parseOutputFiles(generation.output_files);
+  const midiFile = findMidiFile(files);
+  const showPianoRoll = done && (outputKind === "midi" || outputKind === "audio+midi") && Boolean(midiFile);
+
+  if (!done) {
+    return (
+      <OutputViewerPlaceholder
+        outputKind={outputKind}
+        status={generation.status as GenerationStatus}
+        progressPct={progressPct}
+        error={generation.error}
+      />
+    );
+  }
+  if (!track && !showPianoRoll) {
+    return <OutputViewerPlaceholder outputKind={outputKind} status="done" />;
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {track && <TrackControls track={track} queue={queue} lyricsActive={lyricsActive} onToggleLyrics={onToggleLyrics} />}
+      {showPianoRoll && (
+        <PianoRollViewer filePath={midiFile as string} title={generationTitle(generation)} compact={!track ? false : true} />
+      )}
+    </div>
+  );
+}
+
+function LyricsView({ lyrics }: { lyrics: string | undefined }) {
+  return (
+    <div className="kwesi-scroll-inset h-[288px] overflow-y-auto scroll-smooth px-8 py-6">
+      {lyrics ? (
+        <pre className="mx-auto max-w-[60ch] whitespace-pre-wrap text-center font-sans text-sm leading-7 text-ink/90">
+          {lyrics}
+        </pre>
+      ) : (
+        <p className="flex h-full items-center justify-center text-center text-sm text-ink-muted">
+          No lyrics on this track.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RowDetails({ item }: { item: LibraryItem }) {
+  const manifest = getManifest(item.modelId);
+  const prompt = generationPrompt(item.generation);
+  const files = parseOutputFiles(item.generation.output_files);
+  return (
+    <div className="mb-2 flex flex-col gap-4 rounded-[12px] bg-ink/[0.03] px-4 py-4">
+      {prompt && (
+        <div>
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Prompt</p>
+          <p className="max-w-[70ch] text-sm leading-relaxed">{prompt}</p>
+        </div>
+      )}
+      <ParamsGrid generation={item.generation} manifest={manifest} />
+      {files.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Output files</p>
+          <ul className="flex flex-col gap-1">
+            {files.map((file) => (
+              <li key={file} className="truncate rounded-[8px] bg-ink/[0.04] px-3 py-1.5 text-[11px] text-ink-muted" title={file}>
+                {file}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {item.generation.error && <p className="text-xs text-red-600">{item.generation.error}</p>}
+    </div>
+  );
+}
+
+function RowMenu({ onDetails, onSave, onDelete }: { onDetails: () => void; onSave?: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onPointerDown(e: PointerEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const itemClass =
+    "w-full rounded-[8px] px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-ink/[0.07]";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More"
+        className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink"
+      >
+        <MoreIcon width={16} height={16} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="kwesi-glass-strong absolute right-0 top-9 z-20 flex w-36 flex-col gap-0.5 rounded-[12px] p-1 shadow-glass"
+        >
+          <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onDetails(); }}>
+            Details
+          </button>
+          {onSave && (
+            <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onSave(); }}>
+              Save a copy
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${itemClass} text-red-600 hover:!bg-red-500/10`}
+            onClick={() => { setOpen(false); onDelete(); }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

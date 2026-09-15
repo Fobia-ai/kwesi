@@ -14,7 +14,12 @@ export interface PlayerTrack {
   generationId: string;
   filePath: string;
   title: string;
+  subtitle?: string;
+  avatarPath?: string | null;
+  avatarName?: string;
 }
+
+export const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
@@ -24,6 +29,10 @@ export interface PlayerState {
   currentTime: number;
   duration: number;
   volume: number;
+  playbackRate: number;
+  // The ordered set of tracks next/previous step through (and `ended`
+  // auto-advances along) — whatever list the track was started from.
+  queue: PlayerTrack[];
   error: string | null;
 }
 
@@ -33,7 +42,9 @@ type PlayerAction =
   | { type: "time"; currentTime: number; duration: number }
   | { type: "status"; status: PlayerStatus }
   | { type: "ended" }
-  | { type: "volume"; volume: number };
+  | { type: "volume"; volume: number }
+  | { type: "rate"; playbackRate: number }
+  | { type: "queue"; queue: PlayerTrack[] };
 
 const initialState: PlayerState = {
   track: null,
@@ -41,6 +52,8 @@ const initialState: PlayerState = {
   currentTime: 0,
   duration: 0,
   volume: 1,
+  playbackRate: 1,
+  queue: [],
   error: null,
 };
 
@@ -58,6 +71,10 @@ export function playerReducer(state: PlayerState, action: PlayerAction): PlayerS
       return { ...state, status: "paused", currentTime: 0 };
     case "volume":
       return { ...state, volume: action.volume };
+    case "rate":
+      return { ...state, playbackRate: action.playbackRate };
+    case "queue":
+      return { ...state, queue: action.queue };
     default:
       return state;
   }
@@ -70,6 +87,10 @@ export interface PlayerContextValue {
   pause: () => void;
   seek: (time: number) => void;
   setVolume: (volume: number) => void;
+  setPlaybackRate: (rate: number) => void;
+  setQueue: (queue: PlayerTrack[]) => void;
+  next: () => void;
+  previous: () => void;
   isActive: (generationId: string) => boolean;
 }
 
@@ -81,6 +102,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const objectUrlRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // `play` is defined below but the ended-listener above it needs to call
+  // the latest one — a ref keeps that effect's deps empty.
+  const playRef = useRef<(track: PlayerTrack) => Promise<void>>(async () => {});
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -94,7 +118,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
     const onPlay = () => dispatch({ type: "status", status: "playing" });
     const onPause = () => dispatch({ type: "status", status: "paused" });
-    const onEnded = () => dispatch({ type: "ended" });
+    const onEnded = () => {
+      dispatch({ type: "ended" });
+      const { queue, track } = stateRef.current;
+      const index = track ? queue.findIndex((t) => t.generationId === track.generationId) : -1;
+      const following = index >= 0 ? queue[index + 1] : undefined;
+      if (following) void playRef.current(following);
+    };
     const onError = () => dispatch({ type: "load_error", error: "Playback error" });
 
     audio.addEventListener("timeupdate", onTime);
@@ -146,12 +176,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     objectUrlRef.current = url;
     audio.src = url;
     audio.volume = stateRef.current.volume;
+    audio.playbackRate = stateRef.current.playbackRate;
     try {
       await audio.play();
     } catch (err) {
       dispatch({ type: "load_error", error: err instanceof Error ? err.message : String(err) });
     }
   }, []);
+
+  playRef.current = play;
 
   const togglePlayPause = useCallback(() => {
     const audio = audioRef.current;
@@ -180,14 +213,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "volume", volume });
   }, []);
 
+  const setPlaybackRate = useCallback((playbackRate: number) => {
+    const audio = audioRef.current;
+    if (audio) audio.playbackRate = playbackRate;
+    dispatch({ type: "rate", playbackRate });
+  }, []);
+
+  const setQueue = useCallback((queue: PlayerTrack[]) => {
+    dispatch({ type: "queue", queue });
+  }, []);
+
+  const step = useCallback(
+    (direction: 1 | -1) => {
+      const { queue, track } = stateRef.current;
+      if (queue.length === 0) return;
+      const index = track ? queue.findIndex((t) => t.generationId === track.generationId) : -1;
+      const target = index === -1 ? queue[0] : queue[index + direction];
+      if (target) void play(target);
+    },
+    [play],
+  );
+  const next = useCallback(() => step(1), [step]);
+  const previous = useCallback(() => {
+    // Standard player convention: "previous" first restarts the current
+    // track if it's more than a couple of seconds in, and only steps back
+    // once you're at the start.
+    if (stateRef.current.currentTime > 3) {
+      seek(0);
+      return;
+    }
+    step(-1);
+  }, [step, seek]);
+
   const isActive = useCallback(
     (generationId: string) => stateRef.current.track?.generationId === generationId,
     [],
   );
 
   const value = useMemo<PlayerContextValue>(
-    () => ({ state, play, togglePlayPause, pause, seek, setVolume, isActive }),
-    [state, play, togglePlayPause, pause, seek, setVolume, isActive],
+    () => ({ state, play, togglePlayPause, pause, seek, setVolume, setPlaybackRate, setQueue, next, previous, isActive }),
+    [state, play, togglePlayPause, pause, seek, setVolume, setPlaybackRate, setQueue, next, previous, isActive],
   );
 
   return (

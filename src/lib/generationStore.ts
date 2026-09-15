@@ -28,6 +28,10 @@ function save(rows: GenerationRow[]) {
   }
 }
 
+export function listAll(): GenerationRow[] {
+  return load();
+}
+
 export function listForProject(projectId: string): GenerationRow[] {
   return load().filter((r) => r.project_id === projectId);
 }

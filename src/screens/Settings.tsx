@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import pkg from "../../package.json";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
 import { GitHubIcon } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
+import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
+import { kwesiModels } from "../lib/models";
+import { formatBytes } from "../lib/format";
 import { GENRES } from "../data/genres";
 import { LANGUAGES } from "../data/languages";
 import { useAppLock } from "../components/security/AppLock";
@@ -16,7 +21,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { AvatarImage } from "../components/ui/AvatarImage";
 import { ChipMultiSelect } from "../components/ui/ChipMultiSelect";
 
-const TABS = ["Profile", "Artists", "General", "Generation", "Models in use", "Security", "About"] as const;
+const TABS = ["Profile", "Artists", "System", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
 
 function ProfileTab() {
@@ -416,6 +421,75 @@ function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () =
   );
 }
 
+const ENV_LABELS: Record<string, string> = {
+  KWESI_HOME: "App data",
+  KWESI_MODELS_DIR: "Models",
+  KWESI_WORKSPACES_DIR: "Workspaces",
+  KWESI_EXPORTS_DIR: "Saved copies",
+  KWESI_TRAINED_MODELS_DIR: "Trained models",
+  KWESI_LOGS_DIR: "Logs",
+};
+
+function SystemRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-ink/[0.07] py-2.5 last:border-b-0">
+      <span className="shrink-0 text-xs text-ink-muted">{label}</span>
+      <span className="min-w-0 truncate text-right text-sm" title={value}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// What this machine has to work with — the GPU (moved here from the
+// workspace header), free space where models install, and where the app
+// keeps everything on disk.
+function SystemTab() {
+  const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
+  const [freeBytes, setFreeBytes] = useState<number | null | undefined>(undefined);
+  const [env, setEnv] = useState<Record<string, string | number> | null>(null);
+
+  useEffect(() => {
+    kwesiHardware.gpuVram().then(setGpu);
+    kwesiModels.diskFreeBytes().then(setFreeBytes);
+    if (window.kwesi) window.kwesi.getEnv().then(setEnv);
+  }, []);
+
+  return (
+    <div className="flex max-w-2xl flex-col gap-6">
+      <section>
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Hardware</p>
+        {gpu === null ? (
+          <p className="text-xs text-ink-muted">Checking…</p>
+        ) : !gpu.available ? (
+          <p className="text-sm">No NVIDIA GPU detected — models with a CPU fallback will still run, slowly.</p>
+        ) : (
+          <div>
+            <SystemRow label="GPU" value={gpu.gpuName ?? "NVIDIA GPU"} />
+            <SystemRow label="VRAM" value={`${gpu.freeVramGb.toFixed(1)} GB free of ${gpu.totalVramGb.toFixed(1)} GB`} />
+          </div>
+        )}
+      </section>
+      <section>
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Storage</p>
+        <SystemRow
+          label="Free space for models"
+          value={freeBytes === undefined ? "Checking…" : freeBytes === null ? "Unknown" : formatBytes(freeBytes)}
+        />
+        {env &&
+          Object.entries(ENV_LABELS).map(([key, label]) =>
+            typeof env[key] === "string" ? <SystemRow key={key} label={label} value={String(env[key])} /> : null,
+          )}
+        {!window.kwesi && <SystemRow label="Paths" value="Not available in the browser preview" />}
+      </section>
+      <section>
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">App</p>
+        <SystemRow label="Kwesi" value={`v${pkg.version}`} />
+      </section>
+    </div>
+  );
+}
+
 function SecurityTab() {
   const { refreshLockSettings } = useAppLock();
   const [hasPasscode, setHasPasscode] = useState(false);
@@ -521,7 +595,14 @@ function SecurityTab() {
 }
 
 export function SettingsScreen() {
-  const [tab, setTab] = useState<Tab>("Profile");
+  const location = useLocation();
+  // Deep-linkable (the sidebar's artist avatars open /settings?tab=Artists).
+  const requested = new URLSearchParams(location.search).get("tab");
+  const [tab, setTab] = useState<Tab>(TABS.includes(requested as Tab) ? (requested as Tab) : "Profile");
+
+  useEffect(() => {
+    if (TABS.includes(requested as Tab)) setTab(requested as Tab);
+  }, [requested]);
 
   return (
     <div className="flex h-full flex-col">
@@ -545,6 +626,7 @@ export function SettingsScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
       {tab === "Profile" && <ProfileTab />}
       {tab === "Artists" && <ArtistsTab />}
+      {tab === "System" && <SystemTab />}
       {tab === "Security" && <SecurityTab />}
 
       {tab === "About" && (

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AcknowledgmentsScreen } from "./screens/Acknowledgments";
 import { AppShell } from "./components/AppShell";
+import { HomeScreen } from "./screens/Home";
 import { WorkspacesScreen } from "./screens/Workspaces";
 import { WorkspaceDetailScreen } from "./screens/WorkspaceDetail";
 import { ModelManagerScreen } from "./screens/ModelManager";
@@ -13,6 +14,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<AcknowledgmentsScreen />} />
         <Route element={<AppShell />}>
+          <Route path="/home" element={<HomeScreen />} />
           <Route path="/workspaces" element={<WorkspacesScreen />} />
           <Route path="/workspaces/:workspaceId" element={<WorkspaceDetailScreen />} />
           <Route path="/models" element={<ModelManagerScreen />} />
