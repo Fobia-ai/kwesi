@@ -4,6 +4,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { WorkspacesIcon } from "../components/ui/icons";
 import { kwesiDb, type ModelRow, type WorkspaceRow } from "../lib/db";
@@ -99,15 +100,11 @@ export function WorkspacesScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
-          <p className="text-sm text-ink-muted">
-            Each workspace is bound to one model, chosen when it's created.
-          </p>
-        </div>
-        <PillButton onClick={() => setShowNew(true)}>New Workspace</PillButton>
-      </div>
+      <PageHeader
+        title="Workspaces"
+        subtitle="Each workspace is bound to one model, chosen when it's created."
+        actions={<PillButton onClick={() => setShowNew(true)}>New Workspace</PillButton>}
+      />
 
       {workspaces === null ? null : workspaces.length === 0 ? (
         <GlassPanel radius="panel" className="flex min-h-0 flex-1 items-center justify-center p-8">

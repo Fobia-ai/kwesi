@@ -228,7 +228,13 @@ export function DynamicGenerationForm({
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
   const [values, setValues] = useState<GenerationFormValues>(() => {
-    const initial: GenerationFormValues = {};
+    // `music_name` is a generic, required field every generation gets
+    // regardless of model — not part of any manifest's `inputs[]` (those are
+    // per-model parameters), so it's seeded here rather than in the loop
+    // below. It's what generations are actually titled by throughout the
+    // app (WorkspaceDetail's list/detail panes), instead of falling back to
+    // truncating whatever the prompt happened to be.
+    const initial: GenerationFormValues = { music_name: "" };
     for (const input of manifest.inputs) initial[input.key] = defaultValueFor(input);
     return initial;
   });
@@ -268,7 +274,8 @@ export function DynamicGenerationForm({
   }
 
   const shown = visibleInputs(manifest.inputs, selectedVariant);
-  const missingRequired = shown.some((input) => !isSatisfied(input, values[input.key]));
+  const missingMusicName = !String(values.music_name ?? "").trim();
+  const missingRequired = missingMusicName || shown.some((input) => !isSatisfied(input, values[input.key]));
   const requiredVramGb = minVramGbFor(manifest, selectedVariant || null);
   const hardwareGate = evaluateHardwareGate(manifest, requiredVramGb, gpu);
 
@@ -278,6 +285,17 @@ export function DynamicGenerationForm({
 
   return (
     <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1.5 text-sm">
+        Music name
+        <span className="text-red-500"> *</span>
+        <input
+          value={(values.music_name as string) ?? ""}
+          onChange={(e) => setValue("music_name", e.target.value)}
+          placeholder="e.g. Midnight Drive"
+          className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+        />
+      </label>
+
       {usableVariants.length > 0 && (
         <label className="flex flex-col gap-1.5 text-sm">
           Checkpoint variant

@@ -7,6 +7,7 @@ import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/kwesiBridge";
 import { getManifest, outputKindOf } from "../data/manifests";
 import { GlassPanel } from "../components/ui/GlassPanel";
+import { PageHeader } from "../components/ui/PageHeader";
 import { PillButton } from "../components/ui/PillButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -206,8 +207,13 @@ function ModelAccordionRow({
                             Retry
                           </PillButton>
                         ) : (
-                          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => onInstall(model.id, variant)}>
-                            <DownloadIcon width={14} height={14} /> Download
+                          <PillButton
+                            className="!p-2"
+                            title="Download"
+                            aria-label="Download"
+                            onClick={() => onInstall(model.id, variant)}
+                          >
+                            <DownloadIcon width={16} height={16} />
                           </PillButton>
                         )}
                       </div>
@@ -382,17 +388,11 @@ export function ModelManagerScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Model Manager</h1>
-          <p className="text-sm text-ink-muted">
-            Download and manage checkpoints, streamed straight from Hugging Face.
-          </p>
-        </div>
-        {diskFree !== null && (
-          <div className="shrink-0 pt-1 text-right text-xs text-ink-muted">{formatBytes(diskFree)} free</div>
-        )}
-      </div>
+      <PageHeader
+        title="Model Manager"
+        subtitle="Download and manage checkpoints, streamed straight from Hugging Face."
+        actions={diskFree !== null && <span className="text-xs text-ink-muted">{formatBytes(diskFree)} free</span>}
+      />
 
       <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">

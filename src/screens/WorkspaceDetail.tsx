@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
 import { SlideOver } from "../components/ui/SlideOver";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { WorkspacesIcon, WaveformIcon } from "../components/ui/icons";
@@ -96,14 +97,15 @@ const PROMPT_KEYS = ["prompt", "text_prompt"];
 const LYRICS_KEYS = ["lyrics"];
 
 /**
- * A generation's own prompt makes a far better title than its status string.
- * Which input carries it differs per model (`prompt` for MusicGen/ACE-Step,
- * `lyrics` for YuE2, an audio path for RAVE), so this prefers a real prompt
- * key and otherwise falls back to the first non-empty text value rather than
- * hardcoding one model's schema.
+ * Every generation now carries a required `music_name` (DynamicGenerationForm
+ * always renders it, independent of any model's manifest inputs) — that's
+ * the real title. The prompt/lyrics/first-string fallbacks below only cover
+ * generations created before this field existed.
  */
 function generationTitle(generation: GenerationRow): string {
   const params = parseParams(generation);
+  const musicName = params.music_name;
+  if (typeof musicName === "string" && musicName.trim()) return musicName.trim();
   for (const key of [...PROMPT_KEYS, ...LYRICS_KEYS]) {
     const value = params[key];
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -314,7 +316,7 @@ function GenerationList({
 function ParamsGrid({ generation, manifest }: { generation: GenerationRow; manifest: ModelManifest | undefined }) {
   const params = parseParams(generation);
   const rows = Object.entries(params)
-    .filter(([key]) => !PROMPT_KEYS.includes(key) && !LYRICS_KEYS.includes(key))
+    .filter(([key]) => key !== "music_name" && !PROMPT_KEYS.includes(key) && !LYRICS_KEYS.includes(key))
     .map(([key, value]) => ({
       key,
       label: manifest?.inputs.find((input) => input.key === key)?.label ?? key,
@@ -380,13 +382,19 @@ function GenerationDetail({
   const prompt = PROMPT_KEYS.map((key) => params[key]).find(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
-  const playerTitle = `${projectName} — ${generation.checkpoint_variant ?? "generation"}`;
+  const musicName = generationTitle(generation);
+  const playerTitle =
+    typeof params.music_name === "string" && params.music_name.trim()
+      ? params.music_name.trim()
+      : `${projectName} — ${generation.checkpoint_variant ?? "generation"}`;
+  const hasPlayArea = !done || showAudioPlayer || showPianoRoll;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-ink/10 px-6 py-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <h2 className="truncate text-base font-semibold">{musicName}</h2>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <StatusChip status={generation.status} />
             {generation.checkpoint_variant && <Chip>{generation.checkpoint_variant}</Chip>}
             {done && <LicenseBadge modelId={modelId} />}
@@ -406,27 +414,35 @@ function GenerationDetail({
         </button>
       </div>
 
+      {/* The play area is pinned outside the scroll region — it's the one
+          thing you want visible no matter how far you've scrolled into a
+          long lyrics block or a long parameter list below it. */}
+      {hasPlayArea && (
+        <div className="shrink-0 border-b border-ink/10 px-6 py-5">
+          {!done && (
+            <OutputViewerPlaceholder
+              outputKind={outputKind ?? "audio"}
+              status={generation.status as GenerationStatus}
+              progressPct={progressPct}
+              error={generation.error}
+            />
+          )}
+          {showAudioPlayer && (
+            <WaveformPlayer
+              generationId={generation.id}
+              filePath={audioFile as string}
+              title={playerTitle}
+              compact={false}
+            />
+          )}
+          {showPianoRoll && <PianoRollViewer filePath={midiFile as string} title={playerTitle} compact={false} />}
+        </div>
+      )}
+
+      {/* Everything below the play area is one shared scroll region — lyrics
+          render at their full natural height (no inner scrollbox of their
+          own) rather than being trapped in a small max-height box. */}
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden px-6 py-5">
-        {!done && (
-          <OutputViewerPlaceholder
-            outputKind={outputKind ?? "audio"}
-            status={generation.status as GenerationStatus}
-            progressPct={progressPct}
-            error={generation.error}
-          />
-        )}
-
-        {showAudioPlayer && (
-          <WaveformPlayer
-            generationId={generation.id}
-            filePath={audioFile as string}
-            title={playerTitle}
-            compact={false}
-          />
-        )}
-
-        {showPianoRoll && <PianoRollViewer filePath={midiFile as string} title={playerTitle} compact={false} />}
-
         {prompt && (
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Prompt</p>
@@ -437,7 +453,7 @@ function GenerationDetail({
         {lyrics && (
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Lyrics</p>
-            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-[12px] bg-ink/[0.04] px-4 py-3 font-sans text-sm leading-relaxed">
+            <pre className="whitespace-pre-wrap rounded-[12px] bg-ink/[0.04] px-4 py-3 font-sans text-sm leading-relaxed">
               {lyrics}
             </pre>
           </div>
@@ -588,7 +604,6 @@ function ProjectPane({
 
 export function WorkspaceDetailScreen() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
-  const navigate = useNavigate();
   const [workspace, setWorkspace] = useState<WorkspaceRow | null>(null);
   const [projects, setProjects] = useState<ProjectRow[] | null>(null);
   const [variants, setVariants] = useState<ModelVariantRow[]>([]);
@@ -626,32 +641,28 @@ export function WorkspaceDetailScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
-        <div className="min-w-0">
-          <button
-            onClick={() => navigate("/workspaces")}
-            className="mb-1 text-xs text-ink-muted transition-colors duration-150 hover:text-ink"
-          >
-            ← Workspaces
-          </button>
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{workspace?.name ?? "…"}</h1>
-          <div className="mt-0.5 flex items-center gap-2 text-sm text-ink-muted">
+      <PageHeader
+        title={workspace?.name ?? "…"}
+        backTo="/workspaces"
+        backLabel="Workspaces"
+        subtitle={
+          <>
             <span>{workspace?.model_display_name}</span>
             {installedCount > 0 && (
-              <>
-                <span className="text-ink-muted/50">·</span>
-                <span>
-                  {installedCount} checkpoint{installedCount === 1 ? "" : "s"} installed
-                </span>
-              </>
+              <span>
+                {" "}
+                · {installedCount} checkpoint{installedCount === 1 ? "" : "s"} installed
+              </span>
             )}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2.5">
-          <HardwareChip />
-          <PillButton onClick={() => setShowNewProject(true)}>New Project</PillButton>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <HardwareChip />
+            <PillButton onClick={() => setShowNewProject(true)}>New Project</PillButton>
+          </>
+        }
+      />
 
       {projects === null ? null : projects.length === 0 ? (
         <GlassPanel className="flex min-h-0 flex-1 items-center justify-center p-8">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GlassPanel } from "../components/ui/GlassPanel";
+import { PageHeader } from "../components/ui/PageHeader";
 import { PillButton } from "../components/ui/PillButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { TrainingIcon } from "../components/ui/icons";
@@ -544,13 +545,10 @@ export function TrainingScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight">Training</h1>
-        <p className="text-sm text-ink-muted">
-          Drop in your own music, train a custom timbre model, and use it in a new workspace. RAVE is the pilot
-          model for this pipeline — see kwesi.docs/04-roadmap.md Phase 10.
-        </p>
-      </div>
+      <PageHeader
+        title="Training"
+        subtitle="Drop in your own music and train a custom timbre model to use in a new workspace."
+      />
 
       <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto">

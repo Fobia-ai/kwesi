@@ -85,7 +85,7 @@ describe("DynamicGenerationForm", () => {
     expect(screen.queryByText("Melody reference (optional)")).not.toBeInTheDocument();
   });
 
-  it("disables Generate until the required prompt field is filled in", async () => {
+  it("disables Generate until the required prompt and music name fields are filled in", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     renderForm(["small"], onSubmit);
@@ -94,10 +94,16 @@ describe("DynamicGenerationForm", () => {
     expect(generateButton).toBeDisabled();
 
     await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+    expect(generateButton).toBeDisabled();
+
+    await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
     expect(generateButton).not.toBeDisabled();
 
     await user.click(generateButton);
-    expect(onSubmit).toHaveBeenCalledWith("small", expect.objectContaining({ prompt: "A calm piano piece" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "small",
+      expect.objectContaining({ prompt: "A calm piano piece", music_name: "My Song" }),
+    );
   });
 
   it("shows a hardware warning (but still allows Generate) when free VRAM is below the model's minimum", async () => {
@@ -110,6 +116,7 @@ describe("DynamicGenerationForm", () => {
     const user = userEvent.setup();
     renderForm(["small"]);
     await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+    await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("alert")).toHaveTextContent(/Hardware warning/);

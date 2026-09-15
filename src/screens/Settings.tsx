@@ -9,6 +9,7 @@ import { PillButton } from "../components/ui/PillButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Modal } from "../components/ui/Modal";
 import { GlassPanel } from "../components/ui/GlassPanel";
+import { PageHeader } from "../components/ui/PageHeader";
 
 const TABS = ["Profile", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
@@ -232,7 +233,7 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <h1 className="mb-4 shrink-0 text-2xl font-semibold tracking-tight">Settings</h1>
+      <PageHeader title="Settings" />
       <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 gap-1 border-b border-ink/10 px-4">
         {TABS.map((t) => (

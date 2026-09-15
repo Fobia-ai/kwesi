@@ -22,6 +22,12 @@
   /* Top-edge sheen: the bright lip that makes a frosted panel read as a
      physical pane of glass rather than a flat translucent rectangle. */
   --kwesi-glass-sheen: 0.5;
+  /* PageHeader.tsx's fixed total height (back-link slot + h1 + subtitle +
+     its own mb-4), measured in the browser, not guessed — shared here so
+     IconRail can offset by the exact same amount and its floating capsule
+     starts level with each screen's main glass panel instead of the header
+     text above it. Update both together if PageHeader's typography changes. */
+  --kwesi-header-h: 90px;
 }
 
 .dark {
