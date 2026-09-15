@@ -368,6 +368,24 @@ export function DynamicGenerationForm({
     });
   }
 
+  /**
+   * A cleared optional "number" field holds the literal string "" (see
+   * FieldControl's number case) so the input can render empty — but a
+   * couple of real servers do an unguarded `int(x)`/numeric compare on
+   * whatever they're sent (MuseCoco's bar_bucket/tempo_bucket, confirmed by
+   * reading servers/musecoco/server.py directly), which throws on `""`
+   * rather than treating it as "not set". Normalizing every number field's
+   * "" to `null` right before submit fixes this generically for every
+   * model's optional number fields, not just MuseCoco's.
+   */
+  function normalizeForSubmit(raw: GenerationFormValues): GenerationFormValues {
+    const next = { ...raw };
+    for (const input of manifest.inputs) {
+      if (input.type === "number" && next[input.key] === "") next[input.key] = null;
+    }
+    return next;
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm">
@@ -472,7 +490,7 @@ export function DynamicGenerationForm({
       <div className="mt-2 flex justify-end">
         <PillButton
           disabled={disabled || missingRequired || hardwareGate.level === "block"}
-          onClick={() => onSubmit(selectedVariant || null, values)}
+          onClick={() => onSubmit(selectedVariant || null, normalizeForSubmit(values))}
         >
           Generate
         </PillButton>

@@ -555,24 +555,38 @@ const MUSEFORMER: ModelManifest = {
     notes: "NEEDS VERIFICATION against the real requirements.txt — treated as similarly old/narrow-pinned as MuseCoco until confirmed, per kwesi.docs/03-model-catalog.md.",
   },
   inputs: [
+    // "continue_from_midi" removed from the options below (not just
+    // disabled): servers/museformer/server.py:100 unconditionally raises
+    // 501 "not implemented" whenever seed_mode is this value, regardless of
+    // whether seed_midi resolves to a real file -- there is no code path
+    // where it succeeds, so offering it as a selectable choice was a pure
+    // UX trap, not a "coming soon" feature. seed_midi's midi_upload input
+    // (and its own real-path-resolution fix from Phase 9) is kept here,
+    // unused for now, since it's the one piece that's actually ready
+    // whenever real continuation support gets implemented server-side.
     {
       key: "seed_mode",
       type: "select",
       label: "Seed",
       default: "random",
-      options: [
-        { value: "random", label: "Random seed" },
-        { value: "continue_from_midi", label: "Continue from a MIDI file" },
-      ],
+      options: [{ value: "random", label: "Random seed" }],
     },
     {
       key: "seed_midi",
       type: "midi_upload",
       label: "Seed MIDI file",
       accept: ".mid,.midi",
-      helpText: "Only used when Seed is set to \"Continue from a MIDI file\".",
+      helpText: "Not wired up yet — MIDI continuation isn't implemented server-side (see museformer/server.py).",
     },
-    { key: "bar_count", type: "number", label: "Bars to generate", min: 8, max: 256, default: 64 },
+    {
+      key: "bar_count",
+      type: "number",
+      label: "Bars to generate",
+      min: 8,
+      max: 256,
+      default: 64,
+      helpText: "Informational only — the server governs real generation length from its own token budget, not this value.",
+    },
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "museformer-venv", portRange: [17630, 17639] },

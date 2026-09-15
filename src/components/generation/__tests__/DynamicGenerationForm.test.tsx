@@ -280,4 +280,23 @@ describe("DynamicGenerationForm", () => {
       expect(genreInput).toHaveValue("Custom genre text");
     });
   });
+
+  describe("submit normalization", () => {
+    it("sends a cleared optional number field as null, not the empty string", async () => {
+      // Real regression: servers/musecoco/server.py's tempo_bucket()/
+      // bar_bucket() do an unguarded int(x)/numeric compare and throw a
+      // 500 on the literal string "" -- a cleared-but-optional number
+      // field must become null before it reaches any server.
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderForm(["default"], onSubmit, MOCK_PROFILES, "musecoco");
+
+      const tempoInput = screen.getByLabelText(/Tempo \(BPM\)/);
+      await user.clear(tempoInput);
+      await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(onSubmit).toHaveBeenCalledWith("default", expect.objectContaining({ tempo_bpm: null }));
+    });
+  });
 });
