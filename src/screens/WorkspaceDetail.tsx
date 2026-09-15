@@ -5,7 +5,6 @@ import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
 import { PageHeader } from "../components/ui/PageHeader";
-import { SlideOver } from "../components/ui/SlideOver";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { WorkspacesIcon, WaveformIcon } from "../components/ui/icons";
 import {
@@ -162,36 +161,61 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
-function NewGenerationPanel({
+/**
+ * Renders in the same pane slot as GenerationDetail rather than as an
+ * overlay — the right-hand pane now does double duty as both the player
+ * (an existing generation, selected) and the creation form (a new one, in
+ * progress), never both at once. Its header mirrors GenerationDetail's own
+ * (title + subtitle on the left, one action button on the right) so
+ * switching between the two doesn't visually jolt.
+ */
+function NewGenerationPane({
   modelId,
   installedVariantNames,
   extraVariantNames,
   artistProfiles,
-  onClose,
+  onCancel,
   onSubmit,
+  onTrackNameChange,
 }: {
   modelId: string;
   installedVariantNames: string[];
   extraVariantNames: string[];
   artistProfiles: ArtistProfile[];
-  onClose: () => void;
+  onCancel: () => void;
   onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
+  onTrackNameChange: (trackName: string) => void;
 }) {
   const manifest = getManifest(modelId);
   return (
-    <SlideOver title="New Generation" subtitle={manifest?.displayName} onClose={onClose}>
-      {manifest ? (
-        <DynamicGenerationForm
-          manifest={manifest}
-          installedVariantNames={installedVariantNames}
-          extraVariantNames={extraVariantNames}
-          artistProfiles={artistProfiles}
-          onSubmit={onSubmit}
-        />
-      ) : (
-        <p className="text-sm text-ink-muted">No manifest found for this model.</p>
-      )}
-    </SlideOver>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ink/10 px-6 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-semibold">New track</h2>
+          {manifest?.displayName && <p className="truncate text-xs text-ink-muted">{manifest.displayName}</p>}
+        </div>
+        <button
+          onClick={onCancel}
+          className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600"
+        >
+          Cancel
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-6 py-5">
+        {manifest ? (
+          <DynamicGenerationForm
+            manifest={manifest}
+            installedVariantNames={installedVariantNames}
+            extraVariantNames={extraVariantNames}
+            artistProfiles={artistProfiles}
+            onSubmit={onSubmit}
+            onTrackNameChange={onTrackNameChange}
+          />
+        ) : (
+          <p className="text-sm text-ink-muted">No manifest found for this model.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -266,6 +290,7 @@ function GenerationList({
   onNew,
   projectName,
   artistProfiles,
+  draftTrackName,
 }: {
   generations: GenerationRow[];
   selectedId: string | null;
@@ -273,7 +298,16 @@ function GenerationList({
   onNew: () => void;
   projectName: string;
   artistProfiles: ArtistProfile[];
+  // Non-null while the new-generation form (NewGenerationPane) is open —
+  // mirrors its track-name field live, appended as the list's last item, so
+  // typing a name reflects here before the generation is actually submitted
+  // and becomes a real GenerationRow. Removed the moment the form is
+  // cancelled or submitted.
+  draftTrackName: string | null;
 }) {
+  const isDrafting = draftTrackName !== null;
+  const hasItems = generations.length > 0 || isDrafting;
+
   return (
     <div className="flex min-h-0 w-60 shrink-0 flex-col border-r border-ink/10 xl:w-[19rem]">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-ink/10 px-4 py-3.5">
@@ -281,8 +315,8 @@ function GenerationList({
           <h2 className="truncate text-sm font-semibold">{projectName}</h2>
           <p className="text-[11px] text-ink-muted">
             {generations.length === 0
-              ? "No generations yet"
-              : `${generations.length} generation${generations.length === 1 ? "" : "s"}`}
+              ? "No tracks yet"
+              : `${generations.length} track${generations.length === 1 ? "" : "s"}`}
           </p>
         </div>
         <PillButton className="!px-3 !py-1.5 text-xs" onClick={onNew}>
@@ -290,7 +324,7 @@ function GenerationList({
         </PillButton>
       </div>
 
-      {generations.length === 0 ? (
+      {!hasItems ? (
         <div className="flex flex-1 items-center justify-center p-4">
           <p className="text-center text-xs text-ink-muted">
             Nothing here yet — hit <span className="text-ink">+ New</span> to generate something.
@@ -299,7 +333,10 @@ function GenerationList({
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
           {generations.map((generation) => {
-            const selected = generation.id === selectedId;
+            // While drafting, the pane on the right shows the form, not any
+            // existing generation — so nothing from the real list should
+            // still read as "selected" underneath it.
+            const selected = !isDrafting && generation.id === selectedId;
             const params = parseParams(generation);
             const artist = artistProfiles.find((p) => p.id === params.artist_profile_id) ?? null;
             return (
@@ -326,6 +363,18 @@ function GenerationList({
               </li>
             );
           })}
+          {isDrafting && (
+            <li>
+              <div className="flex w-full items-start gap-2 rounded-[10px] border border-dashed border-ink/15 bg-ink/[0.05] px-3 py-2.5 text-left">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs text-ink">{draftTrackName.trim() || "Untitled track"}</p>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <Chip tone="live">Draft</Chip>
+                  </div>
+                </div>
+              </div>
+            </li>
+          )}
         </ul>
       )}
     </div>
@@ -410,13 +459,13 @@ function GenerationDetail({
   const prompt = PROMPT_KEYS.map((key) => params[key]).find(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
-  const musicName = generationTitle(generation);
+  const trackName = generationTitle(generation);
   const artist = artistProfiles.find((p) => p.id === params.artist_profile_id) ?? null;
   const genres = Array.isArray(params.artist_genres) ? (params.artist_genres as string[]) : [];
   const playerTitle =
     typeof params.music_name === "string" && params.music_name.trim()
       ? params.music_name.trim()
-      : `${projectName} — ${generation.checkpoint_variant ?? "generation"}`;
+      : `${projectName} — ${generation.checkpoint_variant ?? "track"}`;
   const hasPlayArea = !done || showAudioPlayer || showPianoRoll;
 
   return (
@@ -425,7 +474,7 @@ function GenerationDetail({
         <div className="flex min-w-0 items-start gap-3">
           {artist && <AvatarImage avatarPath={artist.avatarPath} name={artist.name} size={40} className="mt-0.5" />}
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold">{musicName}</h2>
+            <h2 className="truncate text-base font-semibold">{trackName}</h2>
             {artist && <p className="truncate text-xs text-ink-muted">by {artist.name}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <StatusChip status={generation.status} />
@@ -537,7 +586,11 @@ function ProjectPane({
 }) {
   const [generations, setGenerations] = useState<GenerationRow[] | null>(null);
   const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(null);
-  const [showGenerationPanel, setShowGenerationPanel] = useState(false);
+  // Non-null means the new-generation form is open in the right-hand pane,
+  // in place of GenerationDetail — its value is the form's live track name,
+  // mirrored into GenerationList's appended draft item. null means the form
+  // is closed, whether it was never opened, cancelled, or just submitted.
+  const [draftTrackName, setDraftTrackName] = useState<string | null>(null);
 
   const installedVariantNames = useMemo(
     () => variants.filter((v) => v.install_status === "installed").map((v) => v.variant_name),
@@ -588,7 +641,7 @@ function ProjectPane({
     if (!manifest) return;
     const result = await kwesiGeneration.submit(project.id, checkpointVariant, values, outputKindOf(manifest));
     if (result.ok) {
-      setShowGenerationPanel(false);
+      setDraftTrackName(null);
       if (result.generation) setSelectedGenerationId(result.generation.id);
       refresh();
     }
@@ -599,20 +652,40 @@ function ProjectPane({
     refresh();
   }
 
+  // Selecting an existing track always exits the draft — the right-hand
+  // pane can only show one thing at a time, and a half-filled form with no
+  // save prompt isn't worth preserving across that switch.
+  function selectGeneration(id: string) {
+    setDraftTrackName(null);
+    setSelectedGenerationId(id);
+  }
+
   const selectedGeneration = generations?.find((g) => g.id === selectedGenerationId) ?? null;
+  const isDrafting = draftTrackName !== null;
 
   return (
     <>
       <GenerationList
         generations={generations ?? []}
         selectedId={selectedGenerationId}
-        onSelect={setSelectedGenerationId}
-        onNew={() => setShowGenerationPanel(true)}
+        onSelect={selectGeneration}
+        onNew={() => setDraftTrackName("")}
         projectName={project.name}
         artistProfiles={artistProfiles}
+        draftTrackName={draftTrackName}
       />
 
-      {selectedGeneration ? (
+      {isDrafting ? (
+        <NewGenerationPane
+          modelId={modelId}
+          installedVariantNames={installedVariantNames}
+          extraVariantNames={trainedVariantNames}
+          artistProfiles={artistProfiles}
+          onCancel={() => setDraftTrackName(null)}
+          onSubmit={submitGeneration}
+          onTrackNameChange={setDraftTrackName}
+        />
+      ) : selectedGeneration ? (
         <GenerationDetail
           key={selectedGeneration.id}
           generation={selectedGeneration}
@@ -626,22 +699,9 @@ function ProjectPane({
           <EmptyState
             icon={<WaveformIcon width={28} height={28} />}
             title="Nothing generated in this project yet."
-            action={
-              <PillButton onClick={() => setShowGenerationPanel(true)}>Create your first generation</PillButton>
-            }
+            action={<PillButton onClick={() => setDraftTrackName("")}>Create your first track</PillButton>}
           />
         </div>
-      )}
-
-      {showGenerationPanel && (
-        <NewGenerationPanel
-          modelId={modelId}
-          installedVariantNames={installedVariantNames}
-          extraVariantNames={trainedVariantNames}
-          artistProfiles={artistProfiles}
-          onClose={() => setShowGenerationPanel(false)}
-          onSubmit={submitGeneration}
-        />
       )}
     </>
   );

@@ -27,6 +27,11 @@ interface DynamicGenerationFormProps {
   artistProfiles: ArtistProfile[];
   disabled?: boolean;
   onSubmit: (checkpointVariant: string | null, values: GenerationFormValues) => void;
+  // Fires on every keystroke in the track name field — WorkspaceDetail uses
+  // this to live-mirror the in-progress title into a draft list item while
+  // this form is open, without needing to lift this form's whole `values`
+  // state out of it.
+  onTrackNameChange?: (trackName: string) => void;
 }
 
 export function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null): ManifestInput[] {
@@ -243,6 +248,7 @@ export function DynamicGenerationForm({
   artistProfiles,
   disabled,
   onSubmit,
+  onTrackNameChange,
 }: DynamicGenerationFormProps) {
   const navigate = useNavigate();
 
@@ -404,11 +410,14 @@ export function DynamicGenerationForm({
   return (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm">
-        Music name
+        Track name
         <span className="text-red-500"> *</span>
         <input
           value={(values.music_name as string) ?? ""}
-          onChange={(e) => setValue("music_name", e.target.value)}
+          onChange={(e) => {
+            setValue("music_name", e.target.value);
+            onTrackNameChange?.(e.target.value);
+          }}
           placeholder="e.g. Midnight Drive"
           className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
         />
