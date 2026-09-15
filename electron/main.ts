@@ -19,9 +19,12 @@ import { registerHardwareIpcHandlers } from "./ipc/hardware.js";
 import { registerTrainingIpcHandlers } from "./ipc/training.js";
 import { registerSecurityIpcHandlers } from "./ipc/security.js";
 import { registerProfileIpcHandlers } from "./ipc/profile.js";
+import { registerCrashLogIpcHandlers } from "./ipc/crashLog.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
 import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
+import { installMainProcessCrashLogging, writeCrashLog, buildCrashLogEntry } from "./logging/crashLog.js";
+import { checkForUpdates } from "./updates/autoUpdate.js";
 
 // Loads .env from the project root in dev (electron launched via `electron .`,
 // so process.cwd() is the project root); silently a no-op if no .env exists
@@ -43,6 +46,12 @@ initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
+
+// Phase 13: local-only crash/error log (KWESI_LOGS_DIR/crashes.log) -- see
+// electron/logging/crashLog.ts. Installed as early as possible so nothing
+// that happens during the rest of startup goes unrecorded.
+installMainProcessCrashLogging();
+
 registerDbIpcHandlers();
 registerModelsIpcHandlers();
 registerGenerationIpcHandlers();
@@ -51,6 +60,7 @@ registerHardwareIpcHandlers();
 registerTrainingIpcHandlers();
 registerSecurityIpcHandlers(kwesiEnv.KWESI_LOCK_IDLE_TIMEOUT_MINUTES);
 registerProfileIpcHandlers();
+registerCrashLogIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"
@@ -84,6 +94,17 @@ function createWindow() {
     },
   });
 
+  // Phase 13: a preload script failure previously left `window.kwesi`
+  // silently `undefined` in the renderer with no trace anywhere -- the
+  // exact failure mode that caught a real, pre-existing bug during this
+  // phase's own verification (see kwesi.docs/02-architecture.md's
+  // "Packaging & signing" notes: Electron's sandboxed preload loader
+  // requires CommonJS and previously got ESM `import` syntax). Logged now
+  // so a regression here is never silent again.
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    writeCrashLog(buildCrashLogEntry("main", "preload-error", error, { preloadPath }));
+  });
+
   if (isDev) {
     mainWindow.loadURL("http://localhost:5183");
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -111,7 +132,14 @@ ipcMain.handle("kwesi:open-external", async (_event, url: string) => {
 
 ipcMain.handle("kwesi:get-env", () => kwesiEnv);
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  // Phase 13: best-effort GitHub Releases check, packaged builds only --
+  // see electron/updates/autoUpdate.ts for why this reliably no-ops against
+  // this repo today (it's private) and why that's fine (fails silently to
+  // the crash log, never a blocking dialog).
+  checkForUpdates();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -125,4 +153,29 @@ app.on("before-quit", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// Phase 13: a renderer crash (OOM, GPU-driver kill, etc.) previously left no
+// trace anywhere -- recorded to the same local crashes.log as everything
+// else. Electron keeps the app process alive after this; the window shows
+// blank until the user relaunches, same behavior as before this phase, just
+// now with a record of why.
+app.on("render-process-gone", (_event, _webContents, details) => {
+  writeCrashLog(
+    buildCrashLogEntry("main", "render-process-gone", new Error(`Renderer process gone: ${details.reason}`), {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    }),
+  );
+});
+
+app.on("child-process-gone", (_event, details) => {
+  writeCrashLog(
+    buildCrashLogEntry(
+      "main",
+      "child-process-gone",
+      new Error(`Child process gone: ${details.type} / ${details.reason}`),
+      { type: details.type, reason: details.reason, exitCode: details.exitCode },
+    ),
+  );
 });

@@ -683,3 +683,241 @@ $KWESI_HOME/
 A `.env.example` in the repo documents every `KWESI_*` variable for local
 development; production builds resolve the same variables from the real OS
 environment at launch.
+
+---
+
+## Packaging & signing (Phase 13)
+
+Packaged via `electron-builder` (`electron-builder.yml` at the repo root).
+`npm run package:linux` / `package:mac` / `package:win` each run
+`build` + `build:electron` first, then invoke electron-builder for that one
+platform with `--publish=never` (nothing is ever auto-published — cutting a
+real release is a separate, deliberate action, not a side effect of a local
+build).
+
+**Scope of what's packaged.** Only the compiled app shell (`dist/` +
+`dist-electron/`), `package.json`, and production `node_modules` go into the
+app. The per-model Python inference servers (`servers/<model_id>/`) and
+their venvs (`KWESI_VENVS_DIR`) are **not** bundled — this was already
+flagged as a Phase 5 scope cut (`modelServer.ts` resolves `servers/`
+relative to its own compiled location, which works for dev and an unpacked
+build but not a real installer) and remains open after Phase 13. A packaged
+install launches correctly and every SQLite-backed feature works
+(workspaces/projects/generations, Model Manager listing, profile, app
+lock), but real model inference from a packaged install still needs the dev
+repo's `servers/` + `venvs/` present on disk, same as today. Shipping those
+too is a real, separate follow-up — they're multi-gigabyte and
+platform/hardware-specific (GPU vs. CPU wheels, CUDA vs. ROCm vs. MLX), not
+a small addition.
+
+**Native module (`better-sqlite3`) handling.** better-sqlite3 ships a
+compiled `.node` addon, which can't be `dlopen`'d from inside an asar
+archive — electron-builder is told explicitly via `asarUnpack` to place
+`node_modules/better-sqlite3` in `app.asar.unpacked` rather than relying
+purely on its automatic native-module detection, and `npmRebuild: true`
+(the default, kept explicit) rebuilds it against the *target* Electron's
+ABI at package time, independent of the dev-time `postinstall`
+`electron-rebuild` step. **Verified real** (2026-09-15, this machine): a
+Linux build's `better_sqlite3.node` lands correctly under
+`release/linux-unpacked/resources/app.asar.unpacked/node_modules/
+better-sqlite3/build/Release/`, and a launched packaged build successfully
+opened its SQLite DB and ran the real disk-reconciliation query path (see
+"What's actually verified" below) — not just inspected, actually exercised.
+
+**Per-platform status:**
+
+| Platform | Targets | Status |
+|---|---|---|
+| Linux | AppImage, deb | **Built and verified end-to-end on this machine** — see below. |
+| macOS | dmg | **Config-only.** `electron-builder.yml`'s `mac` block is written and schema-valid, but a real dmg build needs macOS itself (electron-builder's dmg target isn't buildable on Linux) — never attempted here, and no claim is made that it works. |
+| Windows | nsis | **Config-only.** The `win`/`nsis` blocks are written and schema-valid; a real nsis build was not attempted on this machine (out of this phase's verifiable scope, consistent with the instruction not to claim untested platforms work) — not attempted here either. |
+
+**A real, pre-existing bug this phase's own verification caught:**
+sandboxed preload scripts (`webPreferences.sandbox: true`, set in
+`main.ts` since Phase 1) are always evaluated by Electron's own preload
+loader as plain CommonJS — it does not consult `package.json`'s `"type"`
+field at all (that governs Node's *own* ESM/CJS resolution, which this
+loader bypasses entirely, running the script text through a `vm`-based
+sandbox with `require`/`module`/`exports` injected manually). This repo's
+`package.json` sets `"type": "module"` and `electron/tsconfig.json`
+compiles everything (including `preload.ts`) to ES2022 `import`/`export`
+syntax — which the preload loader can't parse at all
+(`SyntaxError: Cannot use import statement outside a module`, thrown from
+Electron's own `sandbox_bundle`, confirmed directly via a
+`webContents.on("preload-error", ...)` listener). The practical effect:
+**`window.kwesi` was silently `undefined` in every real Electron launch**
+(dev and packaged alike — reproduced identically running
+`electron .` directly, not just in a packaged build), meaning nothing
+using the preload bridge ever actually ran against the real main process;
+the renderer would have silently sat on its per-feature browser-preview
+mock/localStorage fallbacks instead. **Fixed** by compiling `preload.ts`
+separately as CommonJS (`electron/tsconfig.preload.json`, extending the
+main `electron/tsconfig.json` but overriding `module`/`moduleResolution`,
+excluded from the main compile via `"exclude": ["preload.ts"]` there) —
+`npm run build:electron` now runs both `tsc` invocations into the same
+`dist-electron/` output, one ESM (`main.ts` and everything using
+`import.meta.url`), one CJS (`preload.ts` only). A permanent
+`webContents.on("preload-error", ...)` handler was added in `main.ts`,
+writing to the same local crash log this phase already built (`kind:
+"preload-error"`) — so a regression here is never silent again. This
+wasn't something Phase 13 introduced; it's a latent defect from as far
+back as Phase 1 that nothing before this phase happened to exercise
+through a real (non-dev-server) Electron launch with the sandboxed preload
+path actually loading — worth flagging plainly rather than glossing over,
+since it means any "verified real" claim in earlier phase writeups that
+specifically depended on the preload/IPC bridge working in a real launch
+(as opposed to the Vite dev server route, or code inspection) should be
+read with that in mind. It is fixed and verified now (see below).
+
+**What's actually verified (Linux, this machine, 2026-09-15):**
+1. `npx electron-builder --linux --publish=never` completes successfully,
+   producing `Kwesi-0.1.0.AppImage` and `kwesi_0.1.0_amd64.deb`.
+2. `dpkg-deb --info`/`-c` on the `.deb` show correct metadata (package
+   name, maintainer, dependencies: `libgtk-3-0`, `libnotify4`, `libnss3`,
+   etc.) and a sane file layout under `/opt/Kwesi`.
+3. The unpacked build (`release/linux-unpacked/kwesi --no-sandbox`) was
+   launched for real against this machine's X display and stayed alive for
+   the full duration of a timed foreground run (process tree showed a live
+   zygote, gpu-process, network-service utility, and renderer process the
+   entire time).
+4. **Real IPC round-trip through the fixed preload bridge**, driven via
+   Chrome DevTools Protocol (`--remote-debugging-port`, a genuine
+   `Runtime.evaluate` call against the actual renderer page, not a unit
+   test): `typeof window.kwesi === "object"` (previously `"undefined"`,
+   see the bug above); `window.kwesi.db.listWorkspaces()` returned `[]`
+   against a fresh packaged-app DB; `window.kwesi.db.createWorkspace(...)`
+   then created a real row, and a follow-up `listWorkspaces()` returned it
+   — a real write and read against the packaged build's own
+   `better-sqlite3` database via the real IPC path, not inspection. The
+   startup log also showed the real Model-Manager disk-reconciliation pass
+   (`[reconcile] found ... -> marked installed`) completing against the
+   real `models/` directory during this same run.
+5. The packaged auto-update check ran for real against the live (private)
+   GitHub repo, failed with the expected 404, and was caught and logged
+   (one `crashes.log` entry, `kind: "auto-update-error"`) without crashing
+   the app or blocking startup — see "Auto-update" below.
+6. **Real renderer-side crash forwarding**, also via CDP: a script was
+   evaluated in the actual renderer page scheduling a genuine uncaught
+   `throw` (`setTimeout(() => { throw new Error(...) }, 10)`, so it
+   surfaces as a real `window.onerror` event, not an inline
+   `Runtime.evaluate` exception) — it appeared in the same
+   `crashes.log` as `{"process":"renderer","kind":"window-error",...}`,
+   confirming the full renderer → IPC → main-process → disk path for
+   real, not just via the unit tests on the pure mapping functions.
+
+**Code signing — deliberately not attempted, by design.** No Apple
+Developer ID, no Windows Authenticode certificate, and no notarization
+credentials exist on this machine or anywhere in this project. Nothing in
+`electron-builder.yml` requires them:
+- **macOS**: `identity: null` explicitly disables electron-builder's
+  identity auto-detection, so a future build on an actual Mac never
+  accidentally goes looking for a Developer ID it doesn't have.
+  `hardenedRuntime`/`gatekeeperAssess` are off since there's nothing to
+  harden/notarize without a real identity. An unsigned dmg built this way
+  will show a Gatekeeper "unidentified developer" warning on first open —
+  expected, not a bug, and the standard state for any indie/unsigned macOS
+  app.
+- **Windows**: nothing sets `certificateFile`/`certificateSubjectName`.
+  electron-builder's own default behavior is to look for
+  `CSC_LINK`/`CSC_KEY_PASSWORD` env vars and silently skip signing when
+  they're absent — this config relies on exactly that default rather than
+  overriding it, so a build here or in CI never hard-fails for lack of a
+  cert. An unsigned installer will trigger a SmartScreen warning — again
+  expected.
+- **Linux** doesn't have an equivalent code-signing convention for
+  AppImage/deb in the way macOS/Windows do, so there's nothing to skip
+  there.
+
+If real credentials are obtained later, they slot in purely via env vars
+(`CSC_LINK`/`CSC_KEY_PASSWORD` for both mac and win, plus
+`APPLE_ID`/`APPLE_ID_PASSWORD`/`APPLE_TEAM_ID` for notarization) — no
+config changes needed, since electron-builder reads those automatically
+when present.
+
+---
+
+## Auto-update (Phase 13)
+
+`electron/updates/autoUpdate.ts` wires `electron-updater`'s `autoUpdater`
+to check `electron-builder.yml`'s `publish` feed
+(`provider: github, owner: Fobia-ai, repo: kwesi`) once per launch, packaged
+builds only (`checkForUpdates()` no-ops immediately if `!app.isPackaged`,
+since there's no `app-update.yml` to compare against in a dev run).
+`autoDownload` is left `false` — this phase only checks and logs, it
+doesn't download or install anything, since there's no tested update flow
+to land users in yet.
+
+**Honest, known limitation: this repo is currently PRIVATE.**
+electron-updater's GitHub provider fetches release metadata
+(`releases.atom`, then the versioned `latest*.yml` asset) over a plain,
+unauthenticated HTTPS request. That works for a public repo; GitHub
+returns a 404 for an anonymous request against a private repo's releases
+(**confirmed live** against the real repo, 2026-09-15 — see the exact
+`HttpError: 404` in the verification run below). There is no way to ship a
+*working* private-repo auto-updater to end users without embedding a
+GitHub token in the distributed binary — and a token embedded in every
+install is a leaked credential, not a real solution — so until this repo
+is made public (or a future update feed moves off GitHub Releases to
+something with its own real per-user auth story), a genuine update check
+against this feed will keep failing. This isn't a bug to fix later in the
+usual sense; it's a real tradeoff between "repo stays private" and
+"auto-update works," to be made deliberately whenever it's made at all.
+
+**Verified real (2026-09-15, this machine):** a packaged Linux build's
+startup log showed the actual sequence —
+`Checking for update` → a real HTTPS request to
+`https://github.com/Fobia-ai/kwesi/releases.atom` → a genuine `404
+HttpError` from GitHub → caught by the `error` handler → one structured
+entry written to the local `crashes.log` (`kind: "auto-update-error"`) →
+the app kept running normally for the rest of its lifetime, no dialog, no
+crash. That's the fail-gracefully behavior this was built for, observed
+actually happening, not just coded defensively and assumed to work.
+
+---
+
+## Crash/error logging (Phase 13)
+
+Local-only, JSONL, no telemetry — one line per event appended to
+`KWESI_LOGS_DIR/crashes.log`, consistent with the app's stated
+no-account/no-cloud-sync philosophy (see 01-overview.md). Nothing here ever
+leaves the machine; there's no remote endpoint anywhere in this feature.
+
+**Main process** (`electron/logging/crashLog.ts`, installed from
+`main.ts` as early in startup as possible):
+- `process.on("uncaughtException")` / `process.on("unhandledRejection")`.
+- `app.on("render-process-gone")` and `app.on("child-process-gone")`
+  (wired directly in `main.ts`, since they're Electron `app` events and
+  `crashLog.ts` deliberately has no `electron` import so its formatting
+  logic stays unit-testable outside Electron).
+- `electron/updates/autoUpdate.ts`'s own failures are logged through the
+  same path (`kind: "auto-update-error"`).
+
+**Renderer process** (`src/lib/crashLog.ts`, installed from `src/main.tsx`
+before the first React render): `window.onerror` /
+`window.addEventListener("unhandledrejection", ...)`, forwarded to the main
+process over the standard IPC quadruplet for this codebase —
+`electron/ipc/crashLog.ts` → `electron/preload.ts` →
+`src/lib/kwesiBridge.ts` (types) → `src/lib/crashLog.ts` (client) — same
+shape as every other feature's bridge (`profile`, `security`, etc.). In a
+plain-browser dev preview (no `window.kwesi`), reports fall back to
+`console.error` instead of silently vanishing.
+
+Every entry is `{ timestamp, process: "main" | "renderer", kind, message,
+stack?, extra? }`. Writing is best-effort and swallows its own failures
+(falls back to `console.error`) — a crash logger that can itself throw
+inside an already-failing process would make things worse, not better.
+
+**Verified real (2026-09-15, this machine):** the packaged Linux build's
+own auto-update failure (above) produced a real, well-formed
+`crashes.log` entry at `~/.config/Kwesi/logs/crashes.log`, confirming
+`logsRootDir()` resolution, directory creation, and JSONL append all work
+against the actual packaged app's real `KWESI_LOGS_DIR`. The renderer-side
+path was independently verified too, end-to-end and for real, once the
+preload bug above was fixed: a genuine uncaught `throw` triggered inside
+the actual renderer page via Chrome DevTools Protocol produced a second,
+correctly-shaped `crashes.log` entry
+(`{"process":"renderer","kind":"window-error",...}`), proving the full
+`window.onerror` → IPC (`kwesi:crashLog:report`) → main-process
+`writeCrashLog` → disk path for real, not just via
+`src/lib/__tests__/crashLog.test.ts`'s unit tests on the pure mapping
+functions.

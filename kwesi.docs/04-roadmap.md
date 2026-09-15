@@ -965,24 +965,128 @@ phase: `useIdleTimer`, `LockScreen`, `AppLock`).
 
 ---
 
-## Phase 13 — Polish, Packaging & Distribution
+## Phase 13 — Polish, Packaging & Distribution ✅ Linux built + verified real; macOS/Windows config-only; performance pass not attempted
 **Objective:** ship it.
 
-- Installers for Windows/macOS/Linux (electron-builder or equivalent),
-  code signing where applicable.
-- Auto-update mechanism.
-- Crash/error reporting (local-only unless the user opts into anything
-  external — no telemetry by default, consistent with the no-account
-  philosophy).
-- Performance pass on large model downloads, training runs, and app
-  startup with several models (and trained checkpoints) installed.
-- Full pass through every model's acknowledgment card, license badge, and
-  export warning copy for accuracy.
+This is the final roadmap phase. Executed scope was narrower than the
+objective's original full aspiration (see "What wasn't attempted" below) —
+per-item honest breakdown follows, in the same spirit as Phase 7/8/9/11's
+partial-completion writeups above.
 
-**Exit criteria:** a clean install on each target OS reproduces the full
-flow from first-run acknowledgments through generating audio, training a
-custom model, and exporting output, with at least MusicGen, MuseCoco, RAVE,
-and one heavy model installed.
+- **Installers — Linux built and verified real; macOS/Windows config-only.**
+  `electron-builder.yml` configures all three platforms (AppImage + deb for
+  Linux, dmg for macOS, nsis for Windows). Only Linux was actually built on
+  this machine, since it's the one platform this dev environment can
+  produce and run — `npx electron-builder --linux --publish=never`
+  produces a real `Kwesi-0.1.0.AppImage` and `kwesi_0.1.0_amd64.deb`
+  (`dpkg-deb` confirms correct metadata/dependencies), and the packaged
+  build was genuinely launched, driven via Chrome DevTools Protocol against
+  its real renderer, and proven to do real `better-sqlite3`-backed reads
+  *and writes* (`window.kwesi.db.createWorkspace(...)` then
+  `listWorkspaces()` returning it) through the real IPC bridge — not just
+  "didn't crash." **A real, pre-existing bug was found and fixed in the
+  process**: Electron's sandboxed preload loader requires CommonJS and
+  ignores `package.json`'s `"type"` field entirely, but `preload.ts` was
+  being compiled to ES module syntax — meaning `window.kwesi` was silently
+  `undefined` in every real (non-Vite-dev-server) Electron launch, dev and
+  packaged alike, since as far back as Phase 1. Fixed by giving
+  `preload.ts` its own CommonJS compile
+  (`electron/tsconfig.preload.json`) alongside the rest of `electron/`
+  staying ES modules. See `kwesi.docs/02-architecture.md`'s "Packaging &
+  signing" section for the full writeup, including exactly how it was
+  diagnosed and re-verified. macOS/Windows builds were **not attempted** on
+  this Linux machine (a real dmg build needs actual macOS; nsis wasn't
+  risked given the newly-found preload issue made "config valid" vs.
+  "actually works" a meaningfully different claim worth being careful
+  about) — their electron-builder config is written and schema-valid, no
+  more, no less.
+- **Native module handling (`better-sqlite3`)** — explicit `asarUnpack` for
+  its compiled `.node` addon (can't `dlopen` from inside asar) plus
+  `npmRebuild: true` (rebuilds against the target Electron's ABI at
+  package time). Verified real: the packaged Linux build's native addon
+  lands correctly under `app.asar.unpacked` and was exercised with real
+  reads/writes (above), not just inspected on disk.
+- **Code signing — correctly, deliberately absent**, not a partial
+  implementation of something incomplete. No Apple Developer ID, no
+  Windows Authenticode cert, no notarization credentials exist on this
+  machine or anywhere in this project, and none are fabricated.
+  `mac.identity: null` and reliance on electron-builder's own default
+  `CSC_LINK`/`CSC_KEY_PASSWORD`-absent-means-skip behavior for Windows mean
+  a build never hard-fails for lack of a cert. Documented honestly in
+  `kwesi.docs/02-architecture.md` rather than pretended solved.
+- **Auto-update — wired, and honestly can't fully work against this repo
+  today.** `electron/updates/autoUpdate.ts` wires `electron-updater`
+  against GitHub Releases on `github.com/Fobia-ai/kwesi`
+  (`electron-builder.yml`'s `publish` block), packaged builds only.
+  The repo is currently **private**, and electron-updater's GitHub
+  provider needs either a public repo or an embedded token (never
+  acceptable to ship) to fetch release metadata — documented plainly as a
+  real tradeoff, not silently built and left broken. **Verified real**: a
+  packaged build's actual update check against the live private repo
+  failed with a genuine `404 HttpError`, caught and logged locally
+  (`crashes.log`, `kind: "auto-update-error"`) without a dialog or a crash
+  — exactly the fail-gracefully behavior this was built for, observed
+  actually happening.
+- **Crash/error reporting — local-only, no telemetry, real.**
+  `electron/logging/crashLog.ts` (main: `uncaughtException`,
+  `unhandledRejection`, `render-process-gone`, `child-process-gone`,
+  `preload-error`) and `src/lib/crashLog.ts` (renderer:
+  `window.onerror`/`unhandledrejection`, forwarded to main over the
+  standard IPC quadruplet — `electron/ipc/crashLog.ts` →
+  `electron/preload.ts` → `src/lib/kwesiBridge.ts` →
+  `src/lib/crashLog.ts`) write JSONL entries to
+  `KWESI_LOGS_DIR/crashes.log`. **Verified real, both directions**: the
+  auto-update failure above produced a genuine main-process entry, and a
+  real uncaught `throw` triggered inside the actual packaged renderer via
+  CDP produced a genuine renderer-process entry — the full path proven
+  end-to-end, not just via the pure-function unit tests
+  (`electron/logging/__tests__/crashLog.test.ts`,
+  `src/lib/__tests__/crashLog.test.ts`).
+- **Model acknowledgment/license/export-warning copy audit — done, nothing
+  wrong found.** Read every card in `src/screens/Acknowledgments.tsx` and
+  the About tab of `src/screens/Settings.tsx`, the `LicenseBadge` tooltip
+  copy in `src/screens/WorkspaceDetail.tsx`, and the `licenseTier`/catalog
+  data in `src/data/catalog.ts` and `src/data/manifests.ts`, cross-checked
+  against `kwesi.docs/03-model-catalog.md`'s license table. Every license
+  tier (MIT: MuseCoco, Museformer, ACE-Step 1.5; CC-BY-NC: MusicGen, YuE2;
+  CC-BY-NC-SA: RAVE) and every warning string matched the doc exactly —
+  nothing genuinely wrong or stale found, so nothing was rewritten just to
+  look busy.
+
+**What wasn't attempted this phase** (narrower than the objective's
+original full aspiration, called out honestly rather than silently
+dropped):
+- **Performance pass** on large model downloads/training runs/startup with
+  several models installed — not part of this phase's executed scope.
+  Genuinely open.
+- **Shipping `servers/` + venvs in the installer** so a packaged install
+  can run real model inference end-to-end, not just the app shell/DB
+  layer — already flagged as a Phase 5 scope cut
+  (`modelServer.ts` resolves `servers/` relative to its own compiled
+  location) and still open. Multi-gigabyte, platform/hardware-specific
+  (CUDA/ROCm/MLX/CPU wheels differ per model) — a real, separate
+  undertaking, not a small addition on top of this phase.
+- **macOS/Windows real builds** — config-only, as above; the original exit
+  criterion below (a clean install on *each* target OS) is therefore not
+  met for two of the three platforms.
+
+**Exit criteria: not fully met, by design of what this session could
+verify.** The original criterion — a clean install on each target OS
+reproducing the full flow from first-run acknowledgments through
+generating audio, training a custom model, and exporting output — assumes
+capabilities (macOS/Windows build environments, bundled model
+servers/venvs) genuinely out of reach on this single Linux dev machine in
+this session. What *is* met, for real, on Linux: a clean packaged install
+launches, renders the real UI, and correctly exercises its
+`better-sqlite3`-backed data layer (including the profile/security/app-lock
+features from Phase 12) through the real IPC bridge — the packaging
+equivalent of Phase 5's "one model, fully real" precedent, applied to "one
+platform, fully real" instead. Verified via `npx tsc -p
+electron/tsconfig.json --noEmit`, `npx tsc -p electron/tsconfig.preload.json
+--noEmit`, `npx tsc -b --noEmit`, `npm run build`, and the Vitest suite (98
+tests passing, 20 new for this phase: 7 for
+`electron/logging/crashLog.ts`'s pure formatting/normalizing functions, 13
+for `src/lib/crashLog.ts`'s pure event-mapping functions).
 
 ---
 

@@ -9,5 +9,16 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["."]
+  "include": ["."],
+  // preload.ts is compiled separately (tsconfig.preload.json) as CommonJS --
+  // Electron's sandboxed preload loader (webPreferences.sandbox: true, set
+  // in main.ts) evaluates the preload script through its own custom loader
+  // that expects require()/module.exports and throws a plain V8
+  // SyntaxError ("Cannot use import statement outside a module") on `import`
+  // syntax. It does not consult package.json's "type" field at all -- that
+  // governs Node's own ESM/CJS resolution, which this loader bypasses
+  // entirely -- so the rest of electron/ can safely stay ES2022 modules
+  // (main.ts and others rely on `import.meta.url`) while only preload.ts
+  // needs the different target.
+  "exclude": ["preload.ts"]
 }

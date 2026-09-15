@@ -106,4 +106,12 @@ contextBridge.exposeInMainWorld("kwesi", {
     save: (displayName: string | null, email: string | null) =>
       ipcRenderer.invoke("kwesi:profile:save", displayName, email),
   },
+  crashLog: {
+    report: (
+      kind: "window-error" | "unhandledrejection",
+      message: string,
+      stack?: string,
+      extra?: Record<string, unknown>,
+    ) => ipcRenderer.invoke("kwesi:crashLog:report", { kind, message, stack, extra }),
+  },
 });

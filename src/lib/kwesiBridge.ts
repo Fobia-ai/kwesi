@@ -111,6 +111,14 @@ declare global {
         get: () => Promise<{ display_name: string | null; email: string | null; avatar_path: string | null }>;
         save: (displayName: string | null, email: string | null) => Promise<void>;
       };
+      crashLog: {
+        report: (
+          kind: "window-error" | "unhandledrejection",
+          message: string,
+          stack?: string,
+          extra?: Record<string, unknown>,
+        ) => Promise<void>;
+      };
     };
   }
 }

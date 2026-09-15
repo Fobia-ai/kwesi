@@ -1,0 +1,105 @@
+# electron-builder config for Phase 13 (Polish, Packaging & Distribution).
+# See kwesi.docs/04-roadmap.md's Phase 13 section and
+# kwesi.docs/02-architecture.md's "Packaging & signing" section for the full
+# writeup of what this does and doesn't cover.
+#
+# Scope note: this packages the Electron app shell + renderer + SQLite data
+# layer only. The per-model Python inference servers (servers/<model_id>/)
+# and their venvs (KWESI_VENVS_DIR) are deliberately NOT bundled as
+# extraResources -- they're multi-gigabyte, platform/hardware-specific, and
+# already flagged as an explicit Phase 5 scope cut in
+# kwesi.docs/04-roadmap.md ("a real installer (Phase 13) needs servers/ and
+# each model's venv shipped as extraResources -- not attempted here"). That
+# remains true after this phase: a packaged build launches, renders, and
+# exercises every SQLite-backed feature (workspaces/projects/generations,
+# Model Manager listing, profile, app lock) correctly, but running real
+# model inference from a packaged install still requires the dev repo's
+# servers/ + venvs/ on disk, same as it does today. Closing that gap is a
+# real, separate follow-up (see roadmap notes), not attempted here.
+appId: ai.fobia.kwesi
+productName: Kwesi
+copyright: "Copyright © 2026 Fobia"
+
+directories:
+  output: release
+  buildResources: build
+
+# Only the compiled output + package.json -- node_modules production
+# dependencies are included automatically by electron-builder regardless of
+# this list (see its docs: "you don't need to add node_modules to files").
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+# better-sqlite3 ships a compiled .node native addon (better_sqlite3.node).
+# Native addons can't be dlopen'd from inside an asar archive, so its
+# directory must be unpacked into app.asar.unpacked rather than packed --
+# electron-builder does detect *.node files automatically, but this is kept
+# explicit rather than relied on implicitly, since a silent packaging
+# failure here (the #1 way a packaged build differs from dev) is exactly
+# the kind of thing worth being defensive about.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**/*"
+
+# Default is true; kept explicit -- electron-builder rebuilds native
+# dependencies (better-sqlite3) against the target Electron's ABI as part
+# of packaging, independent of the dev-time `postinstall` electron-rebuild
+# step (which only targets whatever Electron version is currently
+# installed). Without this, a packaged build's better-sqlite3 could be
+# built against the wrong Node ABI and fail to load at runtime.
+npmRebuild: true
+buildDependenciesFromSource: false
+
+# --- Linux: the platform actually built + verified on this machine ---
+linux:
+  target:
+    - AppImage
+    - deb
+  category: AudioVideo
+  maintainer: "Fobia <hello@fobia.ai>"
+  # No icon asset exists yet (see roadmap notes) -- electron-builder falls
+  # back to its own default Electron icon rather than failing the build.
+
+# --- macOS: config-only on this machine, no signing credentials exist ---
+# `identity: null` explicitly disables macOS identity auto-detection so a
+# future CI/dev-machine build never accidentally requires a Developer ID it
+# doesn't have -- electron-builder already skips signing when CSC_LINK/
+# CSC_KEY_PASSWORD are unset, this just makes that intent explicit rather
+# than implicit. See kwesi.docs/02-architecture.md's "Packaging & signing"
+# section for the full honest breakdown (unsigned dmg installs will show a
+# Gatekeeper warning -- expected, not a bug).
+mac:
+  target:
+    - dmg
+  category: public.app-category.music
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+# --- Windows: config-only on this machine, no Authenticode cert exists ---
+# Same posture as macOS: electron-builder already skips signing when
+# CSC_LINK/CSC_KEY_PASSWORD are unset for nsis -- nothing here requires
+# them.
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# electron-updater checks this feed at runtime (see
+# electron/updates/autoUpdate.ts). The repo is currently PRIVATE, which the
+# default GitHub provider doesn't support for anonymous update checks --
+# documented honestly in kwesi.docs/02-architecture.md rather than pretended
+# to work. `--publish=never` is used in every package:* script above, so
+# this config is inert unless someone deliberately runs a publish.
+publish:
+  - provider: github
+    owner: Fobia-ai
+    repo: kwesi
+    private: true
+    releaseType: release
