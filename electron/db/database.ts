@@ -82,6 +82,19 @@ function syncSeedModels(database: Database.Database, models: SeedModel[]) {
   run(models);
 }
 
+// Handles an `artist_profile` table created before the genres column
+// existed -- same precedent as migrateModelVariantColumns above.
+function migrateArtistProfileColumns(database: Database.Database) {
+  const existing = new Set(
+    (database.prepare("PRAGMA table_info(artist_profile)").all() as { name: string }[]).map(
+      (c) => c.name,
+    ),
+  );
+  if (!existing.has("genres")) {
+    database.exec(`ALTER TABLE artist_profile ADD COLUMN genres TEXT NOT NULL DEFAULT '[]'`);
+  }
+}
+
 // A variant left "queued"/"downloading" here means the app quit or crashed
 // mid-download with no queue worker left running to finish it -- surface
 // that plainly as failed (with a clear error) rather than leaving it stuck
@@ -109,6 +122,7 @@ export function openDatabase(dbPath: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
   migrateModelVariantColumns(db);
+  migrateArtistProfileColumns(db);
   syncSeedModels(db, SEED_MODELS);
   resetInterruptedDownloads(db);
 

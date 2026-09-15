@@ -5,6 +5,7 @@ import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
+import { GENRES } from "../data/genres";
 import { useAppLock } from "../components/security/AppLock";
 import { PillButton } from "../components/ui/PillButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -12,6 +13,7 @@ import { Modal } from "../components/ui/Modal";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { PageHeader } from "../components/ui/PageHeader";
 import { AvatarImage } from "../components/ui/AvatarImage";
+import { GenrePicker } from "../components/ui/GenrePicker";
 
 const TABS = ["Profile", "Artists", "General", "Generation", "Models in use", "Security", "About"] as const;
 type Tab = (typeof TABS)[number];
@@ -95,8 +97,13 @@ function ArtistProfileFormModal({
 }) {
   const [name, setName] = useState(profile?.name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
+  const [genres, setGenres] = useState<string[]>(profile?.genres ?? []);
   const [avatarPath, setAvatarPath] = useState(profile?.avatarPath ?? null);
   const [saving, setSaving] = useState(false);
+
+  function toggleGenre(genre: string) {
+    setGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+  }
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
@@ -129,13 +136,13 @@ function ArtistProfileFormModal({
   }
 
   async function handleSave() {
-    if (!name.trim()) return;
+    if (!name.trim() || genres.length === 0) return;
     setSaving(true);
     try {
       if (profile) {
-        await kwesiArtistProfiles.update(profile.id, name.trim(), bio.trim() || null);
+        await kwesiArtistProfiles.update(profile.id, name.trim(), bio.trim() || null, genres);
       } else {
-        await kwesiArtistProfiles.create(name.trim(), bio.trim() || null);
+        await kwesiArtistProfiles.create(name.trim(), bio.trim() || null, genres);
       }
       onSaved();
       onClose();
@@ -202,12 +209,22 @@ function ArtistProfileFormModal({
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
         </label>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span>
+            Genres
+            <span className="text-red-500"> *</span>
+          </span>
+          <p className="text-xs text-ink-muted">
+            What this artist makes — offered back as choices whenever you generate as them.
+          </p>
+          <GenrePicker options={GENRES} selected={genres} onToggle={toggleGenre} />
+        </div>
 
         <div className="mt-2 flex justify-end gap-2">
           <PillButton variant="ghost" onClick={onClose}>
             Cancel
           </PillButton>
-          <PillButton disabled={!name.trim() || saving} onClick={handleSave}>
+          <PillButton disabled={!name.trim() || genres.length === 0 || saving} onClick={handleSave}>
             {profile ? "Save" : "Create"}
           </PillButton>
         </div>
@@ -262,6 +279,18 @@ function ArtistsTab() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{profile.name}</p>
                 {profile.bio && <p className="truncate text-xs text-ink-muted">{profile.bio}</p>}
+                {profile.genres.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {profile.genres.map((genre) => (
+                      <span
+                        key={genre}
+                        className="rounded-chip bg-ink/[0.06] px-1.5 py-0.5 text-[10px] text-ink-muted"
+                      >
+                        {genre}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => setShowForm(profile)}>

@@ -118,6 +118,7 @@ declare global {
             name: string;
             bio: string | null;
             avatar_path: string | null;
+            genres: string;
             created_at: number;
             updated_at: number;
           }>
@@ -125,15 +126,17 @@ declare global {
         create: (
           name: string,
           bio: string | null,
+          genres: string[],
         ) => Promise<{
           id: string;
           name: string;
           bio: string | null;
           avatar_path: string | null;
+          genres: string;
           created_at: number;
           updated_at: number;
         }>;
-        update: (id: string, name: string, bio: string | null) => Promise<void>;
+        update: (id: string, name: string, bio: string | null, genres: string[]) => Promise<void>;
         delete: (id: string) => Promise<void>;
         setAvatar: (id: string, sourcePath: string) => Promise<{ ok: boolean; avatarPath?: string; reason?: string }>;
         removeAvatar: (id: string) => Promise<void>;

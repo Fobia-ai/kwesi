@@ -84,11 +84,19 @@ CREATE TABLE IF NOT EXISTS profile (
 -- dedicated generation column, the same way music_name lives there --
 -- avoids a generation-table migration for a field that's pure display
 -- metadata, not something any job/server logic reads.
+-- genres: JSON array of strings from src/data/genres.ts's fixed catalog,
+-- required to be non-empty at the UI layer (this column has no CHECK for
+-- that -- same posture as input_params/output_files elsewhere, validated
+-- where it's written, not by SQLite). Stored as JSON text rather than a
+-- join table since the catalog is small, fixed, and never queried by genre
+-- -- it's read back whole every time (Settings' editor, the generation
+-- form's per-artist genre picker), not filtered/joined against.
 CREATE TABLE IF NOT EXISTS artist_profile (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   bio TEXT,
   avatar_path TEXT,
+  genres TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

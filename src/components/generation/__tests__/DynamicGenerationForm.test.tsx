@@ -12,7 +12,15 @@ vi.mock("../../../lib/hardware", () => ({
 }));
 
 const MOCK_PROFILES: ArtistProfile[] = [
-  { id: "artist-1", name: "Test Artist", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
+  {
+    id: "artist-1",
+    name: "Test Artist",
+    bio: null,
+    avatarPath: null,
+    genres: ["Pop", "Electronic"],
+    createdAt: 0,
+    updatedAt: 0,
+  },
 ];
 
 function renderForm(installedVariantNames: string[], onSubmit = vi.fn(), artistProfiles = MOCK_PROFILES) {
@@ -83,8 +91,8 @@ describe("DynamicGenerationForm", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const profiles: ArtistProfile[] = [
-      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
-      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, createdAt: 0, updatedAt: 0 },
+      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], createdAt: 0, updatedAt: 0 },
+      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Rock"], createdAt: 0, updatedAt: 0 },
     ];
     renderForm(["small"], onSubmit, profiles);
 
@@ -94,6 +102,43 @@ describe("DynamicGenerationForm", () => {
     await user.click(screen.getByRole("button", { name: "Generate" }));
 
     expect(onSubmit).toHaveBeenCalledWith("small", expect.objectContaining({ artist_profile_id: "artist-2" }));
+  });
+
+  it("defaults the genre picker to all of the selected artist's genres", () => {
+    renderForm(["small"]);
+    expect(screen.getByRole("button", { name: "Pop", pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Electronic", pressed: true })).toBeInTheDocument();
+  });
+
+  it("toggles a genre off and includes only the remaining ones on submit", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderForm(["small"], onSubmit);
+
+    await user.click(screen.getByRole("button", { name: "Pop" }));
+    expect(screen.getByRole("button", { name: "Pop", pressed: false })).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
+    await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(onSubmit).toHaveBeenCalledWith("small", expect.objectContaining({ artist_genres: ["Electronic"] }));
+  });
+
+  it("re-seeds the genre picker to the new artist's genres after switching artists", async () => {
+    const user = userEvent.setup();
+    const profiles: ArtistProfile[] = [
+      { id: "artist-1", name: "Alpha", bio: null, avatarPath: null, genres: ["Pop"], createdAt: 0, updatedAt: 0 },
+      { id: "artist-2", name: "Beta", bio: null, avatarPath: null, genres: ["Metal"], createdAt: 0, updatedAt: 0 },
+    ];
+    renderForm(["small"], vi.fn(), profiles);
+
+    expect(screen.getByRole("button", { name: "Pop" })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/Artist profile/), "artist-2");
+
+    expect(screen.queryByRole("button", { name: "Pop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Metal", pressed: true })).toBeInTheDocument();
   });
 
   it("only shows the melody reference field once the melody variant is selected", async () => {

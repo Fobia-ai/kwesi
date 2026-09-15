@@ -591,6 +591,10 @@ export interface ArtistProfileRow {
   name: string;
   bio: string | null;
   avatar_path: string | null;
+  // Raw JSON text (an array of src/data/genres.ts strings) — parsed at the
+  // renderer client layer (src/lib/artistProfiles.ts), same convention as
+  // GenerationRow.input_params.
+  genres: string;
   created_at: number;
   updated_at: number;
 }
@@ -607,21 +611,22 @@ export function getArtistProfile(id: string): ArtistProfileRow | undefined {
     | undefined;
 }
 
-export function createArtistProfile(name: string, bio: string | null): ArtistProfileRow {
+export function createArtistProfile(name: string, bio: string | null, genres: string[]): ArtistProfileRow {
   const id = randomUUID();
   const now = Date.now();
+  const genresJson = JSON.stringify(genres);
   getDatabase()
     .prepare(
-      "INSERT INTO artist_profile (id, name, bio, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO artist_profile (id, name, bio, genres, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
-    .run(id, name, bio, now, now);
-  return { id, name, bio, avatar_path: null, created_at: now, updated_at: now };
+    .run(id, name, bio, genresJson, now, now);
+  return { id, name, bio, avatar_path: null, genres: genresJson, created_at: now, updated_at: now };
 }
 
-export function updateArtistProfile(id: string, name: string, bio: string | null): void {
+export function updateArtistProfile(id: string, name: string, bio: string | null, genres: string[]): void {
   getDatabase()
-    .prepare("UPDATE artist_profile SET name = ?, bio = ?, updated_at = ? WHERE id = ?")
-    .run(name, bio, Date.now(), id);
+    .prepare("UPDATE artist_profile SET name = ?, bio = ?, genres = ?, updated_at = ? WHERE id = ?")
+    .run(name, bio, JSON.stringify(genres), Date.now(), id);
 }
 
 export function setArtistProfileAvatarPath(id: string, avatarPath: string | null): void {

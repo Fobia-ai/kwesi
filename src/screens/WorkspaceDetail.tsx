@@ -330,7 +330,11 @@ function ParamsGrid({ generation, manifest }: { generation: GenerationRow; manif
   const rows = Object.entries(params)
     .filter(
       ([key]) =>
-        key !== "music_name" && key !== "artist_profile_id" && !PROMPT_KEYS.includes(key) && !LYRICS_KEYS.includes(key),
+        key !== "music_name" &&
+        key !== "artist_profile_id" &&
+        key !== "artist_genres" &&
+        !PROMPT_KEYS.includes(key) &&
+        !LYRICS_KEYS.includes(key),
     )
     .map(([key, value]) => ({
       key,
@@ -401,6 +405,7 @@ function GenerationDetail({
   );
   const musicName = generationTitle(generation);
   const artist = artistProfiles.find((p) => p.id === params.artist_profile_id) ?? null;
+  const genres = Array.isArray(params.artist_genres) ? (params.artist_genres as string[]) : [];
   const playerTitle =
     typeof params.music_name === "string" && params.music_name.trim()
       ? params.music_name.trim()
@@ -418,6 +423,9 @@ function GenerationDetail({
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <StatusChip status={generation.status} />
             {generation.checkpoint_variant && <Chip>{generation.checkpoint_variant}</Chip>}
+            {genres.map((genre) => (
+              <Chip key={genre}>{genre}</Chip>
+            ))}
             {done && <LicenseBadge modelId={modelId} />}
             <span className="text-[11px] text-ink-muted">{formatRelativeTime(generation.created_at)}</span>
             {done && generation.duration_ms !== null && (

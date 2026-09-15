@@ -6,6 +6,7 @@ import type { ArtistProfile } from "../../lib/artistProfiles";
 import { PillButton } from "../ui/PillButton";
 import { EmptyState } from "../ui/EmptyState";
 import { AvatarImage } from "../ui/AvatarImage";
+import { GenrePicker } from "../ui/GenrePicker";
 import { ModelsIcon } from "../ui/icons";
 
 export type GenerationFormValues = Record<string, unknown>;
@@ -234,13 +235,19 @@ export function DynamicGenerationForm({
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
   const [values, setValues] = useState<GenerationFormValues>(() => {
-    // `music_name` and `artist_profile_id` are generic, required fields
-    // every generation gets regardless of model — not part of any
+    // `music_name`, `artist_profile_id`, and `artist_genres` are generic,
+    // fields every generation gets regardless of model — not part of any
     // manifest's `inputs[]` (those are per-model parameters), so they're
     // seeded here rather than in the loop below. music_name is what
-    // generations are actually titled by throughout the app; the profile is
-    // shown alongside it (WorkspaceDetail's list/detail panes).
-    const initial: GenerationFormValues = { music_name: "", artist_profile_id: artistProfiles[0]?.id ?? "" };
+    // generations are actually titled by throughout the app; the profile
+    // and genres are shown alongside it (WorkspaceDetail's list/detail
+    // panes). artist_genres starts as the selected artist's full genre set
+    // — the effect below re-seeds it whenever the artist selection changes.
+    const initial: GenerationFormValues = {
+      music_name: "",
+      artist_profile_id: artistProfiles[0]?.id ?? "",
+      artist_genres: [...(artistProfiles[0]?.genres ?? [])],
+    };
     for (const input of manifest.inputs) initial[input.key] = defaultValueFor(input);
     return initial;
   });
@@ -259,6 +266,16 @@ export function DynamicGenerationForm({
     // just be extra nvidia-smi calls for no real benefit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const artist = artistProfiles.find((p) => p.id === values.artist_profile_id);
+    setValues((prev) => ({ ...prev, artist_genres: artist ? [...artist.genres] : [] }));
+    // Re-seeds the genre selection to the newly chosen artist's own set
+    // whenever the artist changes — the previous artist's genres wouldn't
+    // apply. Keyed only on the id (not artistProfiles itself, a stable prop
+    // reference per render) so this doesn't re-fire on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.artist_profile_id]);
 
   if (manifest.checkpointVariants.length === 0) {
     return (
@@ -302,6 +319,14 @@ export function DynamicGenerationForm({
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  function toggleGenre(genre: string) {
+    setValues((prev) => {
+      const current = (prev.artist_genres as string[]) ?? [];
+      const next = current.includes(genre) ? current.filter((g) => g !== genre) : [...current, genre];
+      return { ...prev, artist_genres: next };
+    });
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm">
@@ -335,6 +360,20 @@ export function DynamicGenerationForm({
           </select>
         </div>
       </label>
+
+      {selectedArtistProfile && selectedArtistProfile.genres.length > 0 && (
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span>Genres for this track</span>
+          <p className="text-xs text-ink-muted">
+            From {selectedArtistProfile.name}'s genres — optional, defaults to all of them.
+          </p>
+          <GenrePicker
+            options={selectedArtistProfile.genres}
+            selected={(values.artist_genres as string[]) ?? []}
+            onToggle={toggleGenre}
+          />
+        </div>
+      )}
 
       {usableVariants.length > 0 && (
         <label className="flex flex-col gap-1.5 text-sm">
