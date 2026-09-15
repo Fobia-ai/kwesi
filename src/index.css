@@ -77,6 +77,15 @@ body {
   font-family: theme("fontFamily.sans");
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  caret-color: rgb(var(--kwesi-accent));
+}
+
+/* Browser-default chrome (text selection, the caret above) themed from the
+   palette rather than left at the OS/browser default blue — the cheapest,
+   most-skipped signal that a surface was actually designed. */
+::selection {
+  background: rgb(var(--kwesi-accent) / 0.35);
+  color: rgb(var(--kwesi-ink));
 }
 
 /* Stage for the 3D backdrop. Flat on its own — the depth comes from the lit

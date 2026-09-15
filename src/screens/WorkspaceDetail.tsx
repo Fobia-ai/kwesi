@@ -446,14 +446,19 @@ function GenerationDetail({
         {prompt && (
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Prompt</p>
-            <p className="rounded-[12px] bg-ink/[0.04] px-4 py-3 text-sm leading-relaxed">{prompt}</p>
+            {/* max-w-[70ch] keeps prose at a comfortable reading measure —
+                the pane itself can be 800px+ wide on a large window, which
+                without this cap stretched a one-sentence prompt across the
+                full width (~125ch), well past the 65-75ch a line of text
+                stays readable at. */}
+            <p className="max-w-[70ch] rounded-[12px] bg-ink/[0.04] px-4 py-3 text-sm leading-relaxed">{prompt}</p>
           </div>
         )}
 
         {lyrics && (
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Lyrics</p>
-            <pre className="whitespace-pre-wrap rounded-[12px] bg-ink/[0.04] px-4 py-3 font-sans text-sm leading-relaxed">
+            <pre className="max-w-[70ch] whitespace-pre-wrap rounded-[12px] bg-ink/[0.04] px-4 py-3 font-sans text-sm leading-relaxed">
               {lyrics}
             </pre>
           </div>

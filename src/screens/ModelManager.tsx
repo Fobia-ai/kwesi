@@ -174,7 +174,9 @@ function ModelAccordionRow({
                         )}
                       </div>
                       <StatusBadge status={variant.install_status} />
-                      <span className="text-right text-xs text-ink-muted">{formatBytes(variant.disk_size_bytes)}</span>
+                      <span className="text-right text-xs tabular-nums text-ink-muted">
+                        {formatBytes(variant.disk_size_bytes)}
+                      </span>
                       <div className="flex justify-end">
                         {variant.source === "manual" && variant.install_status !== "installed" ? (
                           <button
