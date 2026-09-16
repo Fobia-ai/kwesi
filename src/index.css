@@ -120,6 +120,17 @@ body {
   display: block;
 }
 
+/* Darkens a bright custom backdrop image back toward the app's normal
+   moodiness, so dark-mode glass panels (tuned against this component's own
+   dark rendered scene) keep their text contrast over it. Only rendered
+   alongside a custom image — the rendered scene is already dark, and
+   doesn't get this on top of it. */
+.kwesi-backdrop-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(9 9 13 / 0.55);
+}
+
 /* The hero's DJ bobs to the music — gently, and not at all when the OS asks
    for reduced motion. */
 @keyframes kwesi-dj-bob {

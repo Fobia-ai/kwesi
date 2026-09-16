@@ -292,6 +292,13 @@ export function BackdropScene() {
     return (
       <div className="kwesi-backdrop" aria-hidden="true">
         <img src={customBackdrop} alt="" className="kwesi-backdrop-image" />
+        {/* A bright photo/illustration otherwise washes out every glass
+            panel's text — dark-mode glass is quite transparent by design
+            (it was tuned against this component's own dark rendered
+            scene), so a light image behind it reads as low-contrast text
+            on a near-white blur. This scrim brings a custom image back
+            toward the app's normal darkness without hiding it outright. */}
+        <div className="kwesi-backdrop-scrim" />
       </div>
     );
   }
