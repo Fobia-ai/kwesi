@@ -85,7 +85,8 @@ function createMockModelsApi(): KwesiModelsApi {
     const id = `${modelId}:${variantName}`;
     const row = getById(id);
     if (!row) return { ok: false, reason: "Variant not found" };
-    if (row.source !== "huggingface") {
+    const installable = row.source === "huggingface" || (row.source === "manual" && row.gateway_filename);
+    if (!installable) {
       return {
         ok: false,
         reason: "This variant isn't installable from the app — see its note for the real download location.",

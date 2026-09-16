@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as repo from "../db/repositories.js";
 import { modelVariantDir, ensureDir, removeDirIfExists } from "../db/paths.js";
-import { listRepoFiles, resolveFileUrl } from "./hfClient.js";
+import { listRepoFiles, resolveFileUrl, type HfFileInfo } from "./hfClient.js";
+import { tryResolveGatewayFileUrl } from "./gatewayClient.js";
 import { checkDiskSpace } from "./diskSpace.js";
 import { dirSizeBytes } from "../lib/fsSize.js";
 
@@ -36,13 +37,18 @@ export interface InstallResult {
   reason?: string;
 }
 
-interface Job {
+interface JobBase {
   variantId: string;
   modelId: string;
   variantName: string;
-  repoId: string;
   controller: AbortController;
 }
+
+// "huggingface" jobs list every file from the HF repo and can fall back to
+// Fobia's gateway per-file; "manual" jobs (Museformer/RAVE) never had an HF
+// repo to begin with, so they're always a single known file served only by
+// the gateway -- see gateway_filename's comment in schema.ts.
+type Job = (JobBase & { source: "huggingface"; repoId: string }) | (JobBase & { source: "manual"; gatewayFilename: string });
 
 class KwesiAbort extends Error {}
 
@@ -55,15 +61,45 @@ function broadcast(event: ModelsProgressEvent) {
   }
 }
 
+const NOT_INSTALLABLE_REASON =
+  "This variant isn't installable from the app — see its note for the real download location.";
+
 export function enqueueInstall(modelId: string, variantName: string): InstallResult {
   const variant = repo.getModelVariant(modelId, variantName);
   if (!variant) return { ok: false, reason: "Variant not found" };
-  if (variant.source !== "huggingface" || !variant.repo_id) {
-    return {
-      ok: false,
-      reason: "This variant isn't installable from the app — see its note for the real download location.",
+
+  let job: Job;
+  if (variant.source === "huggingface" && variant.repo_id) {
+    job = {
+      variantId: variant.id,
+      modelId,
+      variantName,
+      source: "huggingface",
+      repoId: variant.repo_id,
+      controller: new AbortController(),
     };
+  } else if (variant.source === "manual" && variant.gateway_filename) {
+    // Same as huggingface's repo_id check, but for manual variants Fobia
+    // has actually mirrored onto its gateway/R2 -- otherwise stays a pure
+    // external-link pointer, same as before.
+    if (!process.env.KWESI_ACCESS_TOKEN) {
+      return {
+        ok: false,
+        reason: "This model requires a Fobia access token to download — see its note for the manual download location instead.",
+      };
+    }
+    job = {
+      variantId: variant.id,
+      modelId,
+      variantName,
+      source: "manual",
+      gatewayFilename: variant.gateway_filename,
+      controller: new AbortController(),
+    };
+  } else {
+    return { ok: false, reason: NOT_INSTALLABLE_REASON };
   }
+
   if (variant.install_status === "installed") return { ok: false, reason: "Already installed" };
   if (variant.install_status === "queued" || variant.install_status === "downloading") {
     return { ok: false, reason: "Already in the install queue" };
@@ -72,13 +108,7 @@ export function enqueueInstall(modelId: string, variantName: string): InstallRes
   repo.setVariantQueued(variant.id);
   broadcast({ type: "status", variantId: variant.id, modelId, variantName, status: "queued" });
 
-  pending.push({
-    variantId: variant.id,
-    modelId,
-    variantName,
-    repoId: variant.repo_id,
-    controller: new AbortController(),
-  });
+  pending.push(job);
   void processQueue();
   return { ok: true };
 }
@@ -107,6 +137,23 @@ export function cancelJob(variantId: string): boolean {
   return false;
 }
 
+/**
+ * Settings > Reset "Models" category calls this before wiping
+ * KWESI_MODELS_DIR out from under any in-flight download -- aborts the
+ * active job's fetch (its own catch block in runDownload handles the
+ * resulting cleanup/broadcast, same as a normal single cancel) and drops
+ * everything still queued.
+ */
+export function cancelAllJobs(): void {
+  while (pending.length > 0) {
+    const job = pending.shift();
+    if (!job) break;
+    repo.resetVariantToNotInstalled(job.variantId);
+    broadcast({ type: "cancelled", variantId: job.variantId, modelId: job.modelId, variantName: job.variantName });
+  }
+  activeJob?.controller.abort();
+}
+
 export function removeVariant(modelId: string, variantName: string): { ok: boolean; reason?: string } {
   const variant = repo.getModelVariant(modelId, variantName);
   if (!variant) return { ok: false, reason: "Variant not found" };
@@ -126,6 +173,36 @@ async function processQueue(): Promise<void> {
   } finally {
     activeJob = null;
     void processQueue();
+  }
+}
+
+/**
+ * Hugging Face is the primary source for its own variants -- free, no load
+ * on Fobia's own infrastructure. Fobia's gateway only steps in as a
+ * per-file fallback when a direct HF fetch fails (HF outage, rate limit,
+ * etc), to keep normal usage off Fobia's bandwidth. "manual" variants never
+ * had an HF repo, so the gateway is their only source.
+ */
+async function fetchModelFile(job: Job, filename: string): Promise<Response> {
+  if (job.source === "manual") {
+    const gatewayUrl = await tryResolveGatewayFileUrl(job.modelId, job.variantName, filename, job.controller.signal);
+    if (!gatewayUrl) throw new Error(`Fobia's gateway didn't return a download URL for ${filename}`);
+    const res = await fetch(gatewayUrl, { signal: job.controller.signal });
+    if (!res.ok || !res.body) throw new Error(`Download failed (HTTP ${res.status}) for ${filename}`);
+    return res;
+  }
+
+  try {
+    const res = await fetch(resolveFileUrl(job.repoId, filename), { signal: job.controller.signal });
+    if (!res.ok || !res.body) throw new Error(`Download failed (HTTP ${res.status}) for ${filename}`);
+    return res;
+  } catch (hfErr) {
+    if (job.controller.signal.aborted) throw hfErr;
+    const gatewayUrl = await tryResolveGatewayFileUrl(job.modelId, job.variantName, filename, job.controller.signal);
+    if (!gatewayUrl) throw hfErr;
+    const res = await fetch(gatewayUrl, { signal: job.controller.signal });
+    if (!res.ok || !res.body) throw new Error(`Download failed (HTTP ${res.status}) for ${filename}`);
+    return res;
   }
 }
 
@@ -150,7 +227,10 @@ async function runDownload(job: Job): Promise<void> {
   });
 
   try {
-    const files = await listRepoFiles(job.repoId);
+    const files: HfFileInfo[] =
+      job.source === "huggingface"
+        ? await listRepoFiles(job.repoId)
+        : [{ rfilename: job.gatewayFilename, size: null }];
     const knownSizes = files.every((f) => f.size !== null);
     const bytesTotal = knownSizes ? files.reduce((sum, f) => sum + (f.size ?? 0), 0) : null;
 
@@ -170,20 +250,16 @@ async function runDownload(job: Job): Promise<void> {
       const destPath = path.join(dir, ...file.rfilename.split("/"));
       const resolvedDir = path.resolve(dir) + path.sep;
       if (!path.resolve(destPath).startsWith(resolvedDir)) {
-        throw new Error(`Refusing unsafe file path from ${job.repoId}: ${file.rfilename}`);
+        throw new Error(`Refusing unsafe file path: ${file.rfilename}`);
       }
       await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
       repo.updateVariantProgress(job.variantId, bytesDownloaded, bytesTotal, file.rfilename);
 
-      const res = await fetch(resolveFileUrl(job.repoId, file.rfilename), {
-        signal: job.controller.signal,
-      });
-      if (!res.ok || !res.body) {
-        throw new Error(`Download failed (HTTP ${res.status}) for ${file.rfilename}`);
-      }
+      const res = await fetchModelFile(job, file.rfilename);
 
       const writeStream = fs.createWriteStream(destPath);
-      const reader = res.body.getReader();
+      // fetchModelFile already checked res.body is non-null before returning.
+      const reader = res.body!.getReader();
       try {
         for (;;) {
           const { done, value } = await reader.read();

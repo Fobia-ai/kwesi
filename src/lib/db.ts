@@ -21,6 +21,7 @@ export interface ModelVariantRow {
   source: string;
   manual_note: string | null;
   manual_url: string | null;
+  gateway_filename: string | null;
   bytes_downloaded: number | null;
   bytes_total: number | null;
   current_file: string | null;

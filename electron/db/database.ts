@@ -21,6 +21,7 @@ function migrateModelVariantColumns(database: Database.Database) {
     ["source", "TEXT NOT NULL DEFAULT 'huggingface'"],
     ["manual_note", "TEXT"],
     ["manual_url", "TEXT"],
+    ["gateway_filename", "TEXT"],
     ["bytes_downloaded", "INTEGER"],
     ["bytes_total", "INTEGER"],
     ["current_file", "TEXT"],
@@ -68,13 +69,14 @@ function syncSeedModels(database: Database.Database, models: SeedModel[]) {
       trainable = excluded.trainable
   `);
   const upsertVariant = database.prepare(`
-    INSERT INTO model_variant (id, model_id, variant_name, source, repo_id, manual_note, manual_url)
-    VALUES (@id, @modelId, @variantName, @source, @repoId, @manualNote, @manualUrl)
+    INSERT INTO model_variant (id, model_id, variant_name, source, repo_id, manual_note, manual_url, gateway_filename)
+    VALUES (@id, @modelId, @variantName, @source, @repoId, @manualNote, @manualUrl, @gatewayFilename)
     ON CONFLICT(model_id, variant_name) DO UPDATE SET
       source = excluded.source,
       repo_id = excluded.repo_id,
       manual_note = excluded.manual_note,
-      manual_url = excluded.manual_url
+      manual_url = excluded.manual_url,
+      gateway_filename = excluded.gateway_filename
   `);
 
   const run = database.transaction((seedModels: SeedModel[]) => {
@@ -94,6 +96,7 @@ function syncSeedModels(database: Database.Database, models: SeedModel[]) {
           repoId: v.repoId ?? null,
           manualNote: v.note ?? null,
           manualUrl: v.url ?? null,
+          gatewayFilename: v.gatewayFilename ?? null,
         });
       }
     }

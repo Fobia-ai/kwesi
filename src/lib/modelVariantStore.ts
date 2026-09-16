@@ -23,6 +23,7 @@ function seedRow(modelId: string, v: SeedVariant): ModelVariantRow {
     source: v.source,
     manual_note: v.note ?? null,
     manual_url: v.url ?? null,
+    gateway_filename: v.gatewayFilename ?? null,
     bytes_downloaded: null,
     bytes_total: null,
     current_file: null,

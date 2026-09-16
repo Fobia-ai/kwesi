@@ -183,7 +183,9 @@ function ModelAccordionRow({
                         {formatBytes(variant.disk_size_bytes)}
                       </span>
                       <div className="flex justify-end">
-                        {variant.source === "manual" && variant.install_status !== "installed" ? (
+                        {variant.source === "manual" &&
+                        !variant.gateway_filename &&
+                        variant.install_status !== "installed" ? (
                           <button
                             type="button"
                             onClick={() => variant.manual_url && openExternal(variant.manual_url)}
@@ -397,7 +399,7 @@ export function ModelManagerScreen() {
     <div className="flex h-full flex-col">
       <PageHeader
         title="Model Manager"
-        subtitle="Download and manage checkpoints, streamed straight from Hugging Face."
+        subtitle="Download and manage checkpoints for each model."
         actions={diskFree !== null && <span className="text-xs text-ink-muted">{formatBytes(diskFree)} free</span>}
       />
 

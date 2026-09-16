@@ -6,6 +6,7 @@ export interface SeedVariant {
   repoId?: string;
   note?: string;
   url?: string;
+  gatewayFilename?: string;
 }
 
 export interface SeedModelVariants {
@@ -69,6 +70,7 @@ export const MODEL_VARIANTS_SEED: SeedModelVariants[] = [
         note:
           "Checkpoint is hosted on Microsoft OneDrive, not Hugging Face, and the share link 403s on a plain scripted request — open it in a browser instead.",
         url: "https://1drv.ms/u/s!Aq3YEPZCcV5ibz9ySjjNsEB74CQ",
+        gatewayFilename: "checkpoint_best.pt",
       },
     ],
   },
@@ -93,6 +95,7 @@ export const MODEL_VARIANTS_SEED: SeedModelVariants[] = [
       note:
         "RAVE pretrained models aren't downloadable from the app — IRCAM/ACIDS publishes them on a JS-rendered page that can't be scraped. Download the .ts file yourself and it'll be recognized once it's on disk.",
       url: "https://acids-ircam.github.io/rave_models_download",
+      gatewayFilename: `${name}.ts`,
     })),
   },
 ];

@@ -15,6 +15,11 @@ export interface SeedVariant {
   repoId?: string;
   note?: string;
   url?: string;
+  // Relative path under KWESI_MODELS_DIR/<model_id>/<variant_name>/ that
+  // Fobia's gateway can serve for a "manual" (non-Hugging-Face) variant --
+  // see the gateway_filename column comment in schema.ts. Only set for
+  // "manual" variants Fobia has actually mirrored onto its own R2 bucket.
+  gatewayFilename?: string;
 }
 
 export interface SeedModel {
@@ -120,6 +125,7 @@ export const SEED_MODELS: SeedModel[] = [
         note:
           "Checkpoint is hosted on Microsoft OneDrive, not Hugging Face, and the share link 403s on a plain scripted request -- open it in a browser instead. Put the downloaded checkpoint in checkpoints/mf-lmd6remi-1 per the museformer README.",
         url: "https://1drv.ms/u/s!Aq3YEPZCcV5ibz9ySjjNsEB74CQ",
+        gatewayFilename: "checkpoint_best.pt",
       },
     ],
   },
@@ -155,6 +161,7 @@ export const SEED_MODELS: SeedModel[] = [
       note:
         "RAVE pretrained models aren't downloadable from the app -- IRCAM/ACIDS publishes them on a JS-rendered page that can't be scraped. Download the .ts file yourself and it'll be recognized once it's on disk.",
       url: "https://acids-ircam.github.io/rave_models_download",
+      gatewayFilename: `${name}.ts`,
     })),
   },
 ];

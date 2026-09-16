@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS model_variant (
   source TEXT NOT NULL DEFAULT 'huggingface',
   manual_note TEXT,
   manual_url TEXT,
+  -- Relative path of a single file under KWESI_MODELS_DIR/<model_id>/<variant_name>/
+  -- (e.g. "checkpoint_best.pt", "darbouka_onnx.ts") that Fobia's gateway can
+  -- serve for a "manual" variant with no Hugging Face repo to enumerate --
+  -- lets those variants become app-installable via the gateway (see
+  -- electron/models/gatewayClient.ts) instead of staying pure external-link
+  -- pointers. NULL means the variant stays external-link-only.
+  gateway_filename TEXT,
   bytes_downloaded INTEGER,
   bytes_total INTEGER,
   current_file TEXT,

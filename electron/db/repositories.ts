@@ -23,6 +23,7 @@ export interface ModelVariantRow {
   source: string;
   manual_note: string | null;
   manual_url: string | null;
+  gateway_filename: string | null;
   bytes_downloaded: number | null;
   bytes_total: number | null;
   current_file: string | null;
@@ -121,6 +122,17 @@ export function createWorkspace(name: string, modelId: string): WorkspaceRow {
 export function deleteWorkspace(id: string, deleteFiles: boolean): void {
   getDatabase().prepare("DELETE FROM workspace WHERE id = ?").run(id);
   if (deleteFiles) removeDirIfExists(workspaceDir(id));
+}
+
+/**
+ * Settings > Reset "Music" category. Deletes every workspace row -- project
+ * and generation rows cascade via their ON DELETE CASCADE foreign keys
+ * (schema.ts), same as a single deleteWorkspace(..., true) call, just for
+ * everything at once. Caller (electron/reset.ts) wipes KWESI_WORKSPACES_DIR
+ * itself; this is the DB half only.
+ */
+export function deleteAllWorkspaces(): void {
+  getDatabase().prepare("DELETE FROM workspace").run();
 }
 
 export function listProjects(workspaceId: string): ProjectRow[] {
@@ -315,6 +327,22 @@ export function setVariantFailed(id: string, error: string): void {
        bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL WHERE id = ?`,
     )
     .run(error, id);
+}
+
+/**
+ * Resets every downloaded checkpoint to not_installed -- the DB half of the
+ * Settings > Reset "Models" category (electron/reset.ts wipes the actual
+ * files). "trained" variants are excluded: those are the Training screen's
+ * own output, cleared instead by resetAllTrainedModels below, so the two
+ * reset categories stay disjoint.
+ */
+export function resetAllInstalledModelVariants(): void {
+  getDatabase()
+    .prepare(
+      `UPDATE model_variant SET install_status = 'not_installed', install_path = NULL, disk_size_bytes = NULL,
+       bytes_downloaded = NULL, bytes_total = NULL, current_file = NULL, error = NULL WHERE source != 'trained'`,
+    )
+    .run();
 }
 
 export function resetVariantToNotInstalled(id: string): void {
@@ -564,6 +592,21 @@ export function upsertTrainedModelVariant(
   ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes);
 }
 
+/**
+ * Settings > Reset "Trained Models" category. Deletes every training_run and
+ * trained_model row, plus the model_variant rows upsertTrainedModelVariant
+ * created for them (source = 'trained') -- those would otherwise keep
+ * pointing at install_paths under KWESI_TRAINED_MODELS_DIR after
+ * electron/reset.ts wipes that directory. Doesn't touch source='huggingface'/
+ * 'manual' variants -- that's the separate "Models" reset category.
+ */
+export function deleteAllTrainedModelData(): void {
+  const db = getDatabase();
+  db.prepare("DELETE FROM model_variant WHERE source = 'trained'").run();
+  db.prepare("DELETE FROM trained_model").run();
+  db.prepare("DELETE FROM training_run").run();
+}
+
 // --- Phase 12: Profile & Security -------------------------------------------
 
 export interface ProfileRow {
@@ -683,4 +726,9 @@ export function setArtistProfileAvatarPath(id: string, avatarPath: string | null
 
 export function deleteArtistProfile(id: string): void {
   getDatabase().prepare("DELETE FROM artist_profile WHERE id = ?").run(id);
+}
+
+/** Settings > Reset "Artist Profiles" category -- the DB half; electron/reset.ts wipes avatar files. */
+export function deleteAllArtistProfiles(): void {
+  getDatabase().prepare("DELETE FROM artist_profile").run();
 }
