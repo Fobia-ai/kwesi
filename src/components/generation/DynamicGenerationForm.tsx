@@ -56,6 +56,35 @@ export function defaultValueFor(input: ManifestInput): unknown {
   return "";
 }
 
+/**
+ * Recomputes the model's own genre-conditioning field (if it has one — see
+ * `isModelGenreField`) from a given set of artist genres — shared by the
+ * artist-change effect (seeds it from a newly-selected artist) and
+ * `toggleGenre` (keeps it in sync every time the user edits "Genres for
+ * this track" directly, not just when the artist changes). A multiselect
+ * only pre-checks options that actually map to one of the given genres
+ * (`autoSelectFromAppGenres`); a free-text "tags" field gets them joined
+ * as a starting point.
+ */
+export function seedModelGenreField(
+  values: GenerationFormValues,
+  artistGenres: string[],
+  manifest: ModelManifest,
+): GenerationFormValues {
+  const genreField = manifest.inputs.find((input) => input.isModelGenreField);
+  if (!genreField) return values;
+  const next = { ...values };
+  if (genreField.type === "multiselect") {
+    const map = genreField.autoSelectFromAppGenres ?? {};
+    next[genreField.key] = genreField.options
+      .map((opt) => opt.value)
+      .filter((value) => (map[value] ?? []).some((g) => artistGenres.includes(g)));
+  } else {
+    next[genreField.key] = artistGenres.join(", ");
+  }
+  return next;
+}
+
 export function isSatisfied(input: ManifestInput, value: unknown): boolean {
   if (!input.required) return true;
   if (input.type === "audio_upload" || input.type === "midi_upload") return typeof value === "string" && value.length > 0;
@@ -290,26 +319,15 @@ export function DynamicGenerationForm({
     const artist = artistProfiles.find((p) => p.id === values.artist_profile_id);
     const artistGenres = artist ? [...artist.genres] : [];
     setValues((prev) => {
-      const next: GenerationFormValues = { ...prev, artist_genres: artistGenres };
       // Also seeds the model's own genre-conditioning field (if it has one
       // — MuseCoco's `genre`, ACE-Step's `genre_tags`, YuE2's `style_genre`)
       // from the same artist genres, so the user doesn't have to re-enter
-      // genres they already set on the artist. A multiselect only pre-checks
-      // options that actually map to one of the artist's genres
-      // (autoSelectFromAppGenres); a free-text "tags" field gets them joined
-      // as a starting point. Either way this only runs when the artist
-      // changes, not on every edit, so the user's own edits afterward stick.
-      const genreField = manifest.inputs.find((input) => input.isModelGenreField);
-      if (genreField) {
-        if (genreField.type === "multiselect") {
-          const map = genreField.autoSelectFromAppGenres ?? {};
-          next[genreField.key] = genreField.options
-            .map((opt) => opt.value)
-            .filter((value) => (map[value] ?? []).some((g) => artistGenres.includes(g)));
-        } else {
-          next[genreField.key] = artistGenres.join(", ");
-        }
-      }
+      // genres they already set on the artist.
+      const next: GenerationFormValues = seedModelGenreField(
+        { ...prev, artist_genres: artistGenres },
+        artistGenres,
+        manifest,
+      );
       // Same idea for the model's own language field (ACE-Step's
       // vocal_language select, YuE2's free-text hint), seeded from the
       // artist's primary (first) language — but only when the artist
@@ -375,11 +393,19 @@ export function DynamicGenerationForm({
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Real bug this fixed: toggling a genre chip here only ever updated
+  // artist_genres itself, never the model's own genre field seeded from it
+  // — so narrowing "Genres for this track" down to one genre left the
+  // model's genre tags/multiselect still showing the artist's full
+  // original set. Re-seeding on every toggle (not just on artist change)
+  // keeps the two in sync the way this field is actually meant to work:
+  // this picker IS the steering control for the model's own genre field,
+  // not just a display of what the artist happens to have.
   function toggleGenre(genre: string) {
     setValues((prev) => {
       const current = (prev.artist_genres as string[]) ?? [];
       const next = current.includes(genre) ? current.filter((g) => g !== genre) : [...current, genre];
-      return { ...prev, artist_genres: next };
+      return seedModelGenreField({ ...prev, artist_genres: next }, next, manifest);
     });
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
@@ -66,13 +67,17 @@ function ProjectSwitcher({
   onRequestDelete: (project: ProjectRow) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const selected = projects.find((p) => p.id === selectedId) ?? null;
 
   useEffect(() => {
     if (!open) return undefined;
     function onPointerDown(e: PointerEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -85,59 +90,80 @@ function ProjectSwitcher({
     };
   }, [open]);
 
+  function toggleOpen() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 6, left: rect.left });
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div ref={ref} className="relative inline-flex items-center">
+    <>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="kwesi-glass flex h-9 items-center gap-1.5 rounded-chip pl-3 pr-2 text-xs font-medium text-ink transition-colors duration-150 hover:brightness-105"
+        className="kwesi-glass inline-flex h-9 items-center gap-1.5 rounded-chip pl-3 pr-2 text-xs font-medium text-ink transition-colors duration-150 hover:brightness-105"
       >
         <span className="max-w-[11rem] truncate">{selected?.name ?? "Project"}</span>
         <ChevronDownIcon width={14} height={14} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
-        <div
-          role="menu"
-          className="kwesi-glass-strong absolute left-0 top-10 z-30 flex w-60 flex-col gap-0.5 rounded-[14px] p-1.5 shadow-glass"
-        >
-          <p className="px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
-            Projects · {projects.length}
-          </p>
-          <ul className="kwesi-scroll-inset flex max-h-56 flex-col gap-0.5 overflow-y-auto">
-            {projects.map((project) => (
-              <li key={project.id} className="group relative">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    onSelect(project.id);
-                  }}
-                  className={`w-full truncate rounded-[9px] py-1.5 pl-2.5 pr-8 text-left text-xs transition-colors duration-150 ${
-                    project.id === selectedId ? "bg-ink/[0.1] text-ink" : "text-ink-muted hover:bg-ink/[0.06] hover:text-ink"
-                  }`}
-                >
-                  {project.name}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onRequestDelete(project);
-                  }}
-                  aria-label={`Delete ${project.name}`}
-                  className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded-[6px] px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-red-500/10 hover:text-red-600 group-hover:block"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+      {open &&
+        // Portaled to document.body rather than positioned relative to the
+        // trigger in place: the trigger lives inside the hero's own
+        // kwesi-glass box, which applies its own backdrop-filter — nesting
+        // a second backdrop-filter surface inside that (this menu is also
+        // kwesi-glass-strong) renders with no real background at all, as if
+        // transparent, the same reason Modal/ConfirmDialog portal instead of
+        // rendering inline. Positioned from the trigger's real coordinates
+        // since it's no longer a CSS-relative child of it.
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+            className="kwesi-glass-strong z-50 flex w-60 flex-col gap-0.5 rounded-[14px] p-1.5 shadow-glass"
+          >
+            <p className="px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+              Projects · {projects.length}
+            </p>
+            <ul className="kwesi-scroll-inset flex max-h-56 flex-col gap-0.5 overflow-y-auto">
+              {projects.map((project) => (
+                <li key={project.id} className="group relative">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      onSelect(project.id);
+                    }}
+                    className={`w-full truncate rounded-[9px] py-1.5 pl-2.5 pr-8 text-left text-xs transition-colors duration-150 ${
+                      project.id === selectedId ? "bg-ink/[0.1] text-ink" : "text-ink-muted hover:bg-ink/[0.06] hover:text-ink"
+                    }`}
+                  >
+                    {project.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onRequestDelete(project);
+                    }}
+                    aria-label={`Delete ${project.name}`}
+                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded-[6px] px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-red-500/10 hover:text-red-600 group-hover:block"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

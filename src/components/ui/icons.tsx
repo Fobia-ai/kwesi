@@ -264,3 +264,12 @@ export function InfoIcon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+export function CurvedBackIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M9 15 4 10 9 5" />
+      <path d="M20 19v-5a4 4 0 0 0-4-4H4" />
+    </Base>
+  );
+}

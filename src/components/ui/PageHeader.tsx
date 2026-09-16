@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { CurvedBackIcon } from "./icons";
 
 interface PageHeaderProps {
   title: string;
@@ -10,30 +11,35 @@ interface PageHeaderProps {
 }
 
 /**
- * Every screen's header — fixed total height (see the slot comments below)
- * so IconRail can offset by a matching amount and its floating capsule lines
- * up with each screen's own main glass panel instead of the header text
- * above it. The back-link slot is always rendered, even empty, so a screen
- * without one (Workspaces, Model Manager, Training, Settings) still reaches
- * the same height as WorkspaceDetail, which has one.
+ * Every screen's header — fixed total height (`--kwesi-header-h`) so every
+ * screen's own main glass panel starts at the same vertical offset
+ * regardless of whether that screen has a back link or not. A back link
+ * sits directly beside the title as one bold line (an icon button, not a
+ * separate small text row above it) rather than a quiet "← Back" caption
+ * floating on its own — the title itself is what's being navigated away
+ * from, so the arrow belongs right next to it.
  */
 export function PageHeader({ title, subtitle, backTo, backLabel = "Back", actions }: PageHeaderProps) {
   const navigate = useNavigate();
   return (
     <div className="mb-4 flex h-[calc(var(--kwesi-header-h)-1rem)] shrink-0 items-start justify-between gap-4">
       <div className="min-w-0">
-        <div className="mb-1 h-4 text-xs text-ink-muted">
+        <div className="flex items-center gap-2">
           {backTo && (
             <button
               onClick={() => navigate(backTo)}
-              className="transition-colors duration-150 hover:text-ink"
+              aria-label={backLabel}
+              title={backLabel}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink transition-colors duration-150 hover:bg-ink/[0.08]"
             >
-              ← {backLabel}
+              <CurvedBackIcon width={19} height={19} />
             </button>
           )}
+          <h1 className="truncate text-2xl font-bold leading-8 tracking-tight">{title}</h1>
         </div>
-        <h1 className="truncate text-2xl font-semibold leading-8 tracking-tight">{title}</h1>
-        <div className="mt-0.5 h-5 truncate text-sm leading-5 text-ink-muted">{subtitle}</div>
+        <div className={`mt-0.5 h-5 truncate text-sm leading-5 text-ink-muted ${backTo ? "pl-10" : ""}`}>
+          {subtitle}
+        </div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2.5">{actions}</div>}
     </div>

@@ -265,9 +265,39 @@ describe("DynamicGenerationForm", () => {
       );
     });
 
+    // Regression: toggling a chip in "Genres for this track" used to only
+    // ever update artist_genres itself -- the model's own genre field
+    // (seeded from it) was left showing whatever the artist's full set was
+    // at the time the artist was selected, never updated again. Narrowing
+    // the picker down to one genre left the model's field still showing
+    // everything.
+    it("keeps MuseCoco's genre options in sync when the artist genre picker changes, not just on artist change", async () => {
+      const user = userEvent.setup();
+      renderForm(["default"], vi.fn(), MOCK_PROFILES, "musecoco");
+
+      // MOCK_PROFILES' artist starts with ["Pop", "Electronic"], both
+      // already pre-checked in MuseCoco's own group (previous test).
+      await user.click(screen.getByRole("button", { name: "Pop" }));
+
+      const group = museCocoGenreGroup();
+      expect(group.getByRole("button", { name: "Pop / Rock", pressed: false })).toBeInTheDocument();
+      expect(group.getByRole("button", { name: "Electronic", pressed: true })).toBeInTheDocument();
+    });
+
     it("pre-fills ACE-Step's free-text genre tags from the artist's genres", () => {
       renderForm(["acestep-v15-base"], vi.fn(), MOCK_PROFILES, "ace-step-1.5");
       expect(screen.getByLabelText(/Genre tags/)).toHaveValue("Pop, Electronic");
+    });
+
+    it("keeps ACE-Step's free-text genre tags in sync when the artist genre picker changes", async () => {
+      const user = userEvent.setup();
+      renderForm(["acestep-v15-base"], vi.fn(), MOCK_PROFILES, "ace-step-1.5");
+
+      expect(screen.getByLabelText(/Genre tags/)).toHaveValue("Pop, Electronic");
+
+      await user.click(screen.getByRole("button", { name: "Pop" }));
+
+      expect(screen.getByLabelText(/Genre tags/)).toHaveValue("Electronic");
     });
 
     it("doesn't clobber a manually-edited genre field just from re-rendering", async () => {
