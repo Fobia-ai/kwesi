@@ -7,7 +7,7 @@ import { SearchIcon, CloseIcon, MoreIcon, HeadphonesIcon, DownloadIcon } from ".
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
 import { TrackControls } from "./TrackControls";
-import { DjIllustration } from "./DjIllustration";
+import { HeroArtwork } from "./HeroArtwork";
 import {
   Chip,
   StatusChip,
@@ -218,7 +218,7 @@ export function LibraryCard(props: LibraryCardProps) {
 
           {tab === "overview" ? (
             <>
-              <DjIllustration className="absolute bottom-0 right-6 hidden h-[78%] text-ink lg:block" />
+              <HeroArtwork className="absolute bottom-0 right-6 hidden h-[78%] lg:block" />
               <div className="relative z-10 flex min-h-0 flex-1 flex-col px-6 pb-5 pt-4 lg:max-w-[68%]">
                 {selected ? (
                   <>
