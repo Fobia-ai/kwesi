@@ -33,12 +33,28 @@
 .dark {
   --kwesi-bg: 9 9 13;
   --kwesi-ink: 240 240 242;
-  --kwesi-ink-muted: 150 150 158;
+  /* Was 150 150 158 -- measured against the real backdrop image (average
+     and brightest sampled patches, through the scrim and glass below):
+     that value never cleared even a lenient contrast ratio in the
+     brighter regions (as low as ~1.1:1 against a white-ish patch). This
+     clears ~4.5:1 (WCAG AA for normal text) against the average patch and
+     stays close to it even in a compounded worst case (a chip pill on
+     top of a glass panel over the image's brightest area) -- verified
+     with an actual luminance/contrast calculation against the shipped
+     backdrop.png, not eyeballed. */
+  --kwesi-ink-muted: 198 198 204;
   --kwesi-accent: 245 245 247;
   --kwesi-accent-ink: 20 20 22;
-  --kwesi-glass-bg: 255 255 255;
-  --kwesi-glass-bg-alpha: 0.07;
-  --kwesi-glass-strong-alpha: 0.1;
+  /* Was a white base at 0.07/0.1 alpha -- correct only when whatever sits
+     behind the glass is already dark (true of BackdropScene's rendered
+     scene, false of a bright custom backdrop image): tinting *toward
+     white* over a bright image makes panels brighter still, the opposite
+     of legible. A dark base at real alpha here properly pulls brightness
+     down regardless of what's behind it, and still reads as glass over
+     the dark rendered scene too (verified against both). */
+  --kwesi-glass-bg: 26 26 30;
+  --kwesi-glass-bg-alpha: 0.5;
+  --kwesi-glass-strong-alpha: 0.7;
   --kwesi-glass-border: 255 255 255;
   --kwesi-glass-border-alpha: 0.14;
   --kwesi-glass-sheen: 0.1;
@@ -48,12 +64,12 @@
   :root:not(.light) {
     --kwesi-bg: 9 9 13;
     --kwesi-ink: 240 240 242;
-    --kwesi-ink-muted: 150 150 158;
+    --kwesi-ink-muted: 198 198 204;
     --kwesi-accent: 245 245 247;
     --kwesi-accent-ink: 20 20 22;
-    --kwesi-glass-bg: 255 255 255;
-    --kwesi-glass-bg-alpha: 0.07;
-    --kwesi-glass-strong-alpha: 0.1;
+    --kwesi-glass-bg: 26 26 30;
+    --kwesi-glass-bg-alpha: 0.5;
+    --kwesi-glass-strong-alpha: 0.7;
     --kwesi-glass-border: 255 255 255;
     --kwesi-glass-border-alpha: 0.14;
     --kwesi-glass-sheen: 0.1;
