@@ -25,10 +25,31 @@ import { ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
+import { Agent, setGlobalDispatcher } from "undici";
 import * as repo from "../db/repositories.js";
 import { generationDir, ensureDir, modelsRootDir, venvDir } from "../db/paths.js";
 
 const PROGRESS_CHANNEL = "kwesi:generation:progress";
+
+// Real bug found while diagnosing a real "fetch failed" report against a
+// real MuseCoco generation: Node's built-in fetch is undici under the hood,
+// and undici's *default* dispatcher enforces its own headersTimeout/
+// bodyTimeout (300s) on every request, completely independent of whatever
+// AbortSignal a caller passes in — this app's own `withTimeout` (see below)
+// only ever bounded things at 5-30 minutes, but that 300s default fired
+// first every time, silently. Confirmed directly: a real generation against
+// the real, already-loaded MuseCoco server took 69s for a tiny 30-token
+// budget in isolated testing, and this app's real default token budget is
+// 250-450 -- comfortably over 300s for a real request, not a rare edge
+// case. `node:undici` isn't requirable as a Node built-in on Node 20 (the
+// version Electron 32 bundles), so this is the real `undici` package —
+// literally the same library Node's fetch already uses, added as a real
+// dependency for the one thing it doesn't otherwise expose a way to
+// configure: disabling that hidden default so this file's own explicit,
+// real per-call timeouts (already there, already the intended limits) are
+// what actually govern these calls to local, legitimately-slow model
+// servers, not a silent 5-minute ceiling underneath them.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 0 }));
 
 export type ServerStatusValue = "stopped" | "starting" | "running" | "stopping";
 
