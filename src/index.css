@@ -165,28 +165,6 @@ body {
   -webkit-backdrop-filter: blur(32px) saturate(180%);
 }
 
-/* Slide-over panel (SlideOver.tsx): a right-anchored sheet for forms too
-   large for the small centered Modal — New Generation being the primary
-   case (up to ~10 fields for a model like ACE-Step 1.5). Scrim fades in,
-   panel slides in from the right, both cheap transform/opacity animations. */
-@keyframes kwesi-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes kwesi-slide-in-right {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-.kwesi-slide-over-backdrop {
-  animation: kwesi-fade-in 200ms theme("transitionTimingFunction.smooth");
-}
-
-.kwesi-slide-over-panel {
-  animation: kwesi-slide-in-right 280ms theme("transitionTimingFunction.smooth");
-}
-
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

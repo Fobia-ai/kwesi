@@ -57,7 +57,7 @@ manifest* — not hand-built per model. See
 renderer/viewer design.
 
 Two output viewer families are needed at minimum:
-- **Audio viewer**: waveform, transport controls, export/download, matches the bottom mini-player pattern in the Voicebox references. **Built in Phase 6** (`src/components/audio/WaveformPlayer.tsx` per-generation, `src/components/audio/MiniPlayer.tsx` as the persistent bottom-docked player).
+- **Audio viewer**: transport controls (play/pause, seek, next/previous, speed, volume), save-a-copy. **Built in Phase 6** as a bottom-docked mini-player (`src/components/audio/WaveformPlayer.tsx`/`MiniPlayer.tsx`); **redesigned later** into one shared player embedded in each screen's own hero card rather than a persistent dock — see `src/components/library/LibraryCard.tsx` and `TrackControls.tsx`. The underlying playback state (`src/lib/playerStore.tsx`) is unchanged across that redesign.
 - **Symbolic/MIDI viewer**: piano-roll or notation display, for models that only output MIDI (MuseCoco, Museformer) with no audio rendering.
 
 Some models need both simultaneously (YuE2 outputs audio + ABC notation/MIDI +

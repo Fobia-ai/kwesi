@@ -282,6 +282,44 @@ describe("DynamicGenerationForm", () => {
     });
   });
 
+  describe("model instrument field", () => {
+    // Regression: MuseCoco's `instrument` field used to be a free-text
+    // "tags" input storing one comma-separated string, but the real server's
+    // match_categories() iterates whatever it's given character-by-
+    // character when it isn't already a list -- so free-typed instrument
+    // text silently matched nothing, the same bug genre had. It's a real
+    // fixed multiselect now (src/data/musecocoInstruments.ts), with no
+    // artist-level auto-population (unlike genre) since ArtistProfile has
+    // no instruments concept.
+    function instrumentGroup() {
+      return within(screen.getByRole("group", { name: "Instruments" }));
+    }
+
+    it("renders MuseCoco's instrument field as a real multiselect, not free text", () => {
+      renderForm(["default"], vi.fn(), MOCK_PROFILES, "musecoco");
+      expect(instrumentGroup().getByRole("button", { name: "Piano" })).toBeInTheDocument();
+      expect(instrumentGroup().getByRole("button", { name: "Piano", pressed: false })).toBeInTheDocument();
+    });
+
+    it("submits selected instruments as a real array of the server's own tokens", async () => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderForm(["default"], onSubmit, MOCK_PROFILES, "musecoco");
+
+      await user.click(instrumentGroup().getByRole("button", { name: "Piano" }));
+      await user.click(instrumentGroup().getByRole("button", { name: "Drum" }));
+      await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({ instrument: expect.arrayContaining(["piano", "drum"]) }),
+      );
+      const submittedValues = onSubmit.mock.calls[0][1] as { instrument: string[] };
+      expect(submittedValues.instrument).toHaveLength(2);
+    });
+  });
+
   describe("model language field", () => {
     it("pre-fills ACE-Step's vocal_language select from the artist's primary language", () => {
       const profiles: ArtistProfile[] = [

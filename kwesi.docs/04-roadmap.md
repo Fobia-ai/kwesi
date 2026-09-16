@@ -275,6 +275,16 @@ variant, short (6s) durations, text-prompt-only generation.
 **Objective:** make the audio side of the app actually pleasant to use,
 matching the reference apps' bottom mini-player and per-item playback.
 
+**Superseded later**: the bottom-docked `MiniPlayer` and per-generation
+inline `WaveformPlayer` described below were replaced in a later UI
+redesign by one shared transport (`src/components/library/TrackControls.tsx`)
+embedded in each screen's own hero card (`LibraryCard.tsx`), rather than a
+persistent dock — both files named below no longer exist. What's still
+accurate as written: `src/lib/playerStore.tsx`'s Context/reducer design,
+the full `kwesi:audio:*` IPC surface, and `src/lib/audioFiles.ts`'s
+stat/classification logic — the redesign changed where playback controls
+render, not how playback or file access work underneath.
+
 - Waveform player component (`src/components/audio/WaveformPlayer.tsx`):
   play/pause, a seek/scrubber bar, current-time/duration display, and a
   volume slider, backed by a single native `<audio>` element. Mounted
@@ -357,7 +367,16 @@ output modality, and MuseCoco's much richer structured-input form.
   (first non-audio output viewer) — a static piano roll (notes as bars
   positioned by pitch/time, no playback), mounted inline per generation in
   `WorkspaceDetail.tsx` exactly like Phase 6's `WaveformPlayer`, with the
-  same Export/Download/Share actions. Parses the real `.mid` bytes with a
+  same Export/Download/Share actions. **Superseded later**: those per-
+  component Export/Download/Share buttons are gone from
+  `PianoRollViewer` (and every other per-track surface) — a later redesign
+  collapsed them into one row-level "Save a copy" action in
+  `LibraryCard.tsx`, since a local app with no cloud in the loop never
+  actually needed three different verbs for "copy this file somewhere." The
+  roll itself, and its own real bug fixed in that same redesign (a fixed
+  220px canvas drawing 3px-per-semitone rows regardless of pitch range,
+  leaving most tracks' rolls mostly dead space — rows now scale to fill the
+  view), are otherwise as described below. Parses the real `.mid` bytes with a
   small hand-rolled Standard MIDI File parser (`src/lib/midiParser.ts`) —
   a new npm dependency was considered and rejected (see that file's header
   comment): the read-only, notes-only surface this viewer needs is a few

@@ -26,9 +26,9 @@ function normalize(options: ChipMultiSelectProps["options"]): ChipOption[] {
  *
  * Height-capped with its own internal scroll rather than left to grow
  * freely: a long catalog (the 51-entry language list is the extreme case)
- * must never be what forces an enclosing Modal/SlideOver past the
- * viewport — the option list scrolls in its own small box instead, so the
- * container around it stays a fixed, predictable size. */
+ * must never be what forces an enclosing Modal past the viewport — the
+ * option list scrolls in its own small box instead, so the container
+ * around it stays a fixed, predictable size. */
 export function ChipMultiSelect({ options, selected, onToggle }: ChipMultiSelectProps) {
   return (
     <div className="kwesi-scroll-inset flex max-h-44 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">

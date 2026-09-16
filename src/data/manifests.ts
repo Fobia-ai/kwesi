@@ -13,6 +13,7 @@
 // Electron/renderer build boundary — don't invent a second manifest shape.
 
 import { MUSECOCO_GENRE_OPTIONS, MUSECOCO_GENRE_AUTO_MAP } from "./musecocoGenres";
+import { MUSECOCO_INSTRUMENT_OPTIONS } from "./musecocoInstruments";
 import { LANGUAGES } from "./languages";
 
 export type LicenseTier = "mit" | "cc-by-nc" | "cc-by-nc-sa";
@@ -391,9 +392,19 @@ const MUSECOCO: ModelManifest = {
     },
     {
       key: "instrument",
-      type: "tags",
+      type: "multiselect",
       label: "Instruments",
-      helpText: "Matched case-insensitively against: piano, keyboard, percussion, organ, guitar, bass, violin, viola, cello, harp, strings, voice, trumpet, trombone, tuba, horn, brass, sax, oboe, bassoon, clarinet, piccolo, flute, pipe, synthesizer, ethnic_instruments, sound_effects, drum. Unmatched tags are ignored.",
+      // Real, fixed 28-value vocabulary (servers/musecoco/server.py's
+      // I1S2_CATEGORIES) -- was a free-text "tags" field, the same real bug
+      // genre had (see that field's comment below): the "tags" control
+      // stores one comma-separated *string*, and the server's
+      // match_categories() iterates whatever it's given character-by-
+      // character when it isn't already a list, so free-typed instrument
+      // text was silently never matching anything. No artist-level
+      // "instruments" concept exists to auto-populate this from (unlike
+      // genre), so it's a plain options list.
+      options: MUSECOCO_INSTRUMENT_OPTIONS,
+      helpText: "Only these exact instruments are recognized by the server — pick from the list.",
     },
     {
       key: "genre",
