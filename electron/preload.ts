@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld("kwesi", {
     startServer: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:start", modelId),
     stopServer: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:stop", modelId),
     serverStatus: (modelId: string) => ipcRenderer.invoke("kwesi:generation:server:status", modelId),
+    cancel: (generationId: string) => ipcRenderer.invoke("kwesi:generation:cancel", generationId),
     onProgress: (callback: (event: unknown) => void) => {
       const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
       ipcRenderer.on("kwesi:generation:progress", listener);

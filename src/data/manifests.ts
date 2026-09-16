@@ -386,9 +386,14 @@ const MUSECOCO: ModelManifest = {
     {
       key: "description",
       type: "textarea",
-      label: "Free text description (not used by real inference)",
+      // Re-verified directly against the real server: servers/musecoco/
+      // server.py never references "description" anywhere, not even for
+      // logging — this isn't lightly used, it's completely inert. Worded
+      // to leave no room to read that as "optional but still does
+      // something" -- it does nothing.
+      label: "Notes to yourself (ignored by generation)",
       placeholder: "A hopeful piano ballad",
-      helpText: "No published stage-1 text-to-attribute checkpoint exists, so this is notes-to-self only — set the structured fields below to actually steer generation.",
+      helpText: "Not sent to the model in any form — MuseCoco's real server never reads this field. Use the structured fields below to actually steer generation.",
     },
     {
       key: "instrument",

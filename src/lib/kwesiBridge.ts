@@ -56,6 +56,7 @@ declare global {
         startServer: (modelId: string) => Promise<void>;
         stopServer: (modelId: string) => Promise<void>;
         serverStatus: (modelId: string) => Promise<string>;
+        cancel: (generationId: string) => Promise<boolean>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
       audio: {

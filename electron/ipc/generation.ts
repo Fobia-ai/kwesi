@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import { submitGeneration, startServer, stopServer, getServerStatus } from "../models/modelServer.js";
+import { submitGeneration, startServer, stopServer, getServerStatus, cancelGeneration } from "../models/modelServer.js";
 
 export function registerGenerationIpcHandlers() {
   ipcMain.handle(
@@ -10,4 +10,5 @@ export function registerGenerationIpcHandlers() {
   ipcMain.handle("kwesi:generation:server:start", (_e, modelId: string) => startServer(modelId));
   ipcMain.handle("kwesi:generation:server:stop", (_e, modelId: string) => stopServer(modelId));
   ipcMain.handle("kwesi:generation:server:status", (_e, modelId: string) => getServerStatus(modelId));
+  ipcMain.handle("kwesi:generation:cancel", (_e, generationId: string) => cancelGeneration(generationId));
 }

@@ -20,6 +20,7 @@ export function Chip({ children, tone = "neutral" }: { children: ReactNode; tone
 export function StatusChip({ status }: { status: string }) {
   if (status === "done") return <Chip>Done</Chip>;
   if (status === "failed") return <Chip tone="bad">Failed</Chip>;
+  if (status === "cancelled") return <Chip>Cancelled</Chip>;
   return (
     <Chip tone="live">
       <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle" />

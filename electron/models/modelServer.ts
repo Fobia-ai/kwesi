@@ -37,7 +37,55 @@ export type GenerationProgressEvent =
   | { type: "queued"; generationId: string; projectId: string }
   | { type: "running"; generationId: string; projectId: string; progressPct: number }
   | { type: "done"; generationId: string; projectId: string; outputFiles: string[]; durationMs: number }
-  | { type: "failed"; generationId: string; projectId: string; error: string };
+  | { type: "failed"; generationId: string; projectId: string; error: string }
+  | { type: "cancelled"; generationId: string; projectId: string };
+
+// A generation "job" here is really just an HTTP request (or a short chain
+// of them) against a long-lived, shared-per-model server process — there's
+// no separate per-job subprocess the way training runs have one, and none
+// of the vendored servers expose a real per-task cancel endpoint (checked
+// directly against ACE-Step's own real API routes, the one model here with
+// an actual async task/poll shape where a clean cancel would be plausible —
+// no such route exists). So cancelling for real means two things together:
+// aborting the in-flight fetch(es) for instant UI feedback, and killing the
+// model's whole server process to actually stop whatever GPU work it
+// already dispatched — the server restarts automatically the next time this
+// model is used.
+interface ActiveGenerationJob {
+  modelId: string;
+  controller: AbortController;
+  cancelled: boolean;
+}
+const activeGenerationJobs = new Map<string, ActiveGenerationJob>();
+
+function beginGenerationJob(generationId: string, modelId: string): AbortController {
+  const controller = new AbortController();
+  activeGenerationJobs.set(generationId, { modelId, controller, cancelled: false });
+  return controller;
+}
+
+// Combines the job's shared cancel signal with a per-request timeout, so
+// every fetch in a job is both user-cancellable and still bounded the same
+// way it already was.
+function withTimeout(controller: AbortController, timeoutMs: number): AbortSignal {
+  return AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
+}
+
+// Shared catch-block body for every real job runner below: a cancelled job
+// gets its own distinct status/event rather than being reported as a
+// generic failure, matching trainingManager.ts's own real
+// cancelled-vs-failed distinction for training runs.
+function finishFailedOrCancelled(generationId: string, projectId: string, err: unknown): void {
+  const cancelled = activeGenerationJobs.get(generationId)?.cancelled ?? false;
+  if (cancelled) {
+    repo.updateGenerationStatus(generationId, "cancelled", { error: "Cancelled by user." });
+    broadcast({ type: "cancelled", generationId, projectId });
+    return;
+  }
+  const error = err instanceof Error ? err.message : String(err);
+  repo.updateGenerationStatus(generationId, "failed", { error });
+  broadcast({ type: "failed", generationId, projectId, error });
+}
 
 export interface SubmitResult {
   ok: boolean;
@@ -429,6 +477,21 @@ export async function stopServer(modelId: string): Promise<void> {
   broadcast({ type: "server_status", modelId, status: "stopped" });
 }
 
+/**
+ * User-triggered stop for a real, currently queued/running generation.
+ * Returns false if this generation isn't actually active (already
+ * finished, or never a real job in the first place — e.g. a mocked
+ * model), in which case the caller has nothing to do.
+ */
+export async function cancelGeneration(generationId: string): Promise<boolean> {
+  const job = activeGenerationJobs.get(generationId);
+  if (!job) return false;
+  job.cancelled = true;
+  job.controller.abort(new Error("Cancelled by user"));
+  if (isRealServerModel(job.modelId)) await stopRealServer(job.modelId);
+  return true;
+}
+
 export function submitGeneration(
   projectId: string,
   checkpointVariant: string | null,
@@ -497,6 +560,7 @@ function resolveMelodyAudioPath(inputParams: Record<string, unknown>): string | 
 async function runRealMusicGenJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
   const generationId = generation.id;
   const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, MUSICGEN_MODEL_ID);
 
   try {
     const { port } = await ensureRealServerRunning(MUSICGEN_MODEL_ID);
@@ -519,7 +583,7 @@ async function runRealMusicGenJob(workspaceId: string, generation: repo.Generati
       // A real generation call can legitimately take a while for a long
       // duration_sec, but must not hang forever if the Python process dies
       // mid-request without cleanly closing the connection.
-      signal: AbortSignal.timeout(5 * 60 * 1000),
+      signal: withTimeout(controller, 5 * 60 * 1000),
       body: JSON.stringify({
         variant: generation.checkpoint_variant ?? "small",
         prompt,
@@ -541,9 +605,9 @@ async function runRealMusicGenJob(workspaceId: string, generation: repo.Generati
     });
     broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    repo.updateGenerationStatus(generationId, "failed", { error });
-    broadcast({ type: "failed", generationId, projectId, error });
+    finishFailedOrCancelled(generationId, projectId, err);
+  } finally {
+    activeGenerationJobs.delete(generationId);
   }
 }
 
@@ -562,6 +626,7 @@ async function runRealMidiJob(
 ): Promise<void> {
   const generationId = generation.id;
   const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, modelId);
 
   try {
     const { port } = await ensureRealServerRunning(modelId);
@@ -580,7 +645,7 @@ async function runRealMidiJob(
       // Real CPU generation for these models is slow (minutes, not
       // seconds) — see servers/musecoco/README.md's measured timing — so
       // this needs a much longer budget than MusicGen's audio call.
-      signal: AbortSignal.timeout(30 * 60 * 1000),
+      signal: withTimeout(controller, 30 * 60 * 1000),
       body: JSON.stringify({ input_params: inputParams, output_path: outputPath }),
     });
 
@@ -596,9 +661,9 @@ async function runRealMidiJob(
     });
     broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    repo.updateGenerationStatus(generationId, "failed", { error });
-    broadcast({ type: "failed", generationId, projectId, error });
+    finishFailedOrCancelled(generationId, projectId, err);
+  } finally {
+    activeGenerationJobs.delete(generationId);
   }
 }
 
@@ -689,6 +754,7 @@ interface AceStepQueryResultResponse {
 async function runRealAceStepJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
   const generationId = generation.id;
   const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, ACE_STEP_MODEL_ID);
 
   try {
     const { port } = await ensureRealServerRunning(ACE_STEP_MODEL_ID);
@@ -718,7 +784,7 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     const releaseRes = await fetch(`http://127.0.0.1:${port}/release_task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(30_000),
+      signal: withTimeout(controller, 30_000),
       body: JSON.stringify({
         prompt: buildAceStepPrompt(inputParams),
         lyrics,
@@ -765,11 +831,13 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     let resultFileUrl: string | null = null;
 
     while (Date.now() < pollDeadline) {
+      if (controller.signal.aborted) break;
       await delay(2000);
+      if (controller.signal.aborted) break;
       const queryRes = await fetch(`http://127.0.0.1:${port}/query_result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(10_000),
+        signal: withTimeout(controller, 10_000),
         body: JSON.stringify({ task_id_list: [taskId] }),
       }).catch(() => null);
       if (!queryRes || !queryRes.ok) continue;
@@ -801,7 +869,7 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
       throw new Error(`ace-step-1.5 task ${taskId} did not complete within the ${pollBudgetMs / 60_000}-minute poll budget`);
     }
 
-    const audioRes = await fetch(`http://127.0.0.1:${port}${resultFileUrl}`, { signal: AbortSignal.timeout(60_000) });
+    const audioRes = await fetch(`http://127.0.0.1:${port}${resultFileUrl}`, { signal: withTimeout(controller, 60_000) });
     if (!audioRes.ok) throw new Error(`ace-step-1.5 failed to download generated audio: ${audioRes.status}`);
     const audioBuf = Buffer.from(await audioRes.arrayBuffer());
     fs.writeFileSync(outputPath, audioBuf);
@@ -810,9 +878,9 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     repo.updateGenerationStatus(generationId, "done", { outputFiles: [outputPath], durationMs });
     broadcast({ type: "done", generationId, projectId, outputFiles: [outputPath], durationMs });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    repo.updateGenerationStatus(generationId, "failed", { error });
-    broadcast({ type: "failed", generationId, projectId, error });
+    finishFailedOrCancelled(generationId, projectId, err);
+  } finally {
+    activeGenerationJobs.delete(generationId);
   }
 }
 
@@ -847,6 +915,7 @@ function resolveRaveInputAudioPath(inputParams: Record<string, unknown>): string
 async function runRealRaveJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
   const generationId = generation.id;
   const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, RAVE_MODEL_ID);
 
   try {
     const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
@@ -868,7 +937,7 @@ async function runRealRaveJob(workspaceId: string, generation: repo.GenerationRo
       // seconds of audio in standalone testing — see servers/rave/README.md)
       // but a long input file legitimately takes longer; same generous
       // budget as MusicGen's call rather than a tight one.
-      signal: AbortSignal.timeout(5 * 60 * 1000),
+      signal: withTimeout(controller, 5 * 60 * 1000),
       body: JSON.stringify({
         variant: generation.checkpoint_variant,
         input_audio_path: inputAudioPath,
@@ -888,9 +957,9 @@ async function runRealRaveJob(workspaceId: string, generation: repo.GenerationRo
     });
     broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    repo.updateGenerationStatus(generationId, "failed", { error });
-    broadcast({ type: "failed", generationId, projectId, error });
+    finishFailedOrCancelled(generationId, projectId, err);
+  } finally {
+    activeGenerationJobs.delete(generationId);
   }
 }
 
@@ -906,25 +975,36 @@ async function runMockJob(
   modelId: string,
   generation: repo.GenerationRow,
 ): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, modelId);
+
   await startServer(modelId);
 
-  repo.updateGenerationStatus(generation.id, "running");
-  broadcast({ type: "running", generationId: generation.id, projectId: generation.project_id, progressPct: 0 });
+  repo.updateGenerationStatus(generationId, "running");
+  broadcast({ type: "running", generationId, projectId, progressPct: 0 });
 
   for (let step = 1; step <= PROGRESS_STEPS; step += 1) {
     await delay(350 + Math.random() * 300);
+    if (controller.signal.aborted) {
+      repo.updateGenerationStatus(generationId, "cancelled", { error: "Cancelled by user." });
+      broadcast({ type: "cancelled", generationId, projectId });
+      activeGenerationJobs.delete(generationId);
+      return;
+    }
     broadcast({
       type: "running",
-      generationId: generation.id,
-      projectId: generation.project_id,
+      generationId,
+      projectId,
       progressPct: Math.round((step / PROGRESS_STEPS) * 100),
     });
   }
+  activeGenerationJobs.delete(generationId);
 
   if (Math.random() < FAILURE_RATE) {
     const error = "Simulated model server error (Phase 4 mock — no real inference yet).";
-    repo.updateGenerationStatus(generation.id, "failed", { error });
-    broadcast({ type: "failed", generationId: generation.id, projectId: generation.project_id, error });
+    repo.updateGenerationStatus(generationId, "failed", { error });
+    broadcast({ type: "failed", generationId, projectId, error });
     return;
   }
 

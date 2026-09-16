@@ -9,7 +9,8 @@ export type GenerationProgressEvent =
   | { type: "queued"; generationId: string; projectId: string }
   | { type: "running"; generationId: string; projectId: string; progressPct: number }
   | { type: "done"; generationId: string; projectId: string; outputFiles: string[]; durationMs: number }
-  | { type: "failed"; generationId: string; projectId: string; error: string };
+  | { type: "failed"; generationId: string; projectId: string; error: string }
+  | { type: "cancelled"; generationId: string; projectId: string };
 
 export interface SubmitResult {
   ok: boolean;
@@ -27,6 +28,10 @@ export interface KwesiGenerationApi {
   startServer(modelId: string): Promise<void>;
   stopServer(modelId: string): Promise<void>;
   serverStatus(modelId: string): Promise<ServerStatusValue>;
+  // Returns false if this generation wasn't actually active (already
+  // finished by the time the request landed) — the caller has nothing more
+  // to do in that case, the row's real status already reflects reality.
+  cancel(generationId: string): Promise<boolean>;
   onProgress(callback: (event: GenerationProgressEvent) => void): () => void;
 }
 
@@ -37,6 +42,7 @@ function realGenerationApi(bridge: NonNullable<Window["kwesi"]>["generation"]): 
     startServer: (modelId) => bridge.startServer(modelId),
     stopServer: (modelId) => bridge.stopServer(modelId),
     serverStatus: (modelId) => bridge.serverStatus(modelId) as Promise<ServerStatusValue>,
+    cancel: (generationId) => bridge.cancel(generationId),
     onProgress: (callback) => bridge.onProgress(callback as (event: unknown) => void),
   };
 }
@@ -53,6 +59,8 @@ const FAILURE_RATE = 0.12;
 function createMockGenerationApi(): KwesiGenerationApi {
   const listeners = new Set<(event: GenerationProgressEvent) => void>();
   const serverStatus = new Map<string, ServerStatusValue>();
+  const activeJobIds = new Set<string>();
+  const cancelledJobIds = new Set<string>();
 
   function emit(event: GenerationProgressEvent) {
     listeners.forEach((listener) => listener(event));
@@ -98,14 +106,23 @@ function createMockGenerationApi(): KwesiGenerationApi {
   }
 
   async function runJob(modelId: string, projectId: string, id: string, outputKind: string): Promise<void> {
+    activeJobIds.add(id);
     await startServer(modelId);
     generationStore.update(id, { status: "running" });
     emit({ type: "running", generationId: id, projectId, progressPct: 0 });
 
     for (let step = 1; step <= PROGRESS_STEPS; step += 1) {
       await delay(250 + Math.random() * 200);
+      if (cancelledJobIds.has(id)) {
+        cancelledJobIds.delete(id);
+        activeJobIds.delete(id);
+        generationStore.update(id, { status: "cancelled", error: "Cancelled by user." });
+        emit({ type: "cancelled", generationId: id, projectId });
+        return;
+      }
       emit({ type: "running", generationId: id, projectId, progressPct: Math.round((step / PROGRESS_STEPS) * 100) });
     }
+    activeJobIds.delete(id);
 
     if (Math.random() < FAILURE_RATE) {
       const error = "Simulated model server error (Phase 4 mock — no real inference yet).";
@@ -149,6 +166,11 @@ function createMockGenerationApi(): KwesiGenerationApi {
     stopServer,
     async serverStatus(modelId) {
       return getServerStatus(modelId);
+    },
+    async cancel(generationId) {
+      if (!activeJobIds.has(generationId)) return false;
+      cancelledJobIds.add(generationId);
+      return true;
     },
     onProgress(callback) {
       listeners.add(callback);

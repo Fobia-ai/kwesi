@@ -507,6 +507,7 @@ function HeroPlayback({
   const midiFile = findMidiFile(parseOutputFiles(generation.output_files));
 
   if (generation.status !== "done") {
+    const cancellable = generation.status === "queued" || generation.status === "running";
     return (
       <div className="min-w-0 flex-1">
         <OutputViewerPlaceholder
@@ -514,6 +515,7 @@ function HeroPlayback({
           status={generation.status as GenerationStatus}
           progressPct={progressPct}
           error={generation.error}
+          onCancel={cancellable ? () => void kwesiGeneration.cancel(generation.id) : undefined}
         />
       </div>
     );
