@@ -3,7 +3,7 @@ import { GlassPanel } from "../ui/GlassPanel";
 import { PillButton } from "../ui/PillButton";
 import { AvatarImage } from "../ui/AvatarImage";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { SearchIcon, CloseIcon, MoreIcon, HeadphonesIcon, DownloadIcon } from "../ui/icons";
+import { SearchIcon, CloseIcon, MoreIcon, HeadphonesIcon, DownloadIcon, PianoRollIcon, ChevronDownIcon } from "../ui/icons";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
 import { TrackControls } from "./TrackControls";
@@ -160,6 +160,14 @@ export function LibraryCard(props: LibraryCardProps) {
     if (track) {
       player.setQueue(queue);
       void player.play(track);
+      return;
+    }
+    // No audio to play (MuseCoco/Museformer's MIDI-only output) — the row
+    // itself is the accordion for these: click expands it in place to show
+    // the notation, since there's nothing else a click on this row could do.
+    const midiFile = findMidiFile(parseOutputFiles(item.generation.output_files));
+    if (midiFile) {
+      setExpandedId((prev) => (prev === item.generation.id ? null : item.generation.id));
     }
   }
 
@@ -381,7 +389,9 @@ export function LibraryCard(props: LibraryCardProps) {
             const isSelected = generation.id === selectedId;
             const isPlaying = player.isActive(generation.id) && player.state.status === "playing";
             const files = parseOutputFiles(generation.output_files);
-            const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? findMidiFile(files));
+            const midiFile = findMidiFile(files);
+            const midiOnly = Boolean(midiFile) && !findAudioFile(files);
+            const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? midiFile);
             const expanded = expandedId === generation.id;
             const secondary =
               props.mode === "library"
@@ -439,6 +449,13 @@ export function LibraryCard(props: LibraryCardProps) {
                   <span className="hidden w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-muted sm:block">
                     {formatRelativeTime(generation.created_at)}
                   </span>
+                  {midiOnly && (
+                    <ChevronDownIcon
+                      width={14}
+                      height={14}
+                      className={`shrink-0 text-ink-muted transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+                    />
+                  )}
                   <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
@@ -460,7 +477,7 @@ export function LibraryCard(props: LibraryCardProps) {
                 {saveStatus?.id === generation.id && (
                   <p className="px-3 pb-2 text-[11px] text-ink-muted">{saveStatus.text}</p>
                 )}
-                {expanded && <RowDetails item={item} />}
+                <RowAccordion expanded={expanded} item={item} />
               </li>
             );
           })}
@@ -525,13 +542,17 @@ function HeroPlayback({
     return <TrackControls track={track} queue={queue} lyricsActive={false} onToggleLyrics={onShowLyrics} />;
   }
 
-  // MIDI-only output (MuseCoco, Museformer): the roll is this track's
-  // player, drawn short so it sits in the transport row rather than
-  // stretching the hero.
+  // MIDI-only output (MuseCoco, Museformer): there's no transport to show
+  // here. A compact roll used to be squeezed into this 84px-tall row, but
+  // MuseCoco's real output spans a wide pitch range across several tracks --
+  // that many rows crammed into 84px reads as meaningless dashes, not
+  // notation. The track row below is the real place to see it now, full
+  // size, in its own accordion.
   if (midiFile) {
     return (
-      <div className="min-w-0 flex-1">
-        <PianoRollViewer filePath={midiFile} compact viewHeight={84} />
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-ink-muted">
+        <PianoRollIcon width={16} height={16} className="shrink-0" />
+        <span>MIDI output ready — expand the track below to view the notation.</span>
       </div>
     );
   }
@@ -559,12 +580,36 @@ function LyricsView({ lyrics }: { lyrics: string | undefined }) {
   );
 }
 
+/**
+ * Wraps RowDetails in the same CSS grid-template-rows 0fr/1fr animation
+ * ModelManager.tsx's accordion rows already use — no JS height measuring,
+ * just a transition on the row's own template. RowDetails' content only
+ * mounts the first time a row is expanded (not on every render) so a
+ * project full of tracks doesn't eagerly fetch/parse every one's MIDI file
+ * before the user ever opens it; once opened, it stays mounted so closing
+ * and reopening animates instantly.
+ */
+function RowAccordion({ expanded, item }: { expanded: boolean; item: LibraryItem }) {
+  const [everOpened, setEverOpened] = useState(expanded);
+  useEffect(() => {
+    if (expanded) setEverOpened(true);
+  }, [expanded]);
+
+  return (
+    <div
+      className="grid transition-[grid-template-rows] duration-300 ease-smooth"
+      style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+    >
+      <div className="overflow-hidden">{everOpened && <RowDetails item={item} />}</div>
+    </div>
+  );
+}
+
 function RowDetails({ item }: { item: LibraryItem }) {
   const manifest = getManifest(item.modelId);
   const prompt = generationPrompt(item.generation);
   const files = parseOutputFiles(item.generation.output_files);
   const midiFile = findMidiFile(files);
-  const hasAudio = Boolean(findAudioFile(files));
   return (
     <div className="mb-2 flex flex-col gap-4 rounded-[12px] bg-ink/[0.03] px-4 py-4">
       {prompt && (
@@ -573,10 +618,7 @@ function RowDetails({ item }: { item: LibraryItem }) {
           <p className="max-w-[70ch] text-sm leading-relaxed">{prompt}</p>
         </div>
       )}
-      {/* Only worth repeating here when the hero isn't already showing it —
-          i.e. this track has audio, so the roll lost the hero slot to the
-          transport. */}
-      {midiFile && hasAudio && (
+      {midiFile && (
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Piano roll</p>
           <PianoRollViewer filePath={midiFile} />
