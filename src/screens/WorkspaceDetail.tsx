@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { WorkspacesIcon, WaveformIcon, ChevronDownIcon, PlusIcon } from "../components/ui/icons";
+import { WorkspacesIcon, ChevronDownIcon } from "../components/ui/icons";
 import {
   kwesiDb,
   type WorkspaceRow,
@@ -48,26 +49,22 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
 }
 
 /**
- * The hero's top-left control: a pill naming the workspace and current
- * project that opens a menu to jump between projects, start a new one, or
- * delete one — the project rail this replaces, folded into the one card.
+ * The hero's top-left control: a pill naming the current project that opens
+ * a menu to jump between the workspace's other projects or delete one. Just
+ * the project — the workspace name and "New Project" now live in the
+ * screen's own PageHeader above the card, so they don't need repeating here.
  */
 function ProjectSwitcher({
-  workspace,
   projects,
   selectedId,
   onSelect,
-  onNew,
   onRequestDelete,
 }: {
-  workspace: WorkspaceRow | null;
   projects: ProjectRow[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onNew: () => void;
   onRequestDelete: (project: ProjectRow) => void;
 }) {
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selected = projects.find((p) => p.id === selectedId) ?? null;
@@ -89,16 +86,7 @@ function ProjectSwitcher({
   }, [open]);
 
   return (
-    <div ref={ref} className="relative inline-flex items-center gap-1.5">
-      <button
-        type="button"
-        onClick={() => navigate("/workspaces")}
-        className="kwesi-glass flex h-9 items-center gap-1.5 rounded-chip px-3 text-xs text-ink transition-colors duration-150 hover:brightness-105"
-        title="All workspaces"
-      >
-        <WorkspacesIcon width={14} height={14} />
-        <span className="max-w-[9rem] truncate">{workspace?.name ?? "…"}</span>
-      </button>
+    <div ref={ref} className="relative inline-flex items-center">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -147,17 +135,6 @@ function ProjectSwitcher({
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onNew();
-            }}
-            className="mt-0.5 flex items-center gap-1.5 rounded-[9px] border-t border-ink/10 px-2.5 py-2 text-xs text-ink transition-colors duration-150 hover:bg-ink/[0.06]"
-          >
-            <PlusIcon width={13} height={13} /> New project
-          </button>
         </div>
       )}
     </div>
@@ -223,7 +200,6 @@ function ProjectPane({
   variants,
   artistProfiles,
   onSelectProject,
-  onNewProject,
   onRequestDeleteProject,
 }: {
   workspace: WorkspaceRow | null;
@@ -232,7 +208,6 @@ function ProjectPane({
   variants: ModelVariantRow[];
   artistProfiles: ArtistProfile[];
   onSelectProject: (id: string) => void;
-  onNewProject: () => void;
   onRequestDeleteProject: (project: ProjectRow) => void;
 }) {
   const modelId = workspace?.model_id ?? "";
@@ -319,11 +294,9 @@ function ProjectPane({
       mode="project"
       headerSlot={
         <ProjectSwitcher
-          workspace={workspace}
           projects={projects}
           selectedId={project.id}
           onSelect={onSelectProject}
-          onNew={onNewProject}
           onRequestDelete={onRequestDeleteProject}
         />
       }
@@ -338,23 +311,6 @@ function ProjectPane({
           onCancel={() => setIsCreating(false)}
           onSubmit={submitGeneration}
         />
-      }
-      emptyState={
-        <div className="flex w-full max-w-md flex-col items-center gap-4">
-          <ProjectSwitcher
-            workspace={workspace}
-            projects={projects}
-            selectedId={project.id}
-            onSelect={onSelectProject}
-            onNew={onNewProject}
-            onRequestDelete={onRequestDeleteProject}
-          />
-          <EmptyState
-            icon={<WaveformIcon width={28} height={28} />}
-            title="Nothing generated in this project yet."
-            action={<PillButton onClick={() => setIsCreating(true)}>Create your first track</PillButton>}
-          />
-        </div>
       }
     />
   );
@@ -399,9 +355,34 @@ export function WorkspaceDetailScreen() {
   if (!workspaceId) return null;
 
   const selectedProject = projects?.find((p) => p.id === selectedProjectId) ?? null;
+  const installedCount = variants.filter((v) => v.install_status === "installed").length;
 
   return (
     <div className="flex h-full flex-col">
+      {/* Always shown, regardless of selection or project count — this used
+          to live only inside the hero card's own top-left slot, which meant
+          the workspace's name and the way back to Workspaces both vanished
+          the moment a project was selected (the hero swaps that slot for
+          the project switcher instead). A real page title shouldn't come
+          and go with what's selected below it. */}
+      <PageHeader
+        title={workspace?.name ?? "…"}
+        backTo="/workspaces"
+        backLabel="Workspaces"
+        subtitle={
+          <>
+            <span>{workspace?.model_display_name}</span>
+            {installedCount > 0 && (
+              <span>
+                {" "}
+                · {installedCount} checkpoint{installedCount === 1 ? "" : "s"} installed
+              </span>
+            )}
+          </>
+        }
+        actions={<PillButton onClick={() => setShowNewProject(true)}>New Project</PillButton>}
+      />
+
       {projects === null ? null : projects.length === 0 ? (
         <GlassPanel radius="panel" className="flex min-h-0 flex-1 items-center justify-center p-8">
           <EmptyState
@@ -420,7 +401,6 @@ export function WorkspaceDetailScreen() {
             variants={variants}
             artistProfiles={artistProfiles}
             onSelectProject={setSelectedProjectId}
-            onNewProject={() => setShowNewProject(true)}
             onRequestDeleteProject={(project) => {
               setDeleteFilesToo(false);
               setProjectPendingDelete(project);

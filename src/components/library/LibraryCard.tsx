@@ -48,7 +48,6 @@ interface LibraryCardBaseProps {
   onDelete: (item: LibraryItem) => Promise<void> | void;
   // Top-left of the hero: the project switcher, or the library's summary.
   headerSlot: ReactNode;
-  emptyState: ReactNode;
 }
 
 /**
@@ -57,12 +56,20 @@ interface LibraryCardBaseProps {
  * optional props happened to be passed:
  *
  *  - "library" (Home) browses every track in the app read-only: no
- *    creation, and each row says which workspace/project it came from.
+ *    creation, and each row says which workspace/project it came from. A
+ *    completely empty app (no workspaces, nothing to browse at all) has
+ *    nothing structural to preserve, so it gets a full-panel `emptyState`.
  *  - "project" manages one project's tracks: creation, and rows drop the
- *    location (it's the same for all of them) for the prompt instead.
+ *    location (it's the same for all of them) for the prompt instead. A
+ *    project with zero tracks still has a real toolbar (search, "+ New
+ *    track") and hero to show — only the row list itself goes empty, so
+ *    there's no `emptyState` prop here; the empty case is handled inline.
  */
 export type LibraryCardProps = LibraryCardBaseProps &
-  ({ mode: "library" } | { mode: "project"; onNew: () => void; isCreating: boolean; form: ReactNode });
+  (
+    | { mode: "library"; emptyState: ReactNode }
+    | { mode: "project"; onNew: () => void; isCreating: boolean; form: ReactNode }
+  );
 
 type HeroTab = "overview" | "lyrics";
 
@@ -103,7 +110,7 @@ function ArtistBadge({ artist, fallbackName }: { artist: ArtistProfile | null; f
 }
 
 export function LibraryCard(props: LibraryCardProps) {
-  const { items, artistProfiles, selectedId, onSelect, onDelete, headerSlot, emptyState } = props;
+  const { items, artistProfiles, selectedId, onSelect, onDelete, headerSlot } = props;
   const project = props.mode === "project" ? props : null;
   const player = usePlayer();
   const [tab, setTab] = useState<HeroTab>("overview");
@@ -184,10 +191,16 @@ export function LibraryCard(props: LibraryCardProps) {
     );
   }
 
-  if (items.length === 0) {
+  // Only "library" mode swaps the whole card for a centered empty state —
+  // there's genuinely nothing structural to preserve when the entire app
+  // has no tracks anywhere. A project with zero tracks still has a real
+  // hero and toolbar to show; that empty case is handled inline below so
+  // the toolbar (search, "+ New track") doesn't disappear along with the
+  // list content.
+  if (props.mode === "library" && items.length === 0) {
     return (
       <GlassPanel radius="panel" className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-8">
-        {emptyState}
+        {props.emptyState}
       </GlassPanel>
     );
   }
@@ -274,7 +287,9 @@ export function LibraryCard(props: LibraryCardProps) {
                     </div>
                   </>
                 ) : (
-                  <p className="text-sm text-ink-muted">Pick a track below to play it.</p>
+                  <p className="text-sm text-ink-muted">
+                    {items.length === 0 ? "No tracks yet — use “+ New track” below to make one." : "Pick a track below to play it."}
+                  </p>
                 )}
               </div>
             </>
@@ -297,55 +312,68 @@ export function LibraryCard(props: LibraryCardProps) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div
-              className={`kwesi-glass flex h-9 items-center rounded-chip transition-all duration-300 ease-smooth ${
-                searchOpen ? "w-64 px-1" : "w-9"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => (searchOpen ? clearSearch() : setSearchOpen(true))}
-                aria-label={searchOpen ? "Close search" : "Search tracks"}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:text-ink"
-              >
-                {searchOpen ? <CloseIcon width={15} height={15} /> : <SearchIcon width={16} height={16} />}
-              </button>
-              <input
-                ref={searchInputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") clearSearch();
-                }}
-                placeholder="Track name, lyrics, or prompt"
-                aria-label="Search tracks"
-                className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-muted/70 ${
-                  searchOpen ? "px-1 opacity-100" : "w-0 px-0 opacity-0"
+            {items.length > 0 && (
+              <div
+                className={`kwesi-glass flex h-9 items-center rounded-chip transition-all duration-300 ease-smooth ${
+                  searchOpen ? "w-64 px-1" : "w-9"
                 }`}
-                tabIndex={searchOpen ? 0 : -1}
-              />
-              {searchOpen && query && (
+              >
                 <button
                   type="button"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear search"
-                  className="mr-1 rounded-full px-1.5 text-[10px] uppercase tracking-wide text-ink-muted hover:text-ink"
+                  onClick={() => (searchOpen ? clearSearch() : setSearchOpen(true))}
+                  aria-label={searchOpen ? "Close search" : "Search tracks"}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:text-ink"
                 >
-                  Clear
+                  {searchOpen ? <CloseIcon width={15} height={15} /> : <SearchIcon width={16} height={16} />}
                 </button>
-              )}
-            </div>
+                <input
+                  ref={searchInputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") clearSearch();
+                  }}
+                  placeholder="Track name, lyrics, or prompt"
+                  aria-label="Search tracks"
+                  className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-muted/70 ${
+                    searchOpen ? "px-1 opacity-100" : "w-0 px-0 opacity-0"
+                  }`}
+                  tabIndex={searchOpen ? 0 : -1}
+                />
+                {searchOpen && query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear search"
+                    className="mr-1 rounded-full px-1.5 text-[10px] uppercase tracking-wide text-ink-muted hover:text-ink"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
             {project && (
               <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={project.onNew}>
-                + New
+                + New track
               </PillButton>
             )}
           </div>
         </div>
 
         <ul className="kwesi-scroll-inset flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
-          {visibleItems.length === 0 && (
-            <li className="px-3 py-6 text-center text-xs text-ink-muted">No tracks match “{query}”.</li>
+          {items.length === 0 ? (
+            <li className="flex flex-1 flex-col items-center justify-center gap-3 px-3 py-10 text-center">
+              <p className="text-xs text-ink-muted">Nothing generated in this project yet.</p>
+              {project && (
+                <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={project.onNew}>
+                  Create your first track
+                </PillButton>
+              )}
+            </li>
+          ) : (
+            visibleItems.length === 0 && (
+              <li className="px-3 py-6 text-center text-xs text-ink-muted">No tracks match “{query}”.</li>
+            )
           )}
           {visibleItems.map((item) => {
             const generation = item.generation;
