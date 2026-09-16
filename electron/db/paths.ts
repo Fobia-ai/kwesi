@@ -7,6 +7,7 @@ let venvsRoot = "";
 let logsRoot = "";
 let trainedModelsRoot = "";
 let artistAvatarsRoot = "";
+let exportsRoot = "";
 
 export function initPaths(kwesiWorkspacesDir: string) {
   workspacesRoot = kwesiWorkspacesDir;
@@ -39,6 +40,14 @@ export function initArtistAvatarsPaths(kwesiArtistAvatarsDirEnv: string) {
   ensureDir(artistAvatarsRoot);
 }
 
+// Same value already passed directly to registerAudioIpcHandlers (the
+// default location its save dialog opens to) -- also kept here, alongside
+// every other root dir, so electron/reset.ts can wipe it without a separate
+// plumbing convention just for that one screen.
+export function initExportsPaths(kwesiExportsDir: string) {
+  exportsRoot = kwesiExportsDir;
+}
+
 export function modelsRootDir(): string {
   return modelsRoot;
 }
@@ -57,6 +66,14 @@ export function logsRootDir(): string {
 
 export function artistAvatarsRootDir(): string {
   return artistAvatarsRoot;
+}
+
+export function trainedModelsRootDir(): string {
+  return trainedModelsRoot;
+}
+
+export function exportsRootDir(): string {
+  return exportsRoot;
 }
 
 export function artistAvatarPath(profileId: string, ext: string): string {

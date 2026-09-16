@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { resolveKwesiEnv } from "./kwesiEnv.js";
 import { openDatabase } from "./db/database.js";
+import * as repo from "./db/repositories.js";
 import {
   initPaths,
   initModelsPaths,
@@ -11,6 +12,7 @@ import {
   initLogsPaths,
   initTrainedModelsPaths,
   initArtistAvatarsPaths,
+  initExportsPaths,
 } from "./db/paths.js";
 import { registerDbIpcHandlers } from "./ipc/db.js";
 import { registerModelsIpcHandlers } from "./ipc/models.js";
@@ -22,6 +24,7 @@ import { registerSecurityIpcHandlers } from "./ipc/security.js";
 import { registerProfileIpcHandlers } from "./ipc/profile.js";
 import { registerArtistProfilesIpcHandlers } from "./ipc/artistProfiles.js";
 import { registerCrashLogIpcHandlers } from "./ipc/crashLog.js";
+import { registerSettingsIpcHandlers } from "./ipc/settings.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
 import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
@@ -49,6 +52,10 @@ initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
 initArtistAvatarsPaths(kwesiEnv.KWESI_ARTIST_AVATARS_DIR);
+// Settings > System lets the user override where Export saves default to
+// (electron/ipc/settings.ts); that override, once set, wins over the
+// KWESI_EXPORTS_DIR env default on every subsequent launch.
+initExportsPaths(repo.getSetting("exportsDir") || kwesiEnv.KWESI_EXPORTS_DIR);
 
 // Phase 13: local-only crash/error log (KWESI_LOGS_DIR/crashes.log) -- see
 // electron/logging/crashLog.ts. Installed as early as possible so nothing
@@ -58,13 +65,14 @@ installMainProcessCrashLogging();
 registerDbIpcHandlers();
 registerModelsIpcHandlers();
 registerGenerationIpcHandlers();
-registerAudioIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, app.getPath("downloads"));
+registerAudioIpcHandlers(app.getPath("downloads"));
 registerHardwareIpcHandlers();
 registerTrainingIpcHandlers();
 registerSecurityIpcHandlers(kwesiEnv.KWESI_LOCK_IDLE_TIMEOUT_MINUTES);
 registerProfileIpcHandlers();
 registerArtistProfilesIpcHandlers();
 registerCrashLogIpcHandlers();
+registerSettingsIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR);
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"

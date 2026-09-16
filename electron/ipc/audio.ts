@@ -1,7 +1,7 @@
 import { ipcMain, dialog, shell, BrowserWindow } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { workspacesRootDir } from "../db/paths.js";
+import { workspacesRootDir, exportsRootDir } from "../db/paths.js";
 
 // Every path this channel touches is checked against the workspaces root
 // before any filesystem call — output_files on a generation row are always
@@ -83,22 +83,22 @@ export interface AudioSaveResult {
 /**
  * "Export" and "Download" are the same real mechanism — copy the generated
  * file to a user-chosen destination via the native save dialog — differing
- * only in the folder the dialog opens to (KWESI_EXPORTS_DIR vs. the OS
- * Downloads folder). A local desktop app has no meaningful distinction
- * between "export a copy" and "download a copy" once there's no server in
- * the loop, so this deliberately isn't two code paths.
+ * only in the folder the dialog opens to (the Settings > System export
+ * location, read live via exportsRootDir() so a change there applies
+ * immediately, vs. the OS Downloads folder). A local desktop app has no
+ * meaningful distinction between "export a copy" and "download a copy" once
+ * there's no server in the loop, so this deliberately isn't two code paths.
  */
 async function saveAudioCopy(
   filePath: string,
   suggestedName: string,
   kind: "export" | "download",
-  exportsDir: string,
   downloadsDir: string,
 ): Promise<AudioSaveResult> {
   if (!isWithinWorkspaces(filePath)) return { ok: false, reason: "Path outside workspaces directory" };
   if (!fs.existsSync(filePath)) return { ok: false, reason: "Source file not found" };
 
-  const defaultDir = kind === "download" ? downloadsDir : exportsDir;
+  const defaultDir = kind === "download" ? downloadsDir : exportsRootDir();
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
   const result = win
     ? await dialog.showSaveDialog(win, {
@@ -123,13 +123,13 @@ function revealInFolder(filePath: string): { ok: boolean } {
   return { ok: true };
 }
 
-export function registerAudioIpcHandlers(exportsDir: string, downloadsDir: string) {
+export function registerAudioIpcHandlers(downloadsDir: string) {
   ipcMain.handle("kwesi:audio:stat", (_e, filePath: string) => statAudioFile(filePath));
   ipcMain.handle("kwesi:audio:read", (_e, filePath: string) => readAudioFile(filePath));
   ipcMain.handle(
     "kwesi:audio:save",
     (_e, filePath: string, suggestedName: string, kind: "export" | "download") =>
-      saveAudioCopy(filePath, suggestedName, kind, exportsDir, downloadsDir),
+      saveAudioCopy(filePath, suggestedName, kind, downloadsDir),
   );
   ipcMain.handle("kwesi:audio:reveal", (_e, filePath: string) => revealInFolder(filePath));
 }

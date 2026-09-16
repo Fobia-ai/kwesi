@@ -164,6 +164,12 @@ declare global {
           extra?: Record<string, unknown>,
         ) => Promise<void>;
       };
+      settings: {
+        reset: (categories: string[]) => Promise<{ ok: boolean; reason?: string }>;
+        getExportsDir: () => Promise<string>;
+        pickExportsDir: () => Promise<{ ok: boolean; path?: string }>;
+        resetExportsDir: () => Promise<{ ok: boolean; path?: string }>;
+      };
     };
   }
 }

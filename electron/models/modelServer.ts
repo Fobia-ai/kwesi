@@ -130,6 +130,11 @@ export function getServerStatus(modelId: string): ServerStatusValue {
   return serverStatus.get(modelId) ?? "stopped";
 }
 
+/** Settings > Reset checks this before wiping anything -- see electron/reset.ts. */
+export function hasActiveGenerationJobs(): boolean {
+  return activeGenerationJobs.size > 0;
+}
+
 // --- Phase 5: real MusicGen server lifecycle --------------------------------
 // Mirrors src/data/manifests.ts's MUSICGEN.server block rather than importing
 // it directly — electron/tsconfig.json's rootDir is scoped to electron/, so

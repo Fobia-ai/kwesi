@@ -120,6 +120,12 @@ contextBridge.exposeInMainWorld("kwesi", {
     removeAvatar: (id: string) => ipcRenderer.invoke("kwesi:artistProfiles:removeAvatar", id),
     readAvatar: (avatarPath: string) => ipcRenderer.invoke("kwesi:artistProfiles:readAvatar", avatarPath),
   },
+  settings: {
+    reset: (categories: string[]) => ipcRenderer.invoke("kwesi:settings:reset", categories),
+    getExportsDir: () => ipcRenderer.invoke("kwesi:settings:getExportsDir"),
+    pickExportsDir: () => ipcRenderer.invoke("kwesi:settings:pickExportsDir"),
+    resetExportsDir: () => ipcRenderer.invoke("kwesi:settings:resetExportsDir"),
+  },
   crashLog: {
     report: (
       kind: "window-error" | "unhandledrejection",

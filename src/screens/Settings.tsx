@@ -9,6 +9,7 @@ import {
   LockIcon,
   ProfileIcon,
   SystemIcon,
+  TrashIcon,
 } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
@@ -16,6 +17,7 @@ import { kwesiSecurity } from "../lib/security";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiModels } from "../lib/models";
+import { kwesiSettings, type ResetCategory } from "../lib/settings";
 import { formatBytes } from "../lib/format";
 import { GENRES } from "../data/genres";
 import { LANGUAGES } from "../data/languages";
@@ -33,6 +35,7 @@ const SECTIONS = [
   { tab: "Artists", blurb: "Personas tracks are attributed to." },
   { tab: "System", blurb: "Hardware, storage, and where files live." },
   { tab: "Security", blurb: "Passcode and auto-lock." },
+  { tab: "Reset", blurb: "Wipe downloaded models, your music, and more." },
   { tab: "About", blurb: "The open-source models Kwesi builds on." },
 ] as const;
 
@@ -44,6 +47,7 @@ const TAB_ICONS: Record<Tab, ReactNode> = {
   Artists: <HeadphonesIcon width={17} height={17} />,
   System: <SystemIcon width={17} height={17} />,
   Security: <LockIcon width={17} height={17} />,
+  Reset: <TrashIcon width={17} height={17} />,
   About: <InfoIcon width={17} height={17} />,
 };
 
@@ -444,11 +448,14 @@ function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () =
   );
 }
 
+// KWESI_EXPORTS_DIR is deliberately absent here — it's shown as its own
+// live, editable row below instead (Settings > System can override it, so
+// the static value getEnv() reports would go stale the moment someone
+// changes it).
 const ENV_LABELS: Record<string, string> = {
   KWESI_HOME: "App data",
   KWESI_MODELS_DIR: "Models",
   KWESI_WORKSPACES_DIR: "Workspaces",
-  KWESI_EXPORTS_DIR: "Saved copies",
   KWESI_TRAINED_MODELS_DIR: "Trained models",
   KWESI_LOGS_DIR: "Logs",
 };
@@ -471,12 +478,33 @@ function SystemTab() {
   const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
   const [freeBytes, setFreeBytes] = useState<number | null | undefined>(undefined);
   const [env, setEnv] = useState<Record<string, string | number> | null>(null);
+  const [exportsDir, setExportsDir] = useState<string | null>(null);
+  const [exportsBusy, setExportsBusy] = useState(false);
+
+  function refreshExportsDir() {
+    kwesiSettings.getExportsDir().then(setExportsDir);
+  }
 
   useEffect(() => {
     kwesiHardware.gpuVram().then(setGpu);
     kwesiModels.diskFreeBytes().then(setFreeBytes);
     if (window.kwesi) window.kwesi.getEnv().then(setEnv);
+    refreshExportsDir();
   }, []);
+
+  async function handleChangeExportsDir() {
+    setExportsBusy(true);
+    const result = await kwesiSettings.pickExportsDir();
+    setExportsBusy(false);
+    if (result.ok) refreshExportsDir();
+  }
+
+  async function handleResetExportsDir() {
+    setExportsBusy(true);
+    await kwesiSettings.resetExportsDir();
+    setExportsBusy(false);
+    refreshExportsDir();
+  }
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -499,6 +527,30 @@ function SystemTab() {
           label="Free space for models"
           value={freeBytes === undefined ? "Checking…" : freeBytes === null ? "Unknown" : formatBytes(freeBytes)}
         />
+        <div className="flex items-baseline justify-between gap-4 border-b border-ink/[0.07] py-2.5 last:border-b-0">
+          <span className="shrink-0 text-xs text-ink-muted">Export location</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-right text-sm" title={exportsDir ?? undefined}>
+              {exportsDir ?? "Checking…"}
+            </span>
+            <button
+              type="button"
+              disabled={exportsBusy}
+              onClick={handleChangeExportsDir}
+              className="shrink-0 text-xs text-accent hover:underline disabled:opacity-50"
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              disabled={exportsBusy}
+              onClick={handleResetExportsDir}
+              className="shrink-0 text-xs text-ink-muted hover:text-ink disabled:opacity-50"
+            >
+              Use default
+            </button>
+          </div>
+        </div>
         {env &&
           Object.entries(ENV_LABELS).map(([key, label]) =>
             typeof env[key] === "string" ? <SystemRow key={key} label={label} value={String(env[key])} /> : null,
@@ -617,6 +669,188 @@ function SecurityTab() {
   );
 }
 
+const RESET_CATEGORY_OPTIONS: { id: ResetCategory; label: string; description: string }[] = [
+  {
+    id: "models",
+    label: "Downloaded Models",
+    description: "Every installed checkpoint. Re-download any of them anytime from Model Manager.",
+  },
+  {
+    id: "music",
+    label: "My Music",
+    description: "Every workspace, project, and generation — your entire library.",
+  },
+  {
+    id: "trainedModels",
+    label: "Trained Models",
+    description: "Checkpoints produced by your own training runs.",
+  },
+  {
+    id: "artistProfiles",
+    label: "Artist Profiles",
+    description: "Every artist persona, including its photo.",
+  },
+  {
+    id: "exports",
+    label: "Saved Exports",
+    description: "Copies saved to this app's default export location in your Music folder.",
+  },
+];
+
+/** A lighter-weight passcode check than LockScreen's full-screen overlay — one confirm step before a destructive action. */
+function ConfirmPasscodeModal({ onClose, onConfirmed }: { onClose: () => void; onConfirmed: () => void }) {
+  const [passcode, setPasscode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function handleSubmit() {
+    if (!passcode) return;
+    setChecking(true);
+    setError(null);
+    const ok = await kwesiSecurity.verifyPasscode(passcode);
+    setChecking(false);
+    if (!ok) {
+      setError("That passcode isn't right.");
+      return;
+    }
+    onConfirmed();
+  }
+
+  return (
+    <Modal title="Confirm your passcode" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-ink-muted">Enter your passcode to continue with this reset.</p>
+        <label className="flex flex-col gap-1.5 text-sm">
+          Passcode
+          <input
+            autoFocus
+            type="password"
+            value={passcode}
+            onChange={(e) => {
+              setPasscode(e.target.value);
+              setError(null);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+          />
+        </label>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="mt-2 flex justify-end gap-2">
+          <PillButton variant="ghost" onClick={onClose}>
+            Cancel
+          </PillButton>
+          <PillButton disabled={!passcode || checking} onClick={handleSubmit}>
+            {checking ? "Checking…" : "Confirm"}
+          </PillButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ResetTab() {
+  const [checked, setChecked] = useState<Set<ResetCategory>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [needsPasscode, setNeedsPasscode] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  function toggle(id: ResetCategory) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runClean() {
+    setBusy(true);
+    setNeedsPasscode(false);
+    const categories = Array.from(checked);
+    const result = await kwesiSettings.reset(categories);
+    setBusy(false);
+    setChecked(new Set());
+    setStatus(result.ok ? "Cleaned." : (result.reason ?? "Something went wrong."));
+    setTimeout(() => setStatus(null), 4000);
+  }
+
+  async function handleConfirmClean() {
+    setConfirming(false);
+    // A passcode being set gates every reset the same way it gates the app
+    // itself — even though the user is already in a locked/unlocked
+    // session, this is a second, deliberate confirmation for a permanent,
+    // undoable action rather than reusing the session's existing unlock.
+    const hasPasscode = await kwesiSecurity.hasPasscode();
+    if (hasPasscode) {
+      setNeedsPasscode(true);
+      return;
+    }
+    await runClean();
+  }
+
+  const selectedLabels = RESET_CATEGORY_OPTIONS.filter((o) => checked.has(o.id)).map((o) => o.label);
+
+  return (
+    <div className="flex max-w-lg flex-col gap-4">
+      <p className="text-xs text-ink-muted">
+        Check what you want gone, then clean it up. This only removes local data — nothing is undoable.
+      </p>
+
+      <ul className="flex flex-col gap-1.5">
+        {RESET_CATEGORY_OPTIONS.map((option) => (
+          <li key={option.id}>
+            <label className="flex cursor-pointer items-start gap-3 rounded-[10px] bg-ink/[0.03] px-3 py-2.5 transition-colors duration-150 hover:bg-ink/[0.05]">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0"
+                checked={checked.has(option.id)}
+                onChange={() => toggle(option.id)}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm">{option.label}</span>
+                <span className="block text-xs text-ink-muted">{option.description}</span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex items-center gap-3">
+        <PillButton
+          disabled={checked.size === 0 || busy}
+          onClick={() => setConfirming(true)}
+          className="!px-4 !py-1.5 text-xs"
+        >
+          {busy ? "Cleaning…" : "Clean"}
+        </PillButton>
+        {status && <span className="text-xs text-ink-muted">{status}</span>}
+      </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title={`Clean ${selectedLabels.length} ${selectedLabels.length === 1 ? "item" : "items"}?`}
+          description={
+            <div className="flex flex-col gap-2">
+              <p>This permanently deletes, from this device only:</p>
+              <ul className="list-inside list-disc">
+                {selectedLabels.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            </div>
+          }
+          confirmLabel="Clean"
+          onCancel={() => setConfirming(false)}
+          onConfirm={handleConfirmClean}
+        />
+      )}
+
+      {needsPasscode && <ConfirmPasscodeModal onClose={() => setNeedsPasscode(false)} onConfirmed={runClean} />}
+    </div>
+  );
+}
+
 export function SettingsScreen() {
   const location = useLocation();
   // Deep-linkable (the sidebar's artist avatars open /settings?tab=Artists).
@@ -660,6 +894,7 @@ export function SettingsScreen() {
             {tab === "Artists" && <ArtistsTab />}
             {tab === "System" && <SystemTab />}
             {tab === "Security" && <SecurityTab />}
+            {tab === "Reset" && <ResetTab />}
             {tab === "About" && (
               <div className="flex max-w-2xl flex-col">
                 {CATALOG.map((entry) => (
