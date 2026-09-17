@@ -16,6 +16,7 @@ import {
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
 import { AbcScoreViewer } from "../midi/AbcScoreViewer";
+import { AbcFromMidiViewer } from "../midi/AbcFromMidiViewer";
 import { TrackControls } from "./TrackControls";
 import { HeroArtwork } from "./HeroArtwork";
 import {
@@ -90,7 +91,7 @@ export type LibraryCardProps = LibraryCardBaseProps &
       }
   );
 
-type HeroTab = "overview" | "lyrics";
+type HeroTab = "overview" | "lyrics" | "midi" | "abc";
 
 function playerTrackFor(item: LibraryItem, artist: ArtistProfile | null): PlayerTrack | null {
   if (item.generation.status !== "done") return null;
@@ -147,6 +148,26 @@ export function LibraryCard(props: LibraryCardProps) {
   const selected = items.find((i) => i.generation.id === selectedId) ?? null;
   const selectedArtist = selected ? artistFor(selected.generation) : null;
   const selectedTrack = selected ? playerTrackFor(selected, selectedArtist) : null;
+
+  // Notation tabs (MIDI / ABC) only appear alongside Overview/Lyrics when
+  // the selected track's output actually has that file -- a real .abc
+  // (YuE2) or a real .mid (MuseCoco, Museformer, converted to ABC on the
+  // fly since those never produce a native score file).
+  const selectedFiles = selected ? parseOutputFiles(selected.generation.output_files) : [];
+  const selectedMidiFile = findMidiFile(selectedFiles);
+  const selectedAbcFile = findAbcFile(selectedFiles);
+  const hasMidiTab = Boolean(selectedMidiFile);
+  const hasAbcTab = Boolean(selectedAbcFile) || Boolean(selectedMidiFile);
+  const heroTabs: HeroTab[] = [
+    "overview",
+    "lyrics",
+    ...(hasMidiTab ? (["midi"] as const) : []),
+    ...(hasAbcTab ? (["abc"] as const) : []),
+  ];
+  // Falls back to "overview" rather than rendering blank content when the
+  // previously-active tab doesn't apply to a newly selected track (e.g.
+  // "midi" was open, then a track with no MIDI output got selected).
+  const renderTab: HeroTab = heroTabs.includes(tab) ? tab : "overview";
 
   // Play order = list order, skipping anything with no audio to play.
   const queue = useMemo(
@@ -240,24 +261,40 @@ export function LibraryCard(props: LibraryCardProps) {
           <div className="relative z-10 flex shrink-0 items-start justify-between gap-3 px-5 pt-4">
             <div className="min-w-0 flex-1">{headerSlot}</div>
             <div className="flex shrink-0 gap-6">
-              {(["overview", "lyrics"] as HeroTab[]).map((t) => (
+              {heroTabs.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
                   className={`relative pb-1 text-sm capitalize transition-colors duration-150 ${
-                    tab === t ? "text-ink" : "text-ink-muted hover:text-ink"
+                    renderTab === t ? "text-ink" : "text-ink-muted hover:text-ink"
                   }`}
                 >
-                  {t}
-                  {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
+                  {t === "abc" ? "ABC" : t}
+                  {renderTab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
                 </button>
               ))}
             </div>
             <div className="hidden min-w-0 flex-1 lg:block" />
           </div>
 
-          {tab === "overview" ? (
+          {renderTab === "midi" ? (
+            <div className="kwesi-scroll-inset min-h-0 flex-1 overflow-y-auto p-6">
+              <PianoRollViewer filePath={selectedMidiFile ?? ""} viewHeight={420} bare />
+            </div>
+          ) : renderTab === "abc" ? (
+            <div className="kwesi-scroll-inset min-h-0 flex-1 overflow-y-auto p-6">
+              {selectedAbcFile ? (
+                <AbcScoreViewer filePath={selectedAbcFile} bare />
+              ) : (
+                <AbcFromMidiViewer
+                  filePath={selectedMidiFile ?? ""}
+                  title={selected ? generationTitle(selected.generation) : undefined}
+                  bare
+                />
+              )}
+            </div>
+          ) : renderTab === "overview" ? (
             <>
               <HeroArtwork className="absolute bottom-0 right-6 hidden h-[78%] lg:block" />
               <div className="relative z-10 flex min-h-0 flex-1 flex-col px-6 pb-5 pt-4 lg:max-w-[68%]">
@@ -537,11 +574,7 @@ export function LibraryCard(props: LibraryCardProps) {
           subtitle="Notation"
           onClose={() => setMidiSheetItem(null)}
         >
-          <PianoRollViewer
-            filePath={findMidiFile(parseOutputFiles(midiSheetItem.generation.output_files)) ?? ""}
-            viewHeight={480}
-            bare
-          />
+          <NotationSheetContent item={midiSheetItem} />
         </BottomSheet>
       )}
     </GlassPanel>
@@ -652,6 +685,39 @@ function RowAccordion({ expanded, item }: { expanded: boolean; item: LibraryItem
   );
 }
 
+// The bottom sheet is only ever opened for MIDI-only tracks (see
+// handleRowClick), so there's never a native score.abc here -- the ABC tab
+// always comes from converting the MIDI file (see lib/midiToAbc.ts).
+function NotationSheetContent({ item }: { item: LibraryItem }) {
+  const [sheetTab, setSheetTab] = useState<"midi" | "abc">("midi");
+  const midiFile = findMidiFile(parseOutputFiles(item.generation.output_files)) ?? "";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex gap-6">
+        {(["midi", "abc"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setSheetTab(t)}
+            className={`relative pb-1 text-sm capitalize transition-colors duration-150 ${
+              sheetTab === t ? "text-ink" : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            {t === "abc" ? "ABC" : t}
+            {sheetTab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
+          </button>
+        ))}
+      </div>
+      {sheetTab === "midi" ? (
+        <PianoRollViewer filePath={midiFile} viewHeight={480} bare />
+      ) : (
+        <AbcFromMidiViewer filePath={midiFile} title={generationTitle(item.generation)} bare />
+      )}
+    </div>
+  );
+}
+
 function RowDetails({ item }: { item: LibraryItem }) {
   const manifest = getManifest(item.modelId);
   const prompt = generationPrompt(item.generation);
@@ -675,7 +741,7 @@ function RowDetails({ item }: { item: LibraryItem }) {
       {abcFile && (
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Score (ABC notation)</p>
-          <AbcScoreViewer filePath={abcFile} />
+          <AbcScoreViewer filePath={abcFile} bare />
         </div>
       )}
       <ParamsGrid generation={item.generation} manifest={manifest} />

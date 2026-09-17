@@ -29,6 +29,7 @@
     "package:win": "npm run prepackage && electron-builder --win --publish=never"
   },
   "dependencies": {
+    "abcjs": "^6.7.0",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "electron-updater": "^6.8.9",
