@@ -3,6 +3,7 @@ import { GlassPanel } from "../ui/GlassPanel";
 import { PillButton } from "../ui/PillButton";
 import { AvatarImage } from "../ui/AvatarImage";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { BottomSheet } from "../ui/BottomSheet";
 import {
   SearchIcon,
   CloseIcon,
@@ -10,7 +11,6 @@ import {
   HeadphonesIcon,
   DownloadIcon,
   PianoRollIcon,
-  ChevronDownIcon,
   RetryIcon,
 } from "../ui/icons";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
@@ -136,6 +136,7 @@ export function LibraryCard(props: LibraryCardProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [midiSheetItem, setMidiSheetItem] = useState<LibraryItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LibraryItem | null>(null);
   const [saveStatus, setSaveStatus] = useState<{ id: string; text: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -181,12 +182,12 @@ export function LibraryCard(props: LibraryCardProps) {
       void player.play(track);
       return;
     }
-    // No audio to play (MuseCoco/Museformer's MIDI-only output) — the row
-    // itself is the accordion for these: click expands it in place to show
-    // the notation, since there's nothing else a click on this row could do.
+    // No audio to play (MuseCoco/Museformer's MIDI-only output) — opens the
+    // notation in a bottom sheet instead, since there's nothing else a
+    // click on this row could do and a real piano roll wants real width.
     const midiFile = findMidiFile(parseOutputFiles(item.generation.output_files));
     if (midiFile) {
-      setExpandedId((prev) => (prev === item.generation.id ? null : item.generation.id));
+      setMidiSheetItem(item);
     }
   }
 
@@ -471,11 +472,9 @@ export function LibraryCard(props: LibraryCardProps) {
                     {formatRelativeTime(generation.created_at)}
                   </span>
                   {midiOnly && (
-                    <ChevronDownIcon
-                      width={14}
-                      height={14}
-                      className={`shrink-0 text-ink-muted transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-                    />
+                    <span title="Click to view notation">
+                      <PianoRollIcon width={14} height={14} className="shrink-0 text-ink-muted" />
+                    </span>
                   )}
                   <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                     {retryable ? (
@@ -530,6 +529,19 @@ export function LibraryCard(props: LibraryCardProps) {
             await onDelete(item);
           }}
         />
+      )}
+
+      {midiSheetItem && (
+        <BottomSheet
+          title={generationTitle(midiSheetItem.generation)}
+          subtitle="Notation"
+          onClose={() => setMidiSheetItem(null)}
+        >
+          <PianoRollViewer
+            filePath={findMidiFile(parseOutputFiles(midiSheetItem.generation.output_files)) ?? ""}
+            viewHeight={480}
+          />
+        </BottomSheet>
       )}
     </GlassPanel>
   );
@@ -586,7 +598,7 @@ function HeroPlayback({
     return (
       <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-ink-muted">
         <PianoRollIcon width={16} height={16} className="shrink-0" />
-        <span>MIDI output ready — expand the track below to view the notation.</span>
+        <span>MIDI output ready — click the track below to view the notation.</span>
       </div>
     );
   }

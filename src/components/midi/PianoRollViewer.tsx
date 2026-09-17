@@ -21,9 +21,29 @@ const DEFAULT_VIEW_HEIGHT = 220;
 const MIN_ROW_HEIGHT = 3;
 const MAX_ROW_HEIGHT = 14;
 
-function noteColor(track: number): string {
-  const palette = ["rgb(var(--kwesi-accent))", "#8b8b8b", "#b0b0b0", "#6b6b6b"];
-  return palette[track % palette.length];
+// True for the 5 semitones that are a piano's black keys (C#, D#, F#, G#, A#)
+// — used only to shade their rows faintly, the same visual cue a real piano
+// roll editor gives so pitches read at a glance instead of needing the grid
+// lines alone to judge octave position.
+const BLACK_KEY_PITCH_CLASSES = new Set([1, 3, 6, 8, 10]);
+
+function isBlackKey(pitch: number): boolean {
+  return BLACK_KEY_PITCH_CLASSES.has(((pitch % 12) + 12) % 12);
+}
+
+// Colored by pitch class around the full hue wheel (12 semitones -> 12
+// evenly-spaced hues) rather than by track — the same convention piano-roll
+// editors like FL Studio/Synthesia use, so pitch relationships (which notes
+// share a key, octave doublings) are visible from color alone, not just
+// vertical position. Louder notes render a little brighter/more saturated
+// rather than just more opaque, which read as muddy on the darker rows.
+function noteColor(pitch: number, velocity: number): string {
+  const pitchClass = ((pitch % 12) + 12) % 12;
+  const hue = (pitchClass / 12) * 360;
+  const loudness = velocity / 127;
+  const saturation = 55 + loudness * 30;
+  const lightness = 48 + loudness * 14;
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
 function PianoRollSvg({ midi, viewHeight }: { midi: ParsedMidi; viewHeight: number }) {
@@ -57,9 +77,23 @@ function PianoRollSvg({ midi, viewHeight }: { midi: ParsedMidi; viewHeight: numb
     return height - (pitch - minPitch + 1) * rowHeight;
   }
 
+  const pitches = useMemo(() => Array.from({ length: pitchCount }, (_, i) => minPitch + i), [minPitch, pitchCount]);
+
   return (
     <div className="overflow-x-auto overflow-y-hidden rounded-[10px] bg-ink/[0.03]">
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Piano roll">
+        {pitches
+          .filter((pitch) => isBlackKey(pitch))
+          .map((pitch) => (
+            <rect
+              key={pitch}
+              x={0}
+              y={y(pitch)}
+              width={width}
+              height={rowHeight}
+              className="fill-ink/[0.035]"
+            />
+          ))}
         {Array.from({ length: Math.ceil(beats) + 1 }, (_, i) => (
           <line
             key={i}
@@ -80,8 +114,8 @@ function PianoRollSvg({ midi, viewHeight }: { midi: ParsedMidi; viewHeight: numb
             width={Math.max(1.5, x(note.endTick) - x(note.startTick))}
             height={Math.max(2, rowHeight - 1)}
             rx={1}
-            fill={noteColor(note.track)}
-            opacity={0.55 + (note.velocity / 127) * 0.45}
+            fill={noteColor(note.pitch, note.velocity)}
+            opacity={0.88}
           />
         ))}
       </svg>
