@@ -1,5 +1,10 @@
 const AUDIO_EXTENSIONS = [".wav", ".mp3", ".flac", ".ogg", ".aiff"];
 const MIDI_EXTENSIONS = [".mid", ".midi"];
+// YuE2's real symbolic output is ABC notation text, not a binary Standard
+// MIDI File (see src/data/manifests.ts's YUE2 entry) -- a separate
+// extension/finder rather than folding it into findMidiFile, since it's a
+// different format needing its own (text, not piano-roll) viewer.
+const ABC_EXTENSIONS = [".abc"];
 
 export function findAudioFile(files: string[]): string | undefined {
   return files.find((file) => AUDIO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)));
@@ -7,6 +12,10 @@ export function findAudioFile(files: string[]): string | undefined {
 
 export function findMidiFile(files: string[]): string | undefined {
   return files.find((file) => MIDI_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)));
+}
+
+export function findAbcFile(files: string[]): string | undefined {
+  return files.find((file) => ABC_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)));
 }
 
 export function parseOutputFiles(json: string | null | undefined): string[] {

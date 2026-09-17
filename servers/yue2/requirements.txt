@@ -1,0 +1,9 @@
+# The yue2 venv is built by installing the vendored YuE2 repo itself
+# (`pip install .` from servers/yue2/vendor — see README.md), which pulls in
+# torch/transformers but not a web framework, since the real upstream repo
+# is a plain library/CLI, not a server. This is only what server.py (this
+# app's own FastAPI wrapper) additionally needs on top of that -- same
+# unpinned convention servers/musicgen/requirements.txt already uses for
+# these three packages.
+fastapi
+uvicorn[standard]

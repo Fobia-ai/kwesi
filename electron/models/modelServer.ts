@@ -16,10 +16,12 @@
 // FastAPI wrapper following MusicGen's shape exactly, since every one of
 // RAVE's nine pretrained checkpoints is a self-contained TorchScript
 // export needing nothing but torch.jit.load(), not a bigger framework to
-// wrap. `yue2` is still untouched and walks the Phase 4 mock path below;
-// its real generation was proven standalone (servers/yue2/README.md) but
-// deliberately not wired into modelServer.ts yet, so don't assume its
-// model_id is in REAL_SERVER_PORTS just because a README exists for it.
+// wrap. `yue2` is wired in too now, a hand-written FastAPI wrapper around
+// YuE2Pipeline (servers/yue2/server.py) following MuseCoco/MusicGen's
+// shape, after its real generation was first proven standalone
+// (servers/yue2/README.md) -- the mock path below is now dead code for
+// every real model, kept only as the fallback for a model_id that never
+// gets a real README/server of its own.
 import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -146,6 +148,7 @@ const MUSECOCO_MODEL_ID = "musecoco";
 const MUSEFORMER_MODEL_ID = "museformer";
 const ACE_STEP_MODEL_ID = "ace-step-1.5";
 const RAVE_MODEL_ID = "rave";
+const YUE2_MODEL_ID = "yue2";
 const REAL_SERVER_ENTRYPOINT = "server.py"; // same bare filename under servers/<model_id>/ for every real model *except* ace-step-1.5 (see spawnAceStepServer)
 
 // First port in each model's manifest portRange (src/data/manifests.ts) —
@@ -169,6 +172,9 @@ const REAL_SERVER_PORTS: Record<string, number> = {
   [MUSEFORMER_MODEL_ID]: 17630,
   [ACE_STEP_MODEL_ID]: 17640,
   [RAVE_MODEL_ID]: 17680,
+  // Matches the manifest's own server.portRange ([17660, 17679] --
+  // src/data/manifests.ts's YUE2 entry).
+  [YUE2_MODEL_ID]: 17660,
 };
 
 // ACE-Step ships its own real REST API server (acestep.api_server, cloned
@@ -587,6 +593,10 @@ async function runJob(
   }
   if (modelId === RAVE_MODEL_ID) {
     await runRealRaveJob(workspaceId, generation);
+    return;
+  }
+  if (modelId === YUE2_MODEL_ID) {
+    await runRealYue2Job(workspaceId, generation);
     return;
   }
   await runMockJob(workspaceId, modelId, generation);
@@ -1020,7 +1030,82 @@ async function runRealRaveJob(workspaceId: string, generation: repo.GenerationRo
   }
 }
 
-// --- Phase 4 mock generation (yue2 only, as of Phase 9) ----------------------
+// --- Real YuE2 generation -----------------------------------------------------
+// YuE2 ships no server of its own (unlike ACE-Step) -- servers/yue2/server.py
+// is a hand-written FastAPI wrapper around YuE2Pipeline, same shape as
+// MuseCoco/MusicGen's own wrappers. See servers/yue2/README.md for the real
+// standalone proof this is built from.
+
+/**
+ * YuE2 has no dedicated language parameter of its own -- its own docs put
+ * language directly in the free-text style/tags alongside genre,
+ * instruments, and vocal character (docs/generation.md: "Put genre,
+ * instruments, vocal character, language, and tempo in style"). Mirrors
+ * buildAceStepPrompt's exact pattern for the same reason: folding a
+ * separate app-level field into one real model field at generation time
+ * rather than inventing a second one the real API doesn't have.
+ */
+function buildYue2Style(inputParams: Record<string, unknown>): string {
+  const styleGenre = typeof inputParams.style_genre === "string" ? inputParams.style_genre.trim() : "";
+  const vocalLanguage = typeof inputParams.vocal_language === "string" ? inputParams.vocal_language.trim() : "";
+  return [styleGenre, vocalLanguage].filter((p) => p.length > 0).join(", ");
+}
+
+async function runRealYue2Job(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
+  const generationId = generation.id;
+  const projectId = generation.project_id;
+  const controller = beginGenerationJob(generationId, YUE2_MODEL_ID);
+
+  try {
+    const { port } = await ensureRealServerRunning(YUE2_MODEL_ID);
+
+    repo.updateGenerationStatus(generationId, "running");
+    broadcast({ type: "running", generationId, projectId, progressPct: 0 });
+
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const lyrics = typeof inputParams.lyrics === "string" ? inputParams.lyrics : "";
+    const style = buildYue2Style(inputParams);
+    const vaeDecoder =
+      typeof inputParams.vae_decoder === "string" && inputParams.vae_decoder ? inputParams.vae_decoder : "yue2-vae";
+
+    // Unlike MuseCoco/MusicGen's single output_path, YuE2's own
+    // save_artifacts(directory) writes several named files into a
+    // directory (audio.flac, score.abc, plus reproducibility artifacts
+    // this app's UI doesn't use) -- the server picks out which ones matter
+    // and returns their paths directly, rather than this app guessing
+    // filenames.
+    const dir = generationDir(workspaceId, projectId, generationId);
+    ensureDir(dir);
+
+    const res = await fetch(`http://127.0.0.1:${port}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // The real standalone proof measured ~35s of GPU compute for a single
+      // ~60s song (servers/yue2/README.md) -- generous headroom above that,
+      // matching MusicGen's own budget for a real audio-generation call.
+      signal: withTimeout(controller, 10 * 60 * 1000),
+      body: JSON.stringify({ style, lyrics, vae_decoder: vaeDecoder, output_dir: dir }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`yue2 server returned ${res.status}: ${text}`);
+    }
+
+    const data = (await res.json()) as { output_files: string[]; duration_ms: number };
+    repo.updateGenerationStatus(generationId, "done", {
+      outputFiles: data.output_files,
+      durationMs: data.duration_ms,
+    });
+    broadcast({ type: "done", generationId, projectId, outputFiles: data.output_files, durationMs: data.duration_ms });
+  } catch (err) {
+    finishFailedOrCancelled(generationId, projectId, err);
+  } finally {
+    activeGenerationJobs.delete(generationId);
+  }
+}
+
+// --- Phase 4 mock generation (every model_id not in REAL_SERVER_PORTS) ------
 
 const PROGRESS_STEPS = 5;
 // Small, fixed chance of a simulated failure so the error-handling UI has

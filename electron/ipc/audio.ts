@@ -36,6 +36,8 @@ function mimeTypeFor(filePath: string): string {
     case ".mid":
     case ".midi":
       return "audio/midi";
+    case ".abc":
+      return "text/plain";
     default:
       return "application/octet-stream";
   }

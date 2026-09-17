@@ -15,6 +15,7 @@ import {
 } from "../ui/icons";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
+import { AbcScoreViewer } from "../midi/AbcScoreViewer";
 import { TrackControls } from "./TrackControls";
 import { HeroArtwork } from "./HeroArtwork";
 import {
@@ -34,7 +35,7 @@ import type { ArtistProfile } from "../../lib/artistProfiles";
 import { kwesiGeneration, type GenerationProgressEvent } from "../../lib/generation";
 import { kwesiAudio } from "../../lib/audio";
 import { usePlayer, type PlayerTrack } from "../../lib/playerStore";
-import { findAudioFile, findMidiFile, parseOutputFiles, suggestedExportName } from "../../lib/audioFiles";
+import { findAudioFile, findMidiFile, findAbcFile, parseOutputFiles, suggestedExportName } from "../../lib/audioFiles";
 import { getManifest } from "../../data/manifests";
 
 export interface LibraryItem {
@@ -643,6 +644,7 @@ function RowDetails({ item }: { item: LibraryItem }) {
   const prompt = generationPrompt(item.generation);
   const files = parseOutputFiles(item.generation.output_files);
   const midiFile = findMidiFile(files);
+  const abcFile = findAbcFile(files);
   return (
     <div className="mb-2 flex flex-col gap-4 rounded-[12px] bg-ink/[0.03] px-4 py-4">
       {prompt && (
@@ -655,6 +657,12 @@ function RowDetails({ item }: { item: LibraryItem }) {
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Piano roll</p>
           <PianoRollViewer filePath={midiFile} />
+        </div>
+      )}
+      {abcFile && (
+        <div>
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Score (ABC notation)</p>
+          <AbcScoreViewer filePath={abcFile} />
         </div>
       )}
       <ParamsGrid generation={item.generation} manifest={manifest} />

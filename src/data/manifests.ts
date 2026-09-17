@@ -805,16 +805,28 @@ const YUE2: ModelManifest = {
       // (docs/generation.md: "Put genre, instruments, vocal character,
       // language, and tempo in style") fold language into the free-text
       // `style` field alongside genre, same shape as ACE-Step's
-      // genre_tags/instrument_tags folding into its prompt. This field is
-      // app-level only for now: YuE2 isn't wired into real generation yet
-      // (still runs the Phase 4 mock, electron/models/modelServer.ts), so
-      // there's nothing to fold it into server-side today -- once it is
-      // wired, mirror buildAceStepPrompt's pattern to merge this into
-      // style_genre's text rather than sending it as its own field.
+      // genre_tags/instrument_tags folding into its prompt. Folded into
+      // style_genre's text at generation time by buildYue2Style
+      // (electron/models/modelServer.ts), mirroring buildAceStepPrompt.
       helpText: "Pre-filled from the selected artist's primary language, by name — free text.",
     },
     { key: "reference_audio", type: "audio_upload", label: "Reference audio (cover/transcription, optional)", accept: "audio/*" },
-    { key: "max_seconds", type: "number", label: "Max duration cap (sec)", min: 10, max: 300, default: 60 },
+    {
+      key: "max_seconds",
+      type: "number",
+      label: "Max duration cap (sec)",
+      min: 10,
+      max: 300,
+      default: 60,
+      // Not wired into a real constraint: the real pipeline's length knob
+      // is a semantic-token budget (Sampling.max_tokens), and no
+      // tokens-per-second-of-audio rate is documented anywhere in the
+      // vendored repo or its docs -- inventing an unverified formula risked
+      // silently truncating real songs or wasting GPU time on a wrong
+      // guess. Left as an app-level field for a future phase to wire once
+      // that rate is empirically confirmed; real generations today run to
+      // the pipeline's own default budget instead.
+    },
     {
       key: "vae_decoder",
       type: "select",
@@ -831,13 +843,13 @@ const YUE2: ModelManifest = {
       kind: "audio",
       format: "flac",
       notes:
-        "Phase 8 (standalone, not yet wired into modelServer.ts — see servers/yue2/README.md): the real pipeline's own save_artifacts() writes audio.flac (24-bit, 48000Hz, stereo), not .wav — corrected from the v1 guess after a real generation run. This app's audio IPC already has a .flac mimeType case from Phase 6, so no new plumbing would be needed to play it.",
+        "Wired into modelServer.ts via a hand-written FastAPI wrapper (servers/yue2/server.py), same shape as MuseCoco/MusicGen's own — see servers/yue2/README.md for the original standalone proof this is built from. The real pipeline's own save_artifacts() writes audio.flac (24-bit, 48000Hz, stereo), not .wav. This app's audio IPC already has a .flac mimeType case from Phase 6, so no new plumbing was needed to play it.",
     },
     {
       kind: "midi",
       format: "abc",
       notes:
-        "Phase 8 correction: the real symbolic output is ABC notation text (score.abc — real staff notation with vocal/instrumental voices, verified against a real generation run), not a binary Standard MIDI File — there is no .mid byte output anywhere in the real pipeline and no ABC->MIDI conversion utility in the repo. This app's real PianoRollViewer (src/components/midi/PianoRollViewer.tsx) only parses real SMF .mid bytes, so it cannot render this as-is — the \"midi\" kind is kept here as the closest existing manifest slot/viewer placeholder rather than invented as a new output kind, but a real ABC-notation viewer (or a real ABC->MIDI conversion step) is unbuilt. See servers/yue2/README.md's 'What's not done' section.",
+        "The real symbolic output is ABC notation text (score.abc — real staff notation with vocal/instrumental voices), not a binary Standard MIDI File — there is no .mid byte output anywhere in the real pipeline and no ABC->MIDI conversion utility in the repo. Rendered as plain monospace text (src/components/midi/AbcScoreViewer.tsx) rather than through the real PianoRollViewer, which only parses SMF .mid bytes and cannot render ABC as-is — the \"midi\" kind is kept here as the closest existing manifest slot rather than inventing a new output kind. A real ABC-notation (staff) renderer would be a further improvement, not required for the score to be visible.",
     },
   ],
   server: { entrypoint: "server.py", venv: "yue2", portRange: [17660, 17679] },
