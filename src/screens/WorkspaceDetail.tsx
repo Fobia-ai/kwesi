@@ -297,6 +297,20 @@ function ProjectPane({
     }
   }
 
+  // A cancelled or failed track's own input_params (stored as JSON on the
+  // row already) is everything a retry needs — re-submits the exact same
+  // settings as a new generation rather than making the user rebuild the
+  // form from scratch.
+  function retryGeneration(item: LibraryItem) {
+    let values: Record<string, unknown>;
+    try {
+      values = JSON.parse(item.generation.input_params);
+    } catch {
+      return;
+    }
+    void submitGeneration(item.generation.checkpoint_variant, values);
+  }
+
   const items: LibraryItem[] = useMemo(
     () =>
       (generations ?? []).map((generation) => ({
@@ -327,6 +341,7 @@ function ProjectPane({
         />
       }
       onNew={() => setIsCreating(true)}
+      onRetry={retryGeneration}
       isCreating={isCreating}
       form={
         <NewTrackForm

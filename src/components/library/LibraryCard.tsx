@@ -3,7 +3,16 @@ import { GlassPanel } from "../ui/GlassPanel";
 import { PillButton } from "../ui/PillButton";
 import { AvatarImage } from "../ui/AvatarImage";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { SearchIcon, CloseIcon, MoreIcon, HeadphonesIcon, DownloadIcon, PianoRollIcon, ChevronDownIcon } from "../ui/icons";
+import {
+  SearchIcon,
+  CloseIcon,
+  MoreIcon,
+  HeadphonesIcon,
+  DownloadIcon,
+  PianoRollIcon,
+  ChevronDownIcon,
+  RetryIcon,
+} from "../ui/icons";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
 import { TrackControls } from "./TrackControls";
@@ -68,7 +77,16 @@ interface LibraryCardBaseProps {
 export type LibraryCardProps = LibraryCardBaseProps &
   (
     | { mode: "library"; emptyState: ReactNode }
-    | { mode: "project"; onNew: () => void; isCreating: boolean; form: ReactNode }
+    | {
+        mode: "project";
+        onNew: () => void;
+        isCreating: boolean;
+        form: ReactNode;
+        // Re-submits a cancelled/failed track with its original params —
+        // only meaningful in "project" mode, which has a project to submit
+        // into; "library" mode spans every workspace/project read-only.
+        onRetry: (item: LibraryItem) => void;
+      }
   );
 
 type HeroTab = "overview" | "lyrics";
@@ -392,6 +410,8 @@ export function LibraryCard(props: LibraryCardProps) {
             const midiFile = findMidiFile(files);
             const midiOnly = Boolean(midiFile) && !findAudioFile(files);
             const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? midiFile);
+            const retryable =
+              props.mode === "project" && (generation.status === "cancelled" || generation.status === "failed");
             const expanded = expandedId === generation.id;
             const secondary =
               props.mode === "library"
@@ -457,18 +477,31 @@ export function LibraryCard(props: LibraryCardProps) {
                     />
                   )}
                   <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      disabled={!savable}
-                      onClick={() => void handleSave(item)}
-                      title="Save a copy"
-                      aria-label={`Save ${generationTitle(generation)}`}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink disabled:opacity-30"
-                    >
-                      <DownloadIcon width={15} height={15} />
-                    </button>
+                    {retryable ? (
+                      <button
+                        type="button"
+                        onClick={() => project?.onRetry(item)}
+                        title="Retry with the same settings"
+                        aria-label={`Retry ${generationTitle(generation)}`}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink"
+                      >
+                        <RetryIcon width={15} height={15} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!savable}
+                        onClick={() => void handleSave(item)}
+                        title="Save a copy"
+                        aria-label={`Save ${generationTitle(generation)}`}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink disabled:opacity-30"
+                      >
+                        <DownloadIcon width={15} height={15} />
+                      </button>
+                    )}
                     <RowMenu
                       onDetails={() => setExpandedId(expanded ? null : generation.id)}
+                      onRetry={retryable ? () => project?.onRetry(item) : undefined}
                       onSave={savable ? () => void handleSave(item) : undefined}
                       onDelete={() => setPendingDelete(item)}
                     />
@@ -642,7 +675,17 @@ function RowDetails({ item }: { item: LibraryItem }) {
   );
 }
 
-function RowMenu({ onDetails, onSave, onDelete }: { onDetails: () => void; onSave?: () => void; onDelete: () => void }) {
+function RowMenu({
+  onDetails,
+  onRetry,
+  onSave,
+  onDelete,
+}: {
+  onDetails: () => void;
+  onRetry?: () => void;
+  onSave?: () => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -685,6 +728,11 @@ function RowMenu({ onDetails, onSave, onDelete }: { onDetails: () => void; onSav
           <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onDetails(); }}>
             Details
           </button>
+          {onRetry && (
+            <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onRetry(); }}>
+              Retry
+            </button>
+          )}
           {onSave && (
             <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onSave(); }}>
               Save a copy

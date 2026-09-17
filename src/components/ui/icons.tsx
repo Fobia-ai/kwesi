@@ -276,6 +276,15 @@ export function TrashIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function RetryIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M3 12a9 9 0 1 1 2.64 6.36" />
+      <path d="M3 20v-6h6" />
+    </Base>
+  );
+}
+
 export function CurvedBackIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Base {...props}>
