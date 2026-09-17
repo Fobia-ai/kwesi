@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -87,6 +87,16 @@ await reconcileInstalledModelsFromDisk();
 // rather than left stuck, mirroring resetInterruptedDownloads's precedent
 // in db/database.ts for the install queue.
 reconcileTrainingRunsOnStartup();
+
+// Electron's default File/Edit/View/Window/Help menu bar has no items that
+// correspond to anything real in this app -- none of it was ever
+// customized, so every window got Chromium's stock template menu for free.
+// macOS still needs a minimal Edit menu for Cmd+C/V/X/Z/A to keep working
+// in text fields (removing the whole menu there disables those
+// shortcuts); every other platform gets no menu bar at all.
+Menu.setApplicationMenu(
+  process.platform === "darwin" ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }]) : null,
+);
 
 let mainWindow: BrowserWindow | null = null;
 
