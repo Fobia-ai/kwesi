@@ -540,6 +540,7 @@ export function LibraryCard(props: LibraryCardProps) {
           <PianoRollViewer
             filePath={findMidiFile(parseOutputFiles(midiSheetItem.generation.output_files)) ?? ""}
             viewHeight={480}
+            bare
           />
         </BottomSheet>
       )}
@@ -668,7 +669,7 @@ function RowDetails({ item }: { item: LibraryItem }) {
       {midiFile && (
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Piano roll</p>
-          <PianoRollViewer filePath={midiFile} />
+          <PianoRollViewer filePath={midiFile} bare />
         </div>
       )}
       {abcFile && (

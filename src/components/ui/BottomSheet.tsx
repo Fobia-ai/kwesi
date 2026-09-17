@@ -12,9 +12,11 @@ interface BottomSheetProps {
 }
 
 /**
- * A wide, tall alternative to Modal for content that wants real width/height
- * to breathe (a piano roll) rather than Modal's centered max-w-sm card.
- * Same portal-to-body reasoning as Modal (backdrop-filter ancestors would
+ * Full viewport width, anchored to the bottom, for content that wants real
+ * room to breathe (a piano roll) rather than Modal's centered max-w-sm
+ * card — content stretches edge to edge and scrolls internally when it
+ * doesn't fit, instead of being squeezed into a fixed-width column. Same
+ * portal-to-body reasoning as Modal (backdrop-filter ancestors would
  * otherwise clip/mis-size a `position: fixed` overlay) — see Modal.tsx.
  */
 export function BottomSheet({ title, subtitle, onClose, children }: BottomSheetProps) {
@@ -29,14 +31,14 @@ export function BottomSheet({ title, subtitle, onClose, children }: BottomSheetP
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${
+      className={`fixed inset-0 z-50 flex items-end bg-black/30 backdrop-blur-xl transition-opacity duration-300 ${
         entered ? "opacity-100" : "opacity-0"
       }`}
       onClick={onClose}
     >
       <GlassPanel
         strong
-        className={`flex w-full max-w-3xl flex-col overflow-hidden rounded-t-[24px] rounded-b-none transition-transform duration-300 ease-smooth ${
+        className={`flex w-full flex-col overflow-hidden rounded-t-[24px] rounded-b-none transition-transform duration-300 ease-smooth ${
           entered ? "translate-y-0" : "translate-y-full"
         }`}
         style={{ maxHeight: "85vh" }}

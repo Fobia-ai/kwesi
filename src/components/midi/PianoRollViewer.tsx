@@ -11,6 +11,11 @@ interface PianoRollViewerProps {
   // How tall to draw the roll. Defaults to a comfortable standalone size;
   // the hero passes a shorter one to sit inside its transport row.
   viewHeight?: number;
+  // Skips the outer GlassPanel (its own background/border/padding/shadow)
+  // for callers that already provide their own chrome — BottomSheet,
+  // RowDetails — so the roll doesn't end up nested inside a box inside a
+  // box inside a box.
+  bare?: boolean;
 }
 
 type LoadState = "checking" | "loading" | "ready" | "empty" | "error";
@@ -31,17 +36,21 @@ function isBlackKey(pitch: number): boolean {
   return BLACK_KEY_PITCH_CLASSES.has(((pitch % 12) + 12) % 12);
 }
 
-// Colored by pitch class around the full hue wheel (12 semitones -> 12
-// evenly-spaced hues) rather than by track — the same convention piano-roll
-// editors like FL Studio/Synthesia use, so pitch relationships (which notes
-// share a key, octave doublings) are visible from color alone, not just
-// vertical position. Louder notes render a little brighter/more saturated
-// rather than just more opaque, which read as muddy on the darker rows.
+// Colored by pitch class rather than by track — the same real, physical
+// note-color convention chromatic Boomwhacker sets and music-education
+// color charts use (C=red through B=violet), not an evenly-spaced
+// mathematical hue wheel: real charts bunch warmer hues across the natural
+// notes and compress the accidentals, so named colors (a real orange, a
+// real green, a real blue) land where you'd expect them from an actual
+// physical set, rather than an arbitrary 30°-per-semitone gradient.
+// Index = pitch class (0=C ... 11=B).
+const PITCH_CLASS_HUES = [0, 18, 32, 45, 55, 85, 140, 172, 197, 217, 255, 285];
+
 function noteColor(pitch: number, velocity: number): string {
   const pitchClass = ((pitch % 12) + 12) % 12;
-  const hue = (pitchClass / 12) * 360;
+  const hue = PITCH_CLASS_HUES[pitchClass];
   const loudness = velocity / 127;
-  const saturation = 55 + loudness * 30;
+  const saturation = 62 + loudness * 25;
   const lightness = 48 + loudness * 14;
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
@@ -123,7 +132,12 @@ function PianoRollSvg({ midi, viewHeight }: { midi: ParsedMidi; viewHeight: numb
   );
 }
 
-export function PianoRollViewer({ filePath, compact, viewHeight = DEFAULT_VIEW_HEIGHT }: PianoRollViewerProps) {
+export function PianoRollViewer({
+  filePath,
+  compact,
+  bare,
+  viewHeight = DEFAULT_VIEW_HEIGHT,
+}: PianoRollViewerProps) {
   const [loadState, setLoadState] = useState<LoadState>("checking");
   const [midi, setMidi] = useState<ParsedMidi | null>(null);
 
@@ -164,35 +178,35 @@ export function PianoRollViewer({ filePath, compact, viewHeight = DEFAULT_VIEW_H
   }, [filePath]);
 
   if (loadState === "checking" || loadState === "loading") {
-    return (
-      <GlassPanel className="p-3">
-        <p className="text-xs text-ink-muted">{loadState === "checking" ? "Checking MIDI…" : "Loading piano roll…"}</p>
-      </GlassPanel>
-    );
+    const message = <p className="text-xs text-ink-muted">{loadState === "checking" ? "Checking MIDI…" : "Loading piano roll…"}</p>;
+    return bare ? message : <GlassPanel className="p-3">{message}</GlassPanel>;
   }
 
   if (loadState === "empty" || loadState === "error") {
-    return (
-      <GlassPanel className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+    const message = (
+      <div className="flex flex-col items-center justify-center gap-2 text-center">
         <div className="text-ink-muted">
           <PianoRollIcon width={20} height={20} />
         </div>
         <p className="text-xs text-ink-muted">
           {loadState === "empty" ? "No MIDI yet for this generation." : "Couldn't parse this MIDI file."}
         </p>
-      </GlassPanel>
+      </div>
     );
+    return bare ? message : <GlassPanel className="flex flex-col items-center justify-center gap-2 p-4 text-center">{message}</GlassPanel>;
   }
 
-  return (
-    <GlassPanel className={`flex flex-col gap-2 ${compact ? "p-2.5" : "p-4"}`}>
+  const content = (
+    <>
       {midi && <PianoRollSvg midi={midi} viewHeight={viewHeight} />}
       {midi && (
         <p className="text-[11px] text-ink-muted">
           {midi.notes.length} notes · {midi.trackCount} track{midi.trackCount === 1 ? "" : "s"}
         </p>
       )}
-
-    </GlassPanel>
+    </>
   );
+
+  if (bare) return <div className="flex flex-col gap-2">{content}</div>;
+  return <GlassPanel className={`flex flex-col gap-2 ${compact ? "p-2.5" : "p-4"}`}>{content}</GlassPanel>;
 }
