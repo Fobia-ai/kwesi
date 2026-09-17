@@ -28,16 +28,20 @@ from midiprocessor import MidiDecoder  # noqa: E402
 
 app = FastAPI()
 
-DEVICE = "cpu"
 # The real attention kernel (fast_transformers.causal_product) needs a CUDA
-# extension compiled with nvcc at pip-install time; this dev machine has no
-# system CUDA toolkit and no passwordless sudo to install one, so the
-# package's own graceful fallback (see servers/musecoco/README.md) builds
-# CPU-only extensions instead and CausalDotProduct dispatches on
-# Q.device.type. Since the checkpoint is only ~1B params, CPU inference is
-# slow (minutes, not seconds) but functional -- consistent with the catalog
-# doc's "CPU-feasible" note. Flip this if a CUDA-capable build is set up.
-log.warning("Running on CPU -- the fast_transformers CUDA extension needs a system nvcc this box doesn't have.")
+# extension compiled with nvcc at pip-install time. Originally always "cpu"
+# here since this dev machine had no system CUDA toolkit to build that
+# extension against -- see servers/musecoco/README.md's "Why this runs on
+# CPU" section for the full story (now historical: a conda-provided nvcc +
+# matching cudart, verified by actually compiling and running a CUDA kernel
+# on this box's RTX 3090, produced a real, numerically-verified CUDA build
+# of pytorch-fast-transformers). Detects for real now rather than hardcoding
+# either way, so this keeps working on a machine without a CUDA build too.
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+if DEVICE == "cuda":
+    log.info("Running on CUDA.")
+else:
+    log.warning("Running on CPU -- the fast_transformers CUDA extension needs a system nvcc this box doesn't have.")
 
 _DATA_BIN = os.path.join(VENDOR_ROOT, "data", "truncated_2560", "data-bin")
 _CHECKPOINT = os.path.join(VENDOR_ROOT, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt")
@@ -73,8 +77,9 @@ def load_state():
         "--no-repeat-ngram-size", "0",
         "--buffer-size", "1",
         "--batch-size", "1",
-        "--cpu",
     ]
+    if DEVICE == "cpu":
+        argv.append("--cpu")
     sys.argv = ["musecoco-server"] + argv
     parser = options.get_interactive_generation_parser()
     parser.add_argument("--save_root", type=str, default="/tmp")
@@ -99,6 +104,16 @@ def load_state():
     for model in models:
         model.prepare_for_inference_(args)
         model.decoder.args.is_inference = True
+        # Real bug: dropping --cpu from argv above only stops fairseq's own
+        # CLI plumbing from forcing CPU -- it never itself moves a model
+        # loaded via checkpoint_utils.load_model_ensemble onto the GPU.
+        # fairseq_cli/generate.py's own reference driver does this
+        # explicitly (`if use_cuda: model.cuda()`); this server needs the
+        # same explicit call, or "cuda" here is just a label with no effect
+        # -- confirmed for real: without this, a request ran for 12+ minutes
+        # with zero GPU compute usage, identical to the old CPU-only timing.
+        if DEVICE == "cuda":
+            model.cuda()
     log.info(f"loaded in {time.time() - t0:.1f}s")
 
     _state["args"] = args
@@ -267,6 +282,16 @@ def generate(req: GenerateRequest):
             "sep_pos": np.array([sep_pos_val]),
         },
     }
+    # Same reason models.cuda() was added in load_state(): moving the model
+    # to the GPU does nothing for a request whose own input tensors stay on
+    # CPU -- fairseq's own reference drivers (fairseq_cli/interactive.py)
+    # move src_tokens/src_lengths and any prefix_tokens explicitly for
+    # exactly this reason. sep_pos is a plain numpy array, not a tensor, and
+    # doesn't need moving.
+    if DEVICE == "cuda":
+        sample["net_input"]["src_tokens"] = sample["net_input"]["src_tokens"].cuda()
+        sample["net_input"]["src_lengths"] = sample["net_input"]["src_lengths"].cuda()
+        prefix_tokens = prefix_tokens.cuda()
 
     # min_len/max_len_b are TOTAL sequence-length budgets counted from step 0,
     # which includes the forced attribute-prefix region (sep_pos_val + 1
