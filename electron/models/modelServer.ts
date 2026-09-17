@@ -456,14 +456,45 @@ async function ensureRealServerRunning(modelId: string): Promise<RealServerHandl
   return promise;
 }
 
+// A process stuck deep inside a long CUDA/C-extension call -- exactly what
+// a real generation is doing -- often doesn't act on SIGTERM until that
+// call returns, which can be minutes away. Escalate to SIGKILL rather than
+// waiting indefinitely.
+const REAL_SERVER_SHUTDOWN_GRACE_MS = 8_000;
+
+/**
+ * Kills a real server's subprocess and waits for it to actually exit before
+ * resolving. Real bug this fixes: this used to send SIGTERM and immediately
+ * delete the process from `realServers` regardless of whether it had
+ * actually died -- so cancelling a generation reported success (and let a
+ * new generation for the same model spawn a second process racing the
+ * still-alive one for the same fixed port) while the original process's
+ * CPU/GPU work, and whatever VRAM it held, kept running completely
+ * untouched. `realServers`/`serverStatus`/the "stopped" broadcast are left
+ * to the process's own "exit" handler (wireRealServerProcess) -- the single
+ * source of truth for that cleanup -- rather than duplicated/raced here.
+ */
 async function stopRealServer(modelId: string): Promise<void> {
   const existing = realServers.get(modelId);
   if (!existing) return;
   serverStatus.set(modelId, "stopping");
   broadcast({ type: "server_status", modelId, status: "stopping" });
+
+  const exited = new Promise<void>((resolve) => existing.proc.once("exit", () => resolve()));
   existing.proc.kill("SIGTERM");
-  realServers.delete(modelId);
-  // The process's own "exit" handler broadcasts the final "stopped" status.
+
+  const exitedInTime = await Promise.race([
+    exited.then(() => true),
+    delay(REAL_SERVER_SHUTDOWN_GRACE_MS).then(() => false),
+  ]);
+
+  if (!exitedInTime) {
+    console.warn(
+      `[${modelId}-server] didn't exit ${REAL_SERVER_SHUTDOWN_GRACE_MS}ms after SIGTERM (likely stuck in a long CUDA/C call) -- sending SIGKILL`,
+    );
+    existing.proc.kill("SIGKILL");
+    await exited;
+  }
 }
 
 /** Called from main.ts on app quit so no orphaned Python process is left running. */

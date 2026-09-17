@@ -1299,14 +1299,51 @@ export function submitTrainingRun(params: SubmitTrainingRunParams): SubmitTraini
   return { ok: true, trainingRun };
 }
 
-export function cancelTrainingRun(runId: string): boolean {
+// A training subprocess is exactly the kind of long CUDA/C-extension call
+// that often doesn't act on SIGTERM until that call returns, which can be
+// minutes away -- escalate to SIGKILL rather than waiting indefinitely.
+const TRAINING_SHUTDOWN_GRACE_MS = 8_000;
+
+/**
+ * Real bug this fixes: this used to send SIGTERM and immediately mark the
+ * run "cancelled" in the DB regardless of whether the process had actually
+ * died -- so a cancelled run's real CPU/GPU work (and whatever VRAM it
+ * held) kept running completely untouched, and the app had no way left to
+ * know about it since its own bookkeeping already considered the run gone.
+ * Now waits for the real "exit" event before reporting cancelled, escalating
+ * to SIGKILL if the process hasn't responded to SIGTERM within a grace
+ * period. Also signals the whole process group (negative pid), not just the
+ * spawned leader -- runPhase spawns with `detached: true`, so a worker
+ * process it forked (e.g. a dataloader) would otherwise survive as an
+ * orphan holding resources this app no longer tracks at all.
+ */
+export async function cancelTrainingRun(runId: string): Promise<boolean> {
   const proc = activeProcesses.get(runId);
   if (!proc || !proc.pid) return false;
+
+  const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
+
   try {
-    process.kill(proc.pid, "SIGTERM");
+    process.kill(-proc.pid, "SIGTERM");
   } catch {
     return false;
   }
+
+  const exitedInTime = await Promise.race([
+    exited.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), TRAINING_SHUTDOWN_GRACE_MS)),
+  ]);
+
+  if (!exitedInTime) {
+    console.warn(`[training ${runId}] didn't exit ${TRAINING_SHUTDOWN_GRACE_MS}ms after SIGTERM -- sending SIGKILL`);
+    try {
+      process.kill(-proc.pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+    await exited;
+  }
+
   repo.updateTrainingRunStatus(runId, "cancelled", { completedAt: Date.now(), pid: null });
   broadcast({ type: "cancelled", runId });
   return true;
