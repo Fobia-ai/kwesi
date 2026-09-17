@@ -4,6 +4,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PillButton } from "../components/ui/PillButton";
 import { WaveformIcon, HeadphonesIcon } from "../components/ui/icons";
 import { LibraryCard, type LibraryItem } from "../components/library/LibraryCard";
+import { ModelsDriftBanner } from "../components/home/ModelsDriftBanner";
 import { kwesiDb, type LibraryGenerationRow, type WorkspaceRow } from "../lib/db";
 import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
@@ -59,6 +60,7 @@ export function HomeScreen() {
 
   return (
     <div className="flex h-full flex-col">
+      <ModelsDriftBanner />
       <LibraryCard
         items={items}
         artistProfiles={artistProfiles}

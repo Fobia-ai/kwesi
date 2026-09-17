@@ -118,6 +118,37 @@ async function saveAudioCopy(
   return { ok: true, path: result.filePath };
 }
 
+/**
+ * Same save-dialog mechanism as saveAudioCopy, but for bytes synthesized in
+ * the renderer (a packaged export .zip, a rendered notation .png) rather
+ * than an existing file on disk -- there's nothing at a real path to check
+ * against isWithinWorkspaces here, the destination is still always a path
+ * the user themselves picks via the native dialog.
+ */
+async function saveBytesCopy(
+  bytes: Uint8Array,
+  suggestedName: string,
+  kind: "export" | "download",
+  downloadsDir: string,
+): Promise<AudioSaveResult> {
+  const defaultDir = kind === "download" ? downloadsDir : exportsRootDir();
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
+  const result = win
+    ? await dialog.showSaveDialog(win, {
+        title: kind === "download" ? "Download" : "Export",
+        defaultPath: path.join(defaultDir, suggestedName),
+      })
+    : await dialog.showSaveDialog({
+        title: kind === "download" ? "Download" : "Export",
+        defaultPath: path.join(defaultDir, suggestedName),
+      });
+  if (result.canceled || !result.filePath) return { ok: false, reason: "cancelled" };
+
+  await fs.promises.mkdir(path.dirname(result.filePath), { recursive: true });
+  await fs.promises.writeFile(result.filePath, bytes);
+  return { ok: true, path: result.filePath };
+}
+
 function revealInFolder(filePath: string): { ok: boolean } {
   if (!isWithinWorkspaces(filePath)) return { ok: false };
   if (!fs.existsSync(filePath)) return { ok: false };
@@ -132,6 +163,11 @@ export function registerAudioIpcHandlers(downloadsDir: string) {
     "kwesi:audio:save",
     (_e, filePath: string, suggestedName: string, kind: "export" | "download") =>
       saveAudioCopy(filePath, suggestedName, kind, downloadsDir),
+  );
+  ipcMain.handle(
+    "kwesi:audio:save-bytes",
+    (_e, bytes: Uint8Array, suggestedName: string, kind: "export" | "download") =>
+      saveBytesCopy(bytes, suggestedName, kind, downloadsDir),
   );
   ipcMain.handle("kwesi:audio:reveal", (_e, filePath: string) => revealInFolder(filePath));
 }

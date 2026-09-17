@@ -72,6 +72,8 @@ contextBridge.exposeInMainWorld("kwesi", {
     read: (filePath: string) => ipcRenderer.invoke("kwesi:audio:read", filePath),
     save: (filePath: string, suggestedName: string, kind: "export" | "download") =>
       ipcRenderer.invoke("kwesi:audio:save", filePath, suggestedName, kind),
+    saveBytes: (bytes: Uint8Array, suggestedName: string, kind: "export" | "download") =>
+      ipcRenderer.invoke("kwesi:audio:save-bytes", bytes, suggestedName, kind),
     reveal: (filePath: string) => ipcRenderer.invoke("kwesi:audio:reveal", filePath),
   },
   hardware: {
@@ -125,6 +127,13 @@ contextBridge.exposeInMainWorld("kwesi", {
     getExportsDir: () => ipcRenderer.invoke("kwesi:settings:getExportsDir"),
     pickExportsDir: () => ipcRenderer.invoke("kwesi:settings:pickExportsDir"),
     resetExportsDir: () => ipcRenderer.invoke("kwesi:settings:resetExportsDir"),
+    getModelsDir: () => ipcRenderer.invoke("kwesi:settings:getModelsDir"),
+    hasModelsInstalled: () => ipcRenderer.invoke("kwesi:settings:hasModelsInstalled"),
+    pickModelsDir: () => ipcRenderer.invoke("kwesi:settings:pickModelsDir"),
+    applyModelsDir: (path: string) => ipcRenderer.invoke("kwesi:settings:applyModelsDir", path),
+    resetModelsDir: () => ipcRenderer.invoke("kwesi:settings:resetModelsDir"),
+    checkModelsDrift: () => ipcRenderer.invoke("kwesi:settings:checkModelsDrift"),
+    resolveModelsDrift: () => ipcRenderer.invoke("kwesi:settings:resolveModelsDrift"),
   },
   crashLog: {
     report: (

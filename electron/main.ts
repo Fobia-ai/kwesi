@@ -47,7 +47,12 @@ const kwesiEnv = resolveKwesiEnv(app.getPath("userData"), app.getPath("music"));
 
 openDatabase(kwesiEnv.KWESI_DB_PATH);
 initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
-initModelsPaths(kwesiEnv.KWESI_MODELS_DIR);
+// Settings > System lets the user override where models install (the only
+// path this app makes user-changeable, per its own reconciliation posture
+// -- see electron/models/reconcile.ts); that override, once set, wins over
+// the KWESI_MODELS_DIR env default on every subsequent launch, same
+// precedent as exportsDir below.
+initModelsPaths(repo.getSetting("modelsDir") || kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
@@ -72,7 +77,7 @@ registerSecurityIpcHandlers(kwesiEnv.KWESI_LOCK_IDLE_TIMEOUT_MINUTES);
 registerProfileIpcHandlers();
 registerArtistProfilesIpcHandlers();
 registerCrashLogIpcHandlers();
-registerSettingsIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR);
+registerSettingsIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, kwesiEnv.KWESI_MODELS_DIR);
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"

@@ -293,3 +293,45 @@ export function CurvedBackIcon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+export function CopyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </Base>
+  );
+}
+
+export function ImageCopyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="3" width="14" height="14" rx="2" />
+      <circle cx="8" cy="8" r="1.5" />
+      <path d="m4 14 3.5-3.5a1.5 1.5 0 0 1 2 0L13 14" />
+      <path d="M17 8h1.5A1.5 1.5 0 0 1 20 9.5V19a2 2 0 0 1-2 2H9.5A1.5 1.5 0 0 1 8 19.5V19" />
+    </Base>
+  );
+}
+
+export function ExpandIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="M21 3l-7 7" />
+      <path d="M3 21l7-7" />
+    </Base>
+  );
+}
+
+export function CollapseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M4 14h6v6" />
+      <path d="M20 10h-6V4" />
+      <path d="M14 10l7-7" />
+      <path d="M10 14l-7 7" />
+    </Base>
+  );
+}

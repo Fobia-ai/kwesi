@@ -41,7 +41,7 @@ export function BottomSheet({ title, subtitle, onClose, children }: BottomSheetP
         className={`flex w-full flex-col overflow-hidden rounded-t-[24px] rounded-b-none transition-transform duration-300 ease-smooth ${
           entered ? "translate-y-0" : "translate-y-full"
         }`}
-        style={{ maxHeight: "85vh" }}
+        style={{ height: "80vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ink/10 px-5 py-4">

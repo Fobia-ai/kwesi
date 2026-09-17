@@ -9,6 +9,19 @@ import type {
   TrainedModelRow,
 } from "./db";
 
+// Mirrors electron/models/reconcile.ts's ModelDrift -- what's out of sync
+// between model_variant.install_status and what's really in the models
+// folder on disk.
+export interface ModelDriftEntry {
+  variantId: string;
+  modelId: string;
+  variantName: string;
+}
+export interface ModelDrift {
+  toInstalled: (ModelDriftEntry & { diskSizeBytes: number })[];
+  toNotInstalled: ModelDriftEntry[];
+}
+
 declare global {
   interface Window {
     kwesi?: {
@@ -69,6 +82,11 @@ declare global {
         }>;
         save: (
           filePath: string,
+          suggestedName: string,
+          kind: "export" | "download",
+        ) => Promise<{ ok: boolean; path?: string; reason?: string }>;
+        saveBytes: (
+          bytes: Uint8Array,
           suggestedName: string,
           kind: "export" | "download",
         ) => Promise<{ ok: boolean; path?: string; reason?: string }>;
@@ -169,6 +187,13 @@ declare global {
         getExportsDir: () => Promise<string>;
         pickExportsDir: () => Promise<{ ok: boolean; path?: string }>;
         resetExportsDir: () => Promise<{ ok: boolean; path?: string }>;
+        getModelsDir: () => Promise<string>;
+        hasModelsInstalled: () => Promise<boolean>;
+        pickModelsDir: () => Promise<{ ok: boolean; path?: string }>;
+        applyModelsDir: (path: string) => Promise<{ ok: boolean; path: string; drift: ModelDrift }>;
+        resetModelsDir: () => Promise<{ ok: boolean; path: string; drift: ModelDrift }>;
+        checkModelsDrift: () => Promise<ModelDrift>;
+        resolveModelsDrift: () => Promise<ModelDrift>;
       };
     };
   }

@@ -20,6 +20,7 @@ export interface KwesiAudioApi {
   stat(filePath: string): Promise<AudioStatResult>;
   read(filePath: string): Promise<AudioReadResult>;
   save(filePath: string, suggestedName: string, kind: "export" | "download"): Promise<AudioSaveResult>;
+  saveBytes(bytes: Uint8Array, suggestedName: string, kind: "export" | "download"): Promise<AudioSaveResult>;
   reveal(filePath: string): Promise<{ ok: boolean }>;
 }
 
@@ -28,6 +29,7 @@ function realAudioApi(bridge: NonNullable<Window["kwesi"]>["audio"]): KwesiAudio
     stat: (filePath) => bridge.stat(filePath),
     read: (filePath) => bridge.read(filePath),
     save: (filePath, suggestedName, kind) => bridge.save(filePath, suggestedName, kind),
+    saveBytes: (bytes, suggestedName, kind) => bridge.saveBytes(bytes, suggestedName, kind),
     reveal: (filePath) => bridge.reveal(filePath),
   };
 }
@@ -177,6 +179,10 @@ function createMockAudioApi(): KwesiAudioApi {
     },
     async save(_filePath, suggestedName, kind) {
       console.log(`[mock audio] ${kind} requested for "${suggestedName}"`);
+      return { ok: true, path: `/mock/${kind}/${suggestedName}` };
+    },
+    async saveBytes(bytes, suggestedName, kind) {
+      console.log(`[mock audio] ${kind} (${bytes.byteLength} bytes) requested for "${suggestedName}"`);
       return { ok: true, path: `/mock/${kind}/${suggestedName}` };
     },
     async reveal(filePath) {

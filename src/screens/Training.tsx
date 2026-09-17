@@ -8,7 +8,6 @@ import { MANIFESTS, type ModelManifest, type TrainingSupportedConfig } from "../
 import {
   FieldControl,
   defaultValueFor,
-  isSatisfied,
   evaluateHardwareGate,
   HardwareGateBanner,
   type GenerationFormValues,
@@ -255,7 +254,10 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [hyperparams, setHyperparams] = useState<GenerationFormValues>({});
   const [outputDir, setOutputDir] = useState<string>("");
   const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  // Only the setter is read -- handleSubmit is kept (see its "Coming soon"
+  // call site below) but unreachable while its button is hardcoded
+  // disabled, so nothing renders the loading value itself right now.
+  const [, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -292,18 +294,12 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
     if (result.ok && result.path) setOutputDir(result.path);
   }
 
-  const missingHyperparams = training
-    ? training.hyperparameters.some((input) => !isSatisfied(input, hyperparams[input.key]))
-    : false;
   const hardwareGate = training ? evaluateHardwareGate(manifest!, training.hardware.minVramGb, gpu) : { level: "ok" as const };
   const meetsFileMinimum = training
     ? isDirectoryDataset
       ? datasetDirPath.length > 0
       : files.length >= training.datasetRequirements.minFiles
     : false;
-
-  const canSubmit =
-    !!training && !!runName.trim() && meetsFileMinimum && !missingHyperparams && hardwareGate.level !== "block" && !submitting;
 
   async function handleSubmit() {
     if (!training || !manifest) return;
@@ -438,9 +434,16 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
 
           {submitError && <p className="text-xs text-red-600">{submitError}</p>}
 
-          <div className="flex justify-end">
-            <PillButton disabled={!canSubmit} onClick={handleSubmit}>
-              {submitting ? "Starting…" : "Start Training Run"}
+          {/* Phase 2: the form above is fully real (dataset validation,
+              hyperparameters, the hardware gate) and stays that way so it's
+              ready to wire back up -- only actually starting a run is
+              paused for now, via a hardcoded `disabled` rather than
+              removing handleSubmit, so re-enabling this later is a
+              one-line change. */}
+          <div className="flex items-center justify-end gap-2">
+            <span className="text-xs text-ink-muted">Training runs are coming in a future update.</span>
+            <PillButton disabled onClick={handleSubmit}>
+              Coming soon
             </PillButton>
           </div>
         </>

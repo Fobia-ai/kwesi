@@ -448,13 +448,12 @@ function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () =
   );
 }
 
-// KWESI_EXPORTS_DIR is deliberately absent here — it's shown as its own
-// live, editable row below instead (Settings > System can override it, so
-// the static value getEnv() reports would go stale the moment someone
-// changes it).
+// KWESI_EXPORTS_DIR and KWESI_MODELS_DIR are deliberately absent here —
+// they're each shown as their own live, editable row below instead
+// (Settings > System can override either, so the static value getEnv()
+// reports would go stale the moment someone changes it).
 const ENV_LABELS: Record<string, string> = {
   KWESI_HOME: "App data",
-  KWESI_MODELS_DIR: "Models",
   KWESI_WORKSPACES_DIR: "Workspaces",
   KWESI_TRAINED_MODELS_DIR: "Trained models",
   KWESI_LOGS_DIR: "Logs",
@@ -480,9 +479,17 @@ function SystemTab() {
   const [env, setEnv] = useState<Record<string, string | number> | null>(null);
   const [exportsDir, setExportsDir] = useState<string | null>(null);
   const [exportsBusy, setExportsBusy] = useState(false);
+  const [modelsDir, setModelsDir] = useState<string | null>(null);
+  const [modelsBusy, setModelsBusy] = useState(false);
+  const [confirmModelsChange, setConfirmModelsChange] = useState(false);
+  const [modelsChangeStatus, setModelsChangeStatus] = useState<string | null>(null);
 
   function refreshExportsDir() {
     kwesiSettings.getExportsDir().then(setExportsDir);
+  }
+
+  function refreshModelsDir() {
+    kwesiSettings.getModelsDir().then(setModelsDir);
   }
 
   useEffect(() => {
@@ -490,6 +497,7 @@ function SystemTab() {
     kwesiModels.diskFreeBytes().then(setFreeBytes);
     if (window.kwesi) window.kwesi.getEnv().then(setEnv);
     refreshExportsDir();
+    refreshModelsDir();
   }, []);
 
   async function handleChangeExportsDir() {
@@ -504,6 +512,52 @@ function SystemTab() {
     await kwesiSettings.resetExportsDir();
     setExportsBusy(false);
     refreshExportsDir();
+  }
+
+  // Changing this while real models are installed isn't dangerous by
+  // itself (nothing on disk is touched), but it strands them: Model
+  // Manager reads install_status from the DB, and the reconciler (see
+  // electron/models/reconcile.ts) only recognizes files it can actually
+  // find under the *new* folder, so anything left behind in the old one
+  // just looks uninstalled until it's manually moved or re-downloaded --
+  // hence the confirmation step before the native picker even opens.
+  async function beginChangeModelsDir() {
+    const hasModels = await kwesiSettings.hasModelsInstalled();
+    if (hasModels) {
+      setConfirmModelsChange(true);
+      return;
+    }
+    await doChangeModelsDir();
+  }
+
+  function describeDrift(drift: { toInstalled: unknown[]; toNotInstalled: unknown[] }): string {
+    const found = drift.toInstalled.length;
+    if (found > 0) return `Found ${found} model${found === 1 ? "" : "s"} already in this folder.`;
+    return "No models found in this folder yet — move your old ones here, or re-download from Model Manager.";
+  }
+
+  async function doChangeModelsDir() {
+    setConfirmModelsChange(false);
+    setModelsBusy(true);
+    const picked = await kwesiSettings.pickModelsDir();
+    if (!picked.ok || !picked.path) {
+      setModelsBusy(false);
+      return;
+    }
+    const result = await kwesiSettings.applyModelsDir(picked.path);
+    setModelsBusy(false);
+    refreshModelsDir();
+    setModelsChangeStatus(describeDrift(result.drift));
+    setTimeout(() => setModelsChangeStatus(null), 6000);
+  }
+
+  async function handleResetModelsDir() {
+    setModelsBusy(true);
+    const result = await kwesiSettings.resetModelsDir();
+    setModelsBusy(false);
+    refreshModelsDir();
+    setModelsChangeStatus(describeDrift(result.drift));
+    setTimeout(() => setModelsChangeStatus(null), 6000);
   }
 
   return (
@@ -551,6 +605,34 @@ function SystemTab() {
             </button>
           </div>
         </div>
+        <div className="flex items-baseline justify-between gap-4 border-b border-ink/[0.07] py-2.5">
+          <span className="shrink-0 text-xs text-ink-muted">Models folder</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-right text-sm" title={modelsDir ?? undefined}>
+              {modelsDir ?? "Checking…"}
+            </span>
+            <button
+              type="button"
+              disabled={modelsBusy}
+              onClick={beginChangeModelsDir}
+              className="shrink-0 text-xs text-accent hover:underline disabled:opacity-50"
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              disabled={modelsBusy}
+              onClick={handleResetModelsDir}
+              className="shrink-0 text-xs text-ink-muted hover:text-ink disabled:opacity-50"
+            >
+              Use default
+            </button>
+          </div>
+        </div>
+        <p className="border-b border-ink/[0.07] py-2.5 text-xs text-ink-muted last:border-b-0">
+          {modelsChangeStatus ??
+            "Changing this doesn't move your downloaded models — copy them from the old folder into the new one yourself first to avoid re-downloading anything."}
+        </p>
         {env &&
           Object.entries(ENV_LABELS).map(([key, label]) =>
             typeof env[key] === "string" ? <SystemRow key={key} label={label} value={String(env[key])} /> : null,
@@ -561,6 +643,16 @@ function SystemTab() {
         <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">App</p>
         <SystemRow label="Kwesi" value={`v${pkg.version}`} />
       </section>
+
+      {confirmModelsChange && (
+        <ConfirmDialog
+          title="Change the models folder?"
+          description="You already have models installed. Changing this location doesn't move them — copy or move your model folders into the new location yourself first, or Model Manager will show them as not installed and you'll need to re-download."
+          confirmLabel="Proceed anyway"
+          onCancel={() => setConfirmModelsChange(false)}
+          onConfirm={doChangeModelsDir}
+        />
+      )}
     </div>
   );
 }
