@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { PianoRollIcon } from "../ui/icons";
 import { PianoRollDisplay } from "./PianoRollViewer";
 import { AbcNotationRenderer } from "./AbcNotationRenderer";
@@ -57,6 +58,12 @@ export function NotationTabs({
   contentClassName,
 }: NotationTabsProps) {
   const { state, data } = useNotationData(midiFilePath, abcFilePath, title);
+  // Memoized (and called unconditionally, ahead of the loading/empty/error
+  // early returns below, per the rules of hooks) so switching between
+  // Midi/ABC/Midi.Txt/ABC.Txt doesn't rebuild this string on every render --
+  // only reading `data`'s own identity, not `activeTab`, so it's stable
+  // across tab switches and only redone when the underlying notes change.
+  const midiText = useMemo(() => (data?.midi ? midiToText(data.midi, title) : null), [data, title]);
 
   if (state === "checking" || state === "loading") {
     return (
@@ -78,7 +85,6 @@ export function NotationTabs({
   }
 
   const { midi, abcText } = data;
-  const midiText = midi ? midiToText(midi, title) : null;
   const shared = { expanded, onToggleExpand, height, className, contentClassName };
 
   if (activeTab === "midi") {

@@ -2,18 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 export async function dirSizeBytes(dir: string): Promise<number> {
-  let total = 0;
   const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      total += await dirSizeBytes(full);
-    } else {
+  const sizes = await Promise.all(
+    entries.map(async (entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return dirSizeBytes(full);
       const stat = await fs.promises.stat(full);
-      total += stat.size;
-    }
-  }
-  return total;
+      return stat.size;
+    }),
+  );
+  return sizes.reduce((total, size) => total + size, 0);
 }
 
 export async function dirHasContent(dir: string): Promise<boolean> {

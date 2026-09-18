@@ -34,25 +34,40 @@ export function isEmptyModelDrift(drift: ModelDrift): boolean {
   return drift.toInstalled.length === 0 && drift.toNotInstalled.length === 0;
 }
 
+type DriftCheck =
+  | { kind: "toInstalled"; entry: ModelDriftEntry & { diskSizeBytes: number } }
+  | { kind: "toNotInstalled"; entry: ModelDriftEntry }
+  | { kind: "none" };
+
+async function checkVariant(variant: repo.ModelVariantRow): Promise<DriftCheck> {
+  const dir = modelVariantDir(variant.model_id, variant.variant_name);
+  const present = await dirHasContent(dir);
+  const entry = { variantId: variant.id, modelId: variant.model_id, variantName: variant.variant_name };
+
+  if (present && variant.install_status !== "installed") {
+    return { kind: "toInstalled", entry: { ...entry, diskSizeBytes: await dirSizeBytes(dir) } };
+  }
+  if (!present && variant.install_status === "installed") {
+    return { kind: "toNotInstalled", entry };
+  }
+  return { kind: "none" };
+}
+
+// Every variant's disk check runs concurrently (each is just a readdir plus,
+// rarely, a recursive size walk for one newly-found folder) rather than
+// awaited one at a time -- this now runs not just once at startup but on
+// every Settings > System models-folder change and every Home resolver
+// click, so its wall time scales with the slowest single variant check
+// instead of the sum of all of them.
 async function computeDrift(): Promise<ModelDrift> {
   const variants = repo.listAllModelVariants();
+  const results = await Promise.all(variants.map(checkVariant));
+
   const toInstalled: ModelDrift["toInstalled"] = [];
   const toNotInstalled: ModelDrift["toNotInstalled"] = [];
-
-  for (const variant of variants) {
-    const dir = modelVariantDir(variant.model_id, variant.variant_name);
-    const present = await dirHasContent(dir);
-
-    if (present && variant.install_status !== "installed") {
-      toInstalled.push({
-        variantId: variant.id,
-        modelId: variant.model_id,
-        variantName: variant.variant_name,
-        diskSizeBytes: await dirSizeBytes(dir),
-      });
-    } else if (!present && variant.install_status === "installed") {
-      toNotInstalled.push({ variantId: variant.id, modelId: variant.model_id, variantName: variant.variant_name });
-    }
+  for (const result of results) {
+    if (result.kind === "toInstalled") toInstalled.push(result.entry);
+    else if (result.kind === "toNotInstalled") toNotInstalled.push(result.entry);
   }
 
   return { toInstalled, toNotInstalled };
