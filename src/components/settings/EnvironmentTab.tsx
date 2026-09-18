@@ -127,10 +127,7 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu }: {
  * The automated counterpart to every servers/<model>/README.md's by-hand
  * setup instructions -- real venv creation and package installs, via `uv`
  * (see electron/models/envInstaller.ts for exactly what each model's
- * Install button runs and why). Not every model can be automated yet:
- * Museformer's own inference path has never been verified end-to-end, so
- * it stays check-only rather than pretending an install path exists for
- * something that might not work regardless.
+ * Install button runs and why).
  */
 export function EnvironmentTab() {
   const [prereqs, setPrereqs] = useState<{

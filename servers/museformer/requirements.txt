@@ -9,6 +9,11 @@
 # MuseCoco doesn't need.
 fairseq==0.10.2
 miditoolkit==0.1.16
+# miditoolkit's own pianoroll submodule imports matplotlib.pylab
+# unconditionally at import time (see miditoolkit/pianoroll/vis.py) -- not
+# an optional/lazy import, so real MIDI decoding fails without this even
+# though nothing here plots anything.
+matplotlib
 scipy
 numpy==1.23.4
 mido
@@ -16,11 +21,17 @@ fastapi
 uvicorn[standard]
 pydantic
 
-# NOT pinned/installed here -- see README.md: the real MidiProcessor
-# tokenizer/decoder Museformer's own README points at
-# (github.com/btyu/MidiProcessor) needs to be resolved and vendored the
-# same way musecoco/museformer's own code was, and museformer's decoder
-# (museformer/kernels/*, museformer/blocksparse/*) has custom CUDA/triton
-# code whose CPU-fallback coverage was not confirmed working end-to-end in
-# Phase 7 -- do that investigation before trusting this file to produce a
-# real MIDI.
+# `uv venv` doesn't ship setuptools the way a system/virtualenv Python
+# often implicitly does -- and the triton wheel torch pulls in for real
+# inference (see README.md "Status") needs setuptools just to *import*
+# (triton/runtime/build.py imports it at module load, not only when
+# actually compiling a kernel). Without this, `import triton` -- and so
+# real generation -- fails on a fresh `uv pip install -r` before ever
+# reaching model code.
+setuptools
+
+# NOT pinned/installed here: the real MidiProcessor tokenizer/decoder
+# Museformer's own README points at (github.com/btyu/MidiProcessor) isn't
+# vendored a second time -- server.py reaches into servers/musecoco's
+# already-vendored copy instead (see README.md), so musecoco must be
+# installed too.

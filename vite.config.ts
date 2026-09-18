@@ -7,6 +7,12 @@ export default defineConfig({
   server: {
     port: 5183,
     strictPort: true,
+    watch: {
+      // Real per-model Python venvs live here (see electron/models/envInstaller.ts) --
+      // each has tens of thousands of files, which blows past Linux's inotify watch
+      // limit (ENOSPC) if Vite tries to watch them. None of this is renderer source.
+      ignored: ["**/venvs/**"],
+    },
   },
   build: {
     outDir: "dist",

@@ -103,17 +103,33 @@ def generate(req: GenerateRequest):
     min_len = max(64, req.min_generated_tokens)
     max_len_b = max(min_len + 64, req.max_generated_tokens)
 
+    # _run_interactive.py (not "-m fairseq_cli.interactive" directly) --
+    # real checkpoints ship with attention_impl='blocksparse', whose Triton
+    # kernels have no CPU backend at all (confirmed: --cpu hard-fails with
+    # "Pointer argument cannot be accessed from Triton"), so this must run
+    # on GPU. Two other vendored kernels (range_fill, block_fill) then hit a
+    # *different* real gap on GPU -- they JIT-compile a CUDA extension via
+    # nvcc, which a plain pip/uv install doesn't have (the modern
+    # nvidia-cuda-nvcc-cu12 wheel no longer even ships an nvcc binary).
+    # _run_interactive.py patches those to their existing plain-PyTorch
+    # fallback before generation starts. See its own docstring and
+    # README.md "Status" for the full, GPU-verified story.
     cmd = [
-        sys.executable, "-m", "fairseq_cli.interactive",
+        sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_run_interactive.py"),
         DATA_BIN,
         "--path", checkpoint_path(),
-        "--user-dir", VENDOR_ROOT,
+        # fairseq's --user-dir imports the given directory itself as a
+        # package by its own basename (see fairseq.utils.import_user_module)
+        # -- it needs to land on the "museformer" package (whose __init__.py
+        # runs the @register_task/@register_model decorators), not its
+        # "vendor" parent, which has no __init__.py and so silently imports
+        # as an empty namespace package, registering nothing.
+        "--user-dir", os.path.join(VENDOR_ROOT, "museformer"),
         "--task", "museformer_language_modeling",
         "--sampling", "--sampling-topk", "8",
         "--beam", "1", "--nbest", "1",
         "--min-len", str(min_len),
         "--max-len-b", str(max_len_b),
-        "--cpu",
         "--buffer-size", "1",
     ]
     log.info(f"bar_count hint={bar_count} (informational only -- length is governed by min/max-len-b); running: {' '.join(cmd)}")

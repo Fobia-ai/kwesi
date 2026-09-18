@@ -595,9 +595,9 @@ const MUSEFORMER: ModelManifest = {
   licenseTier: "mit",
   checkpointVariants: ["default"],
   hardware: {
-    minVramGb: 0,
-    cpuFallback: true,
-    notes: "NEEDS VERIFICATION against the real requirements.txt — treated as similarly old/narrow-pinned as MuseCoco until confirmed, per kwesi.docs/03-model-catalog.md. A real, unresolved risk on top of that: servers/museformer/README.md documents that the decoder's blocksparse attention kernels use Triton directly, which has no CPU backend at all — if the inference path actually hits them, --cpu generation is a hard GPU-only blocker, not a slow fallback. Never confirmed either way (no venv has ever been built to test it).",
+    minVramGb: 1,
+    cpuFallback: false,
+    notes: "Verified end-to-end on a real GPU (see servers/museformer/README.md 'Status') — a real checkpoint's own saved config uses attention_impl='blocksparse', whose Triton kernels have no CPU backend at all (confirmed: --cpu hard-fails at kernel launch). This is a small model (4 decoder layers / 512 embed dim per the checkpoint) — measured under ~450MB of its own VRAM against a real, working install. No CUDA devel toolkit (nvcc) is required despite the model's other custom kernels, since server.py routes around the one that would otherwise need it — see the README for the full story.",
   },
   inputs: [
     // "continue_from_midi" removed from the options below (not just
@@ -635,18 +635,18 @@ const MUSEFORMER: ModelManifest = {
   ],
   outputs: [{ kind: "midi", format: "mid" }],
   server: { entrypoint: "server.py", venv: "museformer-venv", portRange: [17630, 17639] },
-  // Phase 11 re-confirmation (not re-solved): Museformer's own *inference*
-  // path was still never actually run as of this phase either (no venv
-  // ever built — see servers/museformer/README.md's "Status: code-complete,
-  // not verified end-to-end", unchanged since Phase 7) — a real prerequisite
-  // for training that training work can't skip past. Per the roadmap's own
-  // explicit "don't spend disproportionate time here" guidance for this
-  // lowest-priority model, Phase 11 did not build the venv or attempt the
-  // Triton/blocksparse smoke test that README already prescribes, so this
-  // stays an honest, unchanged "not attempted" rather than a new finding.
+  // Inference is now proven real end-to-end on a real GPU, including a
+  // real decoded .mid with genuine note events -- see
+  // servers/museformer/README.md "Status" for the full story (three real
+  // bugs found and fixed along the way: server.py's --user-dir target,
+  // the hardcoded --cpu flag conflicting with the checkpoint's actual
+  // attention_impl='blocksparse', and two undocumented CUDA-JIT kernels
+  // routed around a missing nvcc via their own existing pytorch fallback).
+  // Training remains separate, unattempted work -- inference being proven
+  // is the prerequisite training needed, not training itself.
   training: {
     supported: false,
-    reason: "Training isn't wired up for Museformer — its own inference path was never verified in the first place (no venv ever built, a real Triton/blocksparse CPU-fallback risk documented in servers/museformer/README.md), so training work has nothing proven to build on yet.",
+    reason: "Training isn't wired up for Museformer. Inference is now proven real (see servers/museformer/README.md) -- training would still need its own from-scratch integration effort on top of that, which hasn't been attempted.",
   },
 };
 

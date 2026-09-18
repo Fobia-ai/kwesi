@@ -6,9 +6,9 @@
 // venv, is health-checked over HTTP, and a submitted generation becomes a
 // real POST /generate call that writes a real WAV file. Phase 7 adds
 // `musecoco` and `museformer` alongside it, each with its own venv/port and
-// its own runReal<Model>Job — MuseCoco's real path is proven (see
-// servers/musecoco/README.md); Museformer's is wired the same way but
-// unverified (see servers/museformer/README.md). Phase 8 adds
+// its own runReal<Model>Job — both real paths are proven (see
+// servers/musecoco/README.md and servers/museformer/README.md; the latter's
+// generation is GPU-only, confirmed real not speculative). Phase 8 adds
 // `ace-step-1.5`, proven real (see servers/ace-step-1.5/README.md) but
 // spawning ACE-Step's *own* REST API server rather than a hand-written
 // wrapper — see the real-server-vs-wrapper writeup there. Phase 9 adds
@@ -683,8 +683,8 @@ async function runRealMusicGenJob(workspaceId: string, generation: repo.Generati
 // min_generated_tokens?, max_generated_tokens? } -> { output_path, ... },
 // since both are symbolic/MIDI models with the same "structured attributes
 // in, .mid out" contract — unlike MusicGen's prompt/duration/melody shape.
-// See servers/musecoco/README.md and servers/museformer/README.md for what's
-// proven-real vs. unverified per model.
+// See servers/musecoco/README.md and servers/museformer/README.md — both
+// proven real end-to-end; Museformer's real checkpoint requires a CUDA GPU.
 
 async function runRealMidiJob(
   modelId: string,

@@ -30,7 +30,7 @@ const EMPTY_STATUS = (modelId: string): EnvStatus => ({
   pythonVersion: null,
   torchAvailable: false,
   cudaAvailable: null,
-  installable: modelId !== "museformer",
+  installable: true,
 });
 
 /**

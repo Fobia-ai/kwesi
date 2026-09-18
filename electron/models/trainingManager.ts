@@ -25,9 +25,11 @@
 //     installed checkpoint via `--restore-file`), no separate export step —
 //     fairseq's own checkpoint format is already what the vendored
 //     inference code loads. See servers/musecoco/README.md.
-//   - Museformer: still not wired — Phase 7's inference-side Triton/
-//     blocksparse blocker was re-confirmed still real in Phase 11, not
-//     re-solved; see servers/museformer/README.md.
+//   - Museformer: still not wired for training. Inference itself is now
+//     proven real end-to-end (GPU-only — attention_impl='blocksparse' has
+//     no CPU backend, confirmed not speculative), but training would need
+//     its own from-scratch integration effort; see servers/museformer/
+//     README.md "Training" section.
 import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";

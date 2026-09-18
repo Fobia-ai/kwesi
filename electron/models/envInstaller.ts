@@ -239,6 +239,33 @@ async function installMusecoco(onOutput: OnOutput): Promise<void> {
   }
 }
 
+async function installMuseformer(onOutput: OnOutput): Promise<void> {
+  const dest = vendorDir("museformer");
+  if (!fs.existsSync(dest)) {
+    // Sparse-checkout, same pattern and reasoning as installMusecoco's --
+    // both are subfolders of the same microsoft/muzic monorepo.
+    const tmpDir = path.join(projectRootDir(), ".tmp-muzic-clone-museformer");
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
+    await runCommand(
+      "git",
+      ["clone", "--depth", "1", "--filter=blob:none", "--sparse", "https://github.com/microsoft/muzic", tmpDir],
+      { onOutput },
+    );
+    await runCommand("git", ["sparse-checkout", "set", "museformer"], { cwd: tmpDir, onOutput });
+    fs.mkdirSync(dest, { recursive: true });
+    fs.cpSync(path.join(tmpDir, "museformer"), dest, { recursive: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } else {
+    onOutput(`${dest} already exists, skipping clone`);
+  }
+
+  // Python 3.8 to match the vendored repo's own pin (see
+  // servers/museformer/README.md "Status" for the real, GPU-verified
+  // install/inference story this recipe is based on).
+  await uvVenv("museformer", "3.8", onOutput);
+  await uvPipInstall("museformer", ["-r", path.join(serverDir("museformer"), "requirements.txt")], onOutput);
+}
+
 async function installAceStep(onOutput: OnOutput): Promise<void> {
   const dest = vendorDir("ace-step-1.5");
   await ensureGitClone("https://github.com/ace-step/ACE-Step-1.5", dest, onOutput);
@@ -259,7 +286,7 @@ async function installAceStep(onOutput: OnOutput): Promise<void> {
   ensureAceStepCheckpointsLayout(dest);
 }
 
-export type InstallableModelId = "rave" | "musicgen" | "yue2" | "musecoco" | "ace-step-1.5";
+export type InstallableModelId = "rave" | "musicgen" | "yue2" | "musecoco" | "ace-step-1.5" | "museformer";
 
 const INSTALLERS: Record<InstallableModelId, (onOutput: OnOutput) => Promise<void>> = {
   rave: installRave,
@@ -267,6 +294,7 @@ const INSTALLERS: Record<InstallableModelId, (onOutput: OnOutput) => Promise<voi
   yue2: installYue2,
   musecoco: installMusecoco,
   "ace-step-1.5": installAceStep,
+  museformer: installMuseformer,
 };
 
 export function isInstallableModel(modelId: string): modelId is InstallableModelId {
@@ -275,13 +303,7 @@ export function isInstallableModel(modelId: string): modelId is InstallableModel
 
 export async function installEnvironment(modelId: string, onOutput: OnOutput): Promise<EnvInstallResult> {
   if (!isInstallableModel(modelId)) {
-    return {
-      ok: false,
-      reason:
-        modelId === "museformer"
-          ? "Museformer's own inference path has never been verified end-to-end and may hit a hard GPU-only Triton blocker with no automated fix -- see servers/museformer/README.md."
-          : `No install recipe for "${modelId}".`,
-    };
+    return { ok: false, reason: `No install recipe for "${modelId}".` };
   }
 
   const uv = await checkUvAvailable();
