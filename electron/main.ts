@@ -25,6 +25,7 @@ import { registerProfileIpcHandlers } from "./ipc/profile.js";
 import { registerArtistProfilesIpcHandlers } from "./ipc/artistProfiles.js";
 import { registerCrashLogIpcHandlers } from "./ipc/crashLog.js";
 import { registerSettingsIpcHandlers } from "./ipc/settings.js";
+import { registerEnvironmentIpcHandlers } from "./ipc/environment.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
 import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
@@ -78,6 +79,7 @@ registerProfileIpcHandlers();
 registerArtistProfilesIpcHandlers();
 registerCrashLogIpcHandlers();
 registerSettingsIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, kwesiEnv.KWESI_MODELS_DIR);
+registerEnvironmentIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"

@@ -135,6 +135,17 @@ contextBridge.exposeInMainWorld("kwesi", {
     checkModelsDrift: () => ipcRenderer.invoke("kwesi:settings:checkModelsDrift"),
     resolveModelsDrift: () => ipcRenderer.invoke("kwesi:settings:resolveModelsDrift"),
   },
+  environment: {
+    checkPrerequisites: () => ipcRenderer.invoke("kwesi:environment:checkPrerequisites"),
+    checkStatus: (modelId: string) => ipcRenderer.invoke("kwesi:environment:checkStatus", modelId),
+    install: (modelId: string) => ipcRenderer.invoke("kwesi:environment:install", modelId),
+    installingModelId: () => ipcRenderer.invoke("kwesi:environment:installingModelId"),
+    onProgress: (callback: (event: unknown) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("kwesi:environment:progress", listener);
+      return () => ipcRenderer.removeListener("kwesi:environment:progress", listener);
+    },
+  },
   crashLog: {
     report: (
       kind: "window-error" | "unhandledrejection",

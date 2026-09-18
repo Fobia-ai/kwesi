@@ -195,8 +195,33 @@ declare global {
         checkModelsDrift: () => Promise<ModelDrift>;
         resolveModelsDrift: () => Promise<ModelDrift>;
       };
+      environment: {
+        checkPrerequisites: () => Promise<{
+          uv: { available: boolean; version: string | null };
+          git: { available: boolean; version: string | null };
+          platform: "darwin" | "win32" | "linux" | string;
+        }>;
+        checkStatus: (modelId: string) => Promise<EnvStatus>;
+        install: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
+        installingModelId: () => Promise<string | null>;
+        onProgress: (callback: (event: EnvProgress) => void) => () => void;
+      };
     };
   }
+}
+
+// Mirrors electron/models/envInstaller.ts's own types.
+export interface EnvStatus {
+  modelId: string;
+  venvExists: boolean;
+  pythonVersion: string | null;
+  torchAvailable: boolean;
+  cudaAvailable: boolean | null;
+  installable: boolean;
+}
+export interface EnvProgress {
+  modelId: string;
+  line: string;
 }
 
 /**

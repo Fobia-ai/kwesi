@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import pkg from "../../package.json";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
 import {
+  DownloadIcon,
   GitHubIcon,
   HeadphonesIcon,
   InfoIcon,
@@ -11,6 +12,7 @@ import {
   SystemIcon,
   TrashIcon,
 } from "../components/ui/icons";
+import { EnvironmentTab } from "../components/settings/EnvironmentTab";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
@@ -34,6 +36,7 @@ const SECTIONS = [
   { tab: "Profile", blurb: "Your local display name and email." },
   { tab: "Artists", blurb: "Personas tracks are attributed to." },
   { tab: "System", blurb: "Hardware, storage, and where files live." },
+  { tab: "Environment", blurb: "Each model's real Python environment — check or install them here." },
   { tab: "Security", blurb: "Passcode and auto-lock." },
   { tab: "Reset", blurb: "Wipe downloaded models, your music, and more." },
   { tab: "About", blurb: "The open-source models Kwesi builds on." },
@@ -46,6 +49,7 @@ const TAB_ICONS: Record<Tab, ReactNode> = {
   Profile: <ProfileIcon width={17} height={17} />,
   Artists: <HeadphonesIcon width={17} height={17} />,
   System: <SystemIcon width={17} height={17} />,
+  Environment: <DownloadIcon width={17} height={17} />,
   Security: <LockIcon width={17} height={17} />,
   Reset: <TrashIcon width={17} height={17} />,
   About: <InfoIcon width={17} height={17} />,
@@ -985,6 +989,7 @@ export function SettingsScreen() {
             {tab === "Profile" && <ProfileTab />}
             {tab === "Artists" && <ArtistsTab />}
             {tab === "System" && <SystemTab />}
+            {tab === "Environment" && <EnvironmentTab />}
             {tab === "Security" && <SecurityTab />}
             {tab === "Reset" && <ResetTab />}
             {tab === "About" && (

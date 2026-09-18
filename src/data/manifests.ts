@@ -119,10 +119,21 @@ export interface ManifestOutput {
   notes?: string;
 }
 
+// Matches Node/Electron's own process.platform values for the platforms
+// this app packages for (package.json's package:mac/package:win/package:linux)
+// -- kept as a real, checkable field rather than free text in `notes` so
+// the Environment tab (Settings) can gate install/generation on it
+// deterministically instead of string-sniffing prose.
+export type KwesiPlatform = "darwin" | "win32" | "linux";
+
 export interface ModelHardware {
   minVramGb: number;
   cpuFallback: boolean;
   notes?: string;
+  // Omit for "every platform this app packages for" -- only set when a
+  // model genuinely doesn't run elsewhere (e.g. YuE2's real repo documents
+  // Linux-only, confirmed against the cloned repo, not assumed).
+  platforms?: KwesiPlatform[];
 }
 
 // Phase 8: a few catalog entries (ACE-Step 1.5 most notably) span a wide
@@ -586,7 +597,7 @@ const MUSEFORMER: ModelManifest = {
   hardware: {
     minVramGb: 0,
     cpuFallback: true,
-    notes: "NEEDS VERIFICATION against the real requirements.txt — treated as similarly old/narrow-pinned as MuseCoco until confirmed, per kwesi.docs/03-model-catalog.md.",
+    notes: "NEEDS VERIFICATION against the real requirements.txt — treated as similarly old/narrow-pinned as MuseCoco until confirmed, per kwesi.docs/03-model-catalog.md. A real, unresolved risk on top of that: servers/museformer/README.md documents that the decoder's blocksparse attention kernels use Triton directly, which has no CPU backend at all — if the inference path actually hits them, --cpu generation is a hard GPU-only blocker, not a slow fallback. Never confirmed either way (no venv has ever been built to test it).",
   },
   inputs: [
     // "continue_from_midi" removed from the options below (not just
@@ -784,6 +795,7 @@ const YUE2: ModelManifest = {
   hardware: {
     minVramGb: 24,
     cpuFallback: false,
+    platforms: ["linux"],
     notes:
       "Heaviest model in the catalog — 24GB+ NVIDIA VRAM (BF16), Linux, batch only, per the real repo's own documented requirement (kept as the manifest minimum). A real Phase 8 standalone run of a single ~60s song peaked at only ~3-4GB observed VRAM on an RTX 3090 — the documented 24GB figure is presumably for longer/heavier generations or larger batch sizes than this app's smoke test used, not a correction to the published minimum.",
   },
