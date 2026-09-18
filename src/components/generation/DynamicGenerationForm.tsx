@@ -9,6 +9,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { AvatarImage } from "../ui/AvatarImage";
 import { ChipMultiSelect } from "../ui/ChipMultiSelect";
 import { ModelsIcon } from "../ui/icons";
+import { LibraryMidiPicker } from "./LibraryMidiPicker";
 
 export type GenerationFormValues = Record<string, unknown>;
 
@@ -185,7 +186,6 @@ export function FieldControl({
         />
       );
     case "audio_upload":
-    case "midi_upload":
       return (
         <input
           type="file"
@@ -193,6 +193,18 @@ export function FieldControl({
           onChange={(e) => onChange(resolveUploadedFilePath(e.target.files?.[0]))}
           className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-xs outline-none file:mr-2 file:rounded-chip file:border-0 file:bg-ink/[0.08] file:px-3 file:py-1 file:text-xs"
         />
+      );
+    case "midi_upload":
+      return (
+        <div>
+          <input
+            type="file"
+            accept={input.accept}
+            onChange={(e) => onChange(resolveUploadedFilePath(e.target.files?.[0]))}
+            className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-xs outline-none file:mr-2 file:rounded-chip file:border-0 file:bg-ink/[0.08] file:px-3 file:py-1 file:text-xs"
+          />
+          <LibraryMidiPicker value={value} onSelect={onChange} />
+        </div>
       );
     default:
       return null;
