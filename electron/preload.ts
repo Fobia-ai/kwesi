@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld("kwesi", {
     resetModelsDir: () => ipcRenderer.invoke("kwesi:settings:resetModelsDir"),
     checkModelsDrift: () => ipcRenderer.invoke("kwesi:settings:checkModelsDrift"),
     resolveModelsDrift: () => ipcRenderer.invoke("kwesi:settings:resolveModelsDrift"),
+    getAcknowledged: () => ipcRenderer.invoke("kwesi:settings:getAcknowledged"),
+    setAcknowledged: () => ipcRenderer.invoke("kwesi:settings:setAcknowledged"),
   },
   environment: {
     checkPrerequisites: () => ipcRenderer.invoke("kwesi:environment:checkPrerequisites"),
@@ -145,6 +147,19 @@ contextBridge.exposeInMainWorld("kwesi", {
       ipcRenderer.on("kwesi:environment:progress", listener);
       return () => ipcRenderer.removeListener("kwesi:environment:progress", listener);
     },
+  },
+  // Main-initiated, renderer-computed -- the opposite direction from every
+  // other channel here. See electron/ipc/audioRender.ts's own comment for
+  // why this shape exists at all (Node has no Web Audio API).
+  audioRender: {
+    onRequest: (callback: (request: { requestId: string; midiPath: string }) => void) => {
+      const listener = (_event: IpcRendererEvent, request: { requestId: string; midiPath: string }) =>
+        callback(request);
+      ipcRenderer.on("kwesi:audioRender:request", listener);
+      return () => ipcRenderer.removeListener("kwesi:audioRender:request", listener);
+    },
+    respond: (response: { requestId: string; ok: boolean; wavBytes?: Uint8Array; reason?: string }) =>
+      ipcRenderer.send("kwesi:audioRender:response", response),
   },
   crashLog: {
     report: (

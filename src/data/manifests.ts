@@ -532,7 +532,16 @@ const MUSECOCO: ModelManifest = {
       ],
     },
   ],
-  outputs: [{ kind: "midi", format: "mid" }],
+  // The real output is still MIDI -- the "audio" entry is a real WAV
+  // rendered from it (pure Tone.js synthesis, in-app, right after
+  // generation finishes: see electron/models/modelServer.ts's
+  // runRealMidiJob and src/lib/midiToAudio.ts). Declaring both here is
+  // what flips outputKindOf() to "audio+midi" so audio becomes this
+  // track's primary output, same mechanism YuE2 already uses.
+  outputs: [
+    { kind: "midi", format: "mid" },
+    { kind: "audio", format: "wav" },
+  ],
   server: { entrypoint: "server.py", venv: "musecoco-venv", portRange: [17620, 17629] },
   // Phase 11: real `fairseq-train` CLI confirmed and wired (see
   // electron/models/trainingManager.ts's runMuseCocoTrainingPipeline and
@@ -599,41 +608,41 @@ const MUSEFORMER: ModelManifest = {
     cpuFallback: false,
     notes: "Verified end-to-end on a real GPU (see servers/museformer/README.md 'Status') — a real checkpoint's own saved config uses attention_impl='blocksparse', whose Triton kernels have no CPU backend at all (confirmed: --cpu hard-fails at kernel launch). This is a small model (4 decoder layers / 512 embed dim per the checkpoint) — measured under ~450MB of its own VRAM against a real, working install. No CUDA devel toolkit (nvcc) is required despite the model's other custom kernels, since server.py routes around the one that would otherwise need it — see the README for the full story.",
   },
+  // seed_mode/seed_midi are real, verified conditioning, not decoration
+  // (see README.md "Status"): server.py encodes the picked MIDI file to
+  // REMIGEN2 tokens via the same midiprocessor copy /generate's decode
+  // step already depends on, and feeds them to fairseq-interactive as a
+  // real primer -- confirmed live to make the model genuinely continue
+  // the seed's melody/register/instrumentation, not just ignore it. A
+  // bar-count field was deliberately NOT restored here: the server has no
+  // real length control to attach it to (generation length is governed by
+  // the shared min/max token budget every model already gets), so it
+  // would still be decorative -- unlike seed_mode/seed_midi, which aren't.
   inputs: [
-    // "continue_from_midi" removed from the options below (not just
-    // disabled): servers/museformer/server.py:100 unconditionally raises
-    // 501 "not implemented" whenever seed_mode is this value, regardless of
-    // whether seed_midi resolves to a real file -- there is no code path
-    // where it succeeds, so offering it as a selectable choice was a pure
-    // UX trap, not a "coming soon" feature. seed_midi's midi_upload input
-    // (and its own real-path-resolution fix from Phase 9) is kept here,
-    // unused for now, since it's the one piece that's actually ready
-    // whenever real continuation support gets implemented server-side.
     {
       key: "seed_mode",
       type: "select",
       label: "Seed",
       default: "random",
-      options: [{ value: "random", label: "Random seed" }],
+      options: [
+        { value: "random", label: "Random (generate from scratch)" },
+        { value: "continue_from_midi", label: "Continue from a MIDI file" },
+      ],
     },
     {
       key: "seed_midi",
       type: "midi_upload",
       label: "Seed MIDI file",
       accept: ".mid,.midi",
-      helpText: "Not wired up yet — MIDI continuation isn't implemented server-side (see museformer/server.py).",
-    },
-    {
-      key: "bar_count",
-      type: "number",
-      label: "Bars to generate",
-      min: 8,
-      max: 256,
-      default: 64,
-      helpText: "Informational only — the server governs real generation length from its own token budget, not this value.",
+      helpText: "Used only when Seed is set to \"Continue from a MIDI file\" — the model picks up its melody/register and continues from there.",
     },
   ],
-  outputs: [{ kind: "midi", format: "mid" }],
+  // See MuseCoco's own outputs comment above -- same mechanism, same real
+  // Tone.js render step, both funnel through runRealMidiJob.
+  outputs: [
+    { kind: "midi", format: "mid" },
+    { kind: "audio", format: "wav" },
+  ],
   server: { entrypoint: "server.py", venv: "museformer-venv", portRange: [17630, 17639] },
   // Inference is now proven real end-to-end on a real GPU, including a
   // real decoded .mid with genuine note events -- see

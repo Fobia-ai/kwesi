@@ -989,7 +989,11 @@ export function SettingsScreen() {
             {tab === "Profile" && <ProfileTab />}
             {tab === "Artists" && <ArtistsTab />}
             {tab === "System" && <SystemTab />}
-            {tab === "Environment" && <EnvironmentTab />}
+            {tab === "Environment" && (
+              <EnvironmentTab
+                highlightModelId={(location.state as { highlightModelId?: string } | null)?.highlightModelId}
+              />
+            )}
             {tab === "Security" && <SecurityTab />}
             {tab === "Reset" && <ResetTab />}
             {tab === "About" && (

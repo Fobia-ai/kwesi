@@ -20,6 +20,11 @@ export interface KwesiSettingsApi {
   resetModelsDir(): Promise<{ ok: boolean; path: string; drift: ModelDrift }>;
   checkModelsDrift(): Promise<ModelDrift>;
   resolveModelsDrift(): Promise<ModelDrift>;
+  // The Acknowledgments screen ("/") is meant to show once, ever -- not on
+  // every launch. Presence-only flag, same convention as the security
+  // passcode setting.
+  getAcknowledged(): Promise<boolean>;
+  setAcknowledged(): Promise<{ ok: boolean }>;
 }
 
 function realSettingsApi(bridge: NonNullable<Window["kwesi"]>["settings"]): KwesiSettingsApi {
@@ -35,6 +40,8 @@ function realSettingsApi(bridge: NonNullable<Window["kwesi"]>["settings"]): Kwes
     resetModelsDir: () => bridge.resetModelsDir(),
     checkModelsDrift: () => bridge.checkModelsDrift(),
     resolveModelsDrift: () => bridge.resolveModelsDrift(),
+    getAcknowledged: () => bridge.getAcknowledged(),
+    setAcknowledged: () => bridge.setAcknowledged(),
   };
 }
 
@@ -53,6 +60,7 @@ const MOCK_EXPORTS_DIR_KEY = "kwesi-mock-exports-dir";
 const MOCK_DEFAULT_EXPORTS_DIR = "/mock/exports";
 const MOCK_MODELS_DIR_KEY = "kwesi-mock-models-dir";
 const MOCK_DEFAULT_MODELS_DIR = "/mock/models";
+const MOCK_ACKNOWLEDGED_KEY = "kwesi-mock-acknowledged-v1";
 const EMPTY_DRIFT: ModelDrift = { toInstalled: [], toNotInstalled: [] };
 
 function createMockSettingsApi(): KwesiSettingsApi {
@@ -136,6 +144,21 @@ function createMockSettingsApi(): KwesiSettingsApi {
     },
     async resolveModelsDrift() {
       return EMPTY_DRIFT;
+    },
+    async getAcknowledged() {
+      try {
+        return localStorage.getItem(MOCK_ACKNOWLEDGED_KEY) !== null;
+      } catch {
+        return false;
+      }
+    },
+    async setAcknowledged() {
+      try {
+        localStorage.setItem(MOCK_ACKNOWLEDGED_KEY, "1");
+      } catch {
+        // best-effort only
+      }
+      return { ok: true };
     },
   };
 }

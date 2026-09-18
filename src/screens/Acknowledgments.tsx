@@ -1,16 +1,32 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
 import { PillButton } from "../components/ui/PillButton";
 import { OrgLogo } from "../components/ui/OrgLogo";
 import { GitHubIcon } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
+import { kwesiSettings } from "../lib/settings";
 
-// TODO(view-once): this screen is meant to show only on first launch and
-// never again — not implemented yet, deliberately. Still shown on every
-// launch (the "/" route) until that's built; don't add the persistence
-// logic without being asked.
+// Shows once, ever -- checked on mount against a persisted flag (see
+// kwesiSettings.getAcknowledged/setAcknowledged); every later launch skips
+// straight to /home.
 export function AcknowledgmentsScreen() {
   const navigate = useNavigate();
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    kwesiSettings.getAcknowledged().then((seen) => {
+      if (seen) navigate("/home", { replace: true });
+      else setChecking(false);
+    });
+  }, [navigate]);
+
+  async function start() {
+    await kwesiSettings.setAcknowledged();
+    navigate("/home");
+  }
+
+  if (checking) return null;
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-y-auto px-6 py-12">
@@ -53,7 +69,7 @@ export function AcknowledgmentsScreen() {
           ))}
         </div>
 
-        <PillButton className="mt-10 min-w-[220px]" onClick={() => navigate("/home")}>
+        <PillButton className="mt-10 min-w-[220px]" onClick={start}>
           Start Application
         </PillButton>
       </div>

@@ -78,6 +78,24 @@ What that live run found, and fixed, along the way:
    `midiprocessor` pulls in), so a plain `miditoolkit` install without
    `matplotlib` fails at decode time. Added to `requirements.txt`.
 
+6. **Real MIDI-seeded continuation** (`seed_mode: "continue_from_midi"`),
+   added after the above: unconditional-only generation is not directable,
+   so this was worth building rather than leaving as a manifest-level
+   dead field. Same `midiprocessor` copy point 5 uses to decode also has a
+   `MidiEncoder` -- symmetric to the decoder, same REMIGEN2 vocabulary.
+   `server.py`'s `build_seed_primer()` encodes the picked MIDI, drops any
+   token type outside this checkpoint's own `dict.txt` (a real gap found
+   live: REMIGEN2 can emit `"s-*"` section-marker tokens this checkpoint
+   was never trained on), and feeds the result as `fairseq-interactive`'s
+   real input line in place of a blank one. **Verified live that the model
+   actually uses it**, not just accepts it silently: primed with a
+   hand-written synthetic 8-note ascending scale (a register/pitch pattern
+   unlike anything the model's unconditional runs produced on their own),
+   the real continuation picked up that exact scale, mirrored it back
+   down, repeated the pattern, then layered its own bassline on top --
+   the token-level and audible evidence that separates real conditioning
+   from a primer the model silently ignores. See "Input mapping" below.
+
 Real measured numbers from this machine (RTX-class GPU, CUDA 12.1): ~11-13s
 per generation (128-512 tokens), under ~450MB of the model's own VRAM (peak
 process GPU memory ~1.1GB against a ~0.7GB baseline) -- a small model,
@@ -117,21 +135,43 @@ usage -- lower risk of a hand-rolled invocation being subtly wrong in ways
 that are hard to debug without a working environment to test against (which
 is now exactly what this file's verification above used to prove it out).
 
-## Input mapping
+## Input mapping — real MIDI-primed continuation, verified live
 
-`src/data/manifests.ts`'s Museformer inputs (`seed_mode`, `seed_midi`,
-`bar_count`) map straightforwardly: `seed_mode: "random"` runs unconditional
-generation (an empty prompt line, matching the vendored README's own
-`printf '\n\n\n\n\n' | ...` usage for 5 pieces, and the exact path this
-file's live verification exercised); `seed_mode: "continue_from_midi"` is
-**not implemented** -- `server.py` returns a clear 400 explaining why, the
-same pre-existing Phase 4 gap MusicGen's melody upload has
-(`DynamicGenerationForm`'s `midi_upload`/`audio_upload` handlers only ever
-capture a file's *name*, never a real transferred path). `bar_count` is
-informational only, logged but not translated into a hard constraint --
-Museformer's real length control is `--min-len`/`--max-len-b` token budgets,
-not a bar count, mirroring the same reality MuseCoco's `bar_count` field ran
-into (see `servers/musecoco/README.md`).
+`src/data/manifests.ts`'s Museformer inputs are `seed_mode` and `seed_midi`
+only (no `bar_count` -- removed, see below). Both `seed_mode` values are
+real:
+
+- `"random"`: unconditional generation (an empty prompt line, matching the
+  vendored README's own `printf '\n\n\n\n\n' | ...` usage for 5 pieces).
+- `"continue_from_midi"`: real conditioning, not a stub. `server.py`'s
+  `build_seed_primer()` encodes the picked MIDI file to REMIGEN2 tokens via
+  `MidiEncoder` (the same reused `servers/musecoco/vendor/.../midiprocessor`
+  copy `/generate`'s decode step already depends on), drops any token type
+  this checkpoint's own `dict.txt` doesn't have (confirmed real: a `"s-*"`
+  section-marker token REMIGEN2 encoding can emit isn't in this checkpoint's
+  training vocabulary), caps it at `SEED_PRIMER_MAX_TOKENS` (256), and feeds
+  the result as `fairseq-interactive`'s real input line instead of a blank
+  one -- that's what makes it a real prefix the decoder continues from,
+  not just a prompt string it ignores.
+
+  **This was verified live, not assumed**: a hand-written synthetic MIDI (an
+  8-note ascending scale, register and pitch content unlike anything the
+  model's own unconditional runs produced) was encoded and fed in as a
+  primer -- the model's real continuation picked up the exact scale,
+  mirrored it back down, repeated the pattern, and then layered its own
+  bassline on top. That's the actual test that separates "the model reads
+  the primer" from "the model ignores the primer and the output happens to
+  look similar" -- see the git history around this section for the exact
+  token-level before/after if you want to reproduce it.
+
+  A fresh MIDI upload resolves to a real absolute path in the real app
+  (`DynamicGenerationForm`'s `resolveUploadedFilePath`, via Electron's
+  `webUtils.getPathForFile` bridge) -- no library-file-only restriction.
+
+`bar_count` was removed from the manifest entirely rather than kept: the
+server has no real length control to attach it to (generation length is
+governed by the shared min/max generated-token budget every model already
+gets, same as before), so keeping it would just be decorative UI again.
 
 ## Training -- still blocked, and now for a clearer reason
 

@@ -21,9 +21,8 @@ interface PianoRollViewerProps {
   // the hero passes a shorter one to sit inside its transport row.
   viewHeight?: number;
   // Skips the outer GlassPanel (its own background/border/padding/shadow)
-  // for callers that already provide their own chrome — BottomSheet,
-  // RowDetails — so the roll doesn't end up nested inside a box inside a
-  // box inside a box.
+  // for callers that already provide their own chrome — RowDetails — so
+  // the roll doesn't end up nested inside a box inside a box inside a box.
   bare?: boolean;
 }
 

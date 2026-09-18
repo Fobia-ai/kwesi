@@ -8,9 +8,7 @@ interface CopyAction {
 }
 
 interface NotationTabSurfaceProps {
-  // Omit both to render without an expand button -- the notation bottom
-  // sheet doesn't get one (it already grows with its content up to
-  // BottomSheet's own height cap).
+  // Omit both to render without an expand button.
   expanded?: boolean;
   onToggleExpand?: () => void;
   copy?: CopyAction;

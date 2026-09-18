@@ -194,6 +194,8 @@ declare global {
         resetModelsDir: () => Promise<{ ok: boolean; path: string; drift: ModelDrift }>;
         checkModelsDrift: () => Promise<ModelDrift>;
         resolveModelsDrift: () => Promise<ModelDrift>;
+        getAcknowledged: () => Promise<boolean>;
+        setAcknowledged: () => Promise<{ ok: boolean }>;
       };
       environment: {
         checkPrerequisites: () => Promise<{
@@ -205,6 +207,10 @@ declare global {
         install: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
         installingModelId: () => Promise<string | null>;
         onProgress: (callback: (event: EnvProgress) => void) => () => void;
+      };
+      audioRender: {
+        onRequest: (callback: (request: { requestId: string; midiPath: string }) => void) => () => void;
+        respond: (response: { requestId: string; ok: boolean; wavBytes?: Uint8Array; reason?: string }) => void;
       };
     };
   }

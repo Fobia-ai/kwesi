@@ -3,7 +3,6 @@ import { GlassPanel } from "../ui/GlassPanel";
 import { PillButton } from "../ui/PillButton";
 import { AvatarImage } from "../ui/AvatarImage";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { BottomSheet } from "../ui/BottomSheet";
 import {
   SearchIcon,
   CloseIcon,
@@ -15,7 +14,7 @@ import {
 } from "../ui/icons";
 import { OutputViewerPlaceholder, type GenerationStatus } from "../generation/OutputViewerPlaceholder";
 import { PianoRollViewer } from "../midi/PianoRollViewer";
-import { NotationTabs, type NotationTab } from "../midi/NotationTabs";
+import { NotationTabs } from "../midi/NotationTabs";
 import { NotationTabSurface } from "../midi/NotationTabSurface";
 import { TrackControls } from "./TrackControls";
 import { HeroArtwork } from "./HeroArtwork";
@@ -61,6 +60,14 @@ interface LibraryCardBaseProps {
   onDelete: (item: LibraryItem) => Promise<void> | void;
   // Top-left of the hero: the project switcher, or the library's summary.
   headerSlot: ReactNode;
+  // Re-submits a cancelled/failed track with its original params. Real in
+  // both modes: a generation's own input_params (plus its project_id) is
+  // everything a retry needs, regardless of which screen you're looking at
+  // it from — Home included, since that's genuinely where a relaunch
+  // always lands, and a failed track's Retry shouldn't only exist as long
+  // as you stay on the one project screen you happened to be on when it
+  // failed.
+  onRetry: (item: LibraryItem) => void;
 }
 
 /**
@@ -81,16 +88,7 @@ interface LibraryCardBaseProps {
 export type LibraryCardProps = LibraryCardBaseProps &
   (
     | { mode: "library"; emptyState: ReactNode }
-    | {
-        mode: "project";
-        onNew: () => void;
-        isCreating: boolean;
-        form: ReactNode;
-        // Re-submits a cancelled/failed track with its original params —
-        // only meaningful in "project" mode, which has a project to submit
-        // into; "library" mode spans every workspace/project read-only.
-        onRetry: (item: LibraryItem) => void;
-      }
+    | { mode: "project"; onNew: () => void; isCreating: boolean; form: ReactNode }
   );
 
 type HeroTab = "overview" | "lyrics" | "midi" | "abc" | "midiTxt" | "abcTxt";
@@ -141,14 +139,13 @@ function ArtistBadge({ artist, fallbackName }: { artist: ArtistProfile | null; f
 }
 
 export function LibraryCard(props: LibraryCardProps) {
-  const { items, artistProfiles, selectedId, onSelect, onDelete, headerSlot } = props;
+  const { items, artistProfiles, selectedId, onSelect, onDelete, headerSlot, onRetry } = props;
   const project = props.mode === "project" ? props : null;
   const player = usePlayer();
   const [tab, setTab] = useState<HeroTab>("overview");
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [midiSheetItem, setMidiSheetItem] = useState<LibraryItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LibraryItem | null>(null);
   const [saveStatus, setSaveStatus] = useState<{ id: string; text: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -233,15 +230,11 @@ export function LibraryCard(props: LibraryCardProps) {
     if (track) {
       player.setQueue(queue);
       void player.play(track);
-      return;
     }
-    // No audio to play (MuseCoco/Museformer's MIDI-only output) — opens the
-    // notation in a bottom sheet instead, since there's nothing else a
-    // click on this row could do and a real piano roll wants real width.
-    const files = parseOutputFiles(item.generation.output_files);
-    if (findMidiFile(files) || findAbcFile(files)) {
-      setMidiSheetItem(item);
-    }
+    // No audio to play (MuseCoco/Museformer's MIDI-only output) — selection
+    // alone is enough: the hero above already renders the same notation
+    // tabs for whichever row is selected, so there's nothing further for a
+    // click on the row itself to do.
   }
 
   async function handleSave(item: LibraryItem) {
@@ -504,8 +497,7 @@ export function LibraryCard(props: LibraryCardProps) {
             const midiFile = findMidiFile(files);
             const midiOnly = Boolean(midiFile) && !findAudioFile(files);
             const savable = generation.status === "done" && Boolean(findAudioFile(files) ?? midiFile);
-            const retryable =
-              props.mode === "project" && (generation.status === "cancelled" || generation.status === "failed");
+            const retryable = generation.status === "cancelled" || generation.status === "failed";
             const expanded = expandedId === generation.id;
             const secondary =
               props.mode === "library"
@@ -572,7 +564,7 @@ export function LibraryCard(props: LibraryCardProps) {
                     {retryable ? (
                       <button
                         type="button"
-                        onClick={() => project?.onRetry(item)}
+                        onClick={() => onRetry(item)}
                         title="Retry with the same settings"
                         aria-label={`Retry ${generationTitle(generation)}`}
                         className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink"
@@ -593,7 +585,7 @@ export function LibraryCard(props: LibraryCardProps) {
                     )}
                     <RowMenu
                       onDetails={() => setExpandedId(expanded ? null : generation.id)}
-                      onRetry={retryable ? () => project?.onRetry(item) : undefined}
+                      onRetry={retryable ? () => onRetry(item) : undefined}
                       onSave={savable ? () => void handleSave(item) : undefined}
                       onDelete={() => setPendingDelete(item)}
                     />
@@ -621,16 +613,6 @@ export function LibraryCard(props: LibraryCardProps) {
             await onDelete(item);
           }}
         />
-      )}
-
-      {midiSheetItem && (
-        <BottomSheet
-          title={generationTitle(midiSheetItem.generation)}
-          subtitle="Notation"
-          onClose={() => setMidiSheetItem(null)}
-        >
-          <NotationSheetContent item={midiSheetItem} />
-        </BottomSheet>
       )}
     </GlassPanel>
   );
@@ -736,57 +718,6 @@ function RowAccordion({ expanded, item }: { expanded: boolean; item: LibraryItem
       style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
     >
       <div className="overflow-hidden">{everOpened && <RowDetails item={item} />}</div>
-    </div>
-  );
-}
-
-const SHEET_TAB_LABELS: Record<NotationTab, string> = {
-  midi: "midi",
-  abc: "ABC",
-  midiTxt: "Midi.Txt",
-  abcTxt: "ABC.Txt",
-};
-
-// The bottom sheet only ever opens for tracks with no audio to play (see
-// handleRowClick) -- MuseCoco/Museformer's real .mid, or a hypothetical
-// abc-only-no-audio output. Whichever file is real, all four tabs show:
-// the other notation format and both text views are genuinely derived (see
-// NotationTabs / lib/useNotationData.ts). No expand toggle here (unlike the
-// hero) -- the sheet itself is a fixed height (see BottomSheet.tsx) so
-// switching tabs never resizes it, and there's no smaller default size to
-// expand from.
-function NotationSheetContent({ item }: { item: LibraryItem }) {
-  const [sheetTab, setSheetTab] = useState<NotationTab>("midi");
-  const files = parseOutputFiles(item.generation.output_files);
-  const midiFile = findMidiFile(files);
-  const abcFile = findAbcFile(files);
-
-  return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="flex shrink-0 gap-6">
-        {(["midi", "abc", "midiTxt", "abcTxt"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setSheetTab(t)}
-            className={`relative whitespace-nowrap pb-1 text-sm capitalize transition-colors duration-150 ${
-              sheetTab === t ? "text-ink" : "text-ink-muted hover:text-ink"
-            }`}
-          >
-            {SHEET_TAB_LABELS[t]}
-            {sheetTab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
-          </button>
-        ))}
-      </div>
-      <NotationTabs
-        activeTab={sheetTab}
-        midiFilePath={midiFile}
-        abcFilePath={abcFile}
-        title={generationTitle(item.generation)}
-        viewHeight={500}
-        className="min-h-0 flex-1"
-        contentClassName="p-1"
-      />
     </div>
   );
 }

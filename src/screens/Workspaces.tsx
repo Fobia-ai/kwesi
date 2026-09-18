@@ -6,8 +6,10 @@ import { GlassPanel } from "../components/ui/GlassPanel";
 import { Modal } from "../components/ui/Modal";
 import { PageHeader } from "../components/ui/PageHeader";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 import { WorkspacesIcon } from "../components/ui/icons";
 import { kwesiDb, type ModelRow, type WorkspaceRow } from "../lib/db";
+import { checkModelReadiness } from "../lib/modelReadiness";
 
 function NewWorkspaceModal({
   models,
@@ -21,11 +23,17 @@ function NewWorkspaceModal({
   const [name, setName] = useState("");
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
+  const [showSetupDialog, setShowSetupDialog] = useState(false);
 
   async function submit() {
     if (!name.trim() || !modelId) return;
     setBusy(true);
     try {
+      const readiness = await checkModelReadiness(modelId);
+      if (!readiness.ready) {
+        setShowSetupDialog(true);
+        return;
+      }
       const workspace = await kwesiDb.createWorkspace(name.trim(), modelId);
       onCreated(workspace);
     } finally {
@@ -34,42 +42,45 @@ function NewWorkspaceModal({
   }
 
   return (
-    <Modal title="New Workspace" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5 text-sm">
-          Name
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
-            placeholder="e.g. Lo-fi sketches"
-          />
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm">
-          Model <span className="text-ink-muted">(permanent for this workspace)</span>
-          <select
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.display_name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="mt-2 flex justify-end gap-2">
-          <PillButton variant="ghost" onClick={onClose}>
-            Cancel
-          </PillButton>
-          <PillButton onClick={submit} disabled={busy || !name.trim()}>
-            Create
-          </PillButton>
+    <>
+      <Modal title="New Workspace" onClose={onClose}>
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5 text-sm">
+            Name
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+              placeholder="e.g. Lo-fi sketches"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            Model <span className="text-ink-muted">(permanent for this workspace)</span>
+            <select
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+              className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-2 flex justify-end gap-2">
+            <PillButton variant="ghost" onClick={onClose}>
+              Cancel
+            </PillButton>
+            <PillButton onClick={submit} disabled={busy || !name.trim()}>
+              Create
+            </PillButton>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+      {showSetupDialog && <ModelSetupDialog modelId={modelId} onClose={() => setShowSetupDialog(false)} />}
+    </>
   );
 }
 

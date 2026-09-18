@@ -402,7 +402,19 @@ export function DynamicGenerationForm({
   const hardwareGate = evaluateHardwareGate(manifest, requiredVramGb, gpu);
 
   function setValue(key: string, value: unknown) {
-    setValues((prev) => ({ ...prev, [key]: value }));
+    setValues((prev) => {
+      const next = { ...prev, [key]: value };
+      // Picking (or clearing) a seed MIDI file drives "Seed" automatically
+      // rather than needing two separate manual selections that can drift
+      // out of sync — a file chosen while "Random" is still selected would
+      // otherwise be silently ignored server-side (see museformer's
+      // seed_mode/seed_midi in manifests.ts). Only applies when the model
+      // actually declares a seed_mode field, so this is a no-op elsewhere.
+      if (key === "seed_midi" && manifest.inputs.some((i) => i.key === "seed_mode")) {
+        next.seed_mode = value ? "continue_from_midi" : "random";
+      }
+      return next;
+    });
   }
 
   // Real bug this fixed: toggling a genre chip here only ever updated

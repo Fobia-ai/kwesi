@@ -8,6 +8,7 @@ import { ModelsDriftBanner } from "../components/home/ModelsDriftBanner";
 import { kwesiDb, type LibraryGenerationRow, type WorkspaceRow } from "../lib/db";
 import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
+import { getManifest, outputKindOf } from "../data/manifests";
 
 /**
  * The default tab: one player over every track in the app, regardless of
@@ -45,6 +46,26 @@ export function HomeScreen() {
     if (!rows.some((r) => r.id === selectedId)) setSelectedId(rows[0]?.id ?? null);
   }, [rows, selectedId]);
 
+  // A cancelled/failed row's own input_params (stored as JSON already) plus
+  // its own project_id is everything a retry needs — same real re-submit
+  // WorkspaceDetail's retryGeneration does, just resolved from the row
+  // itself since Home spans every project rather than having just one.
+  function retryGeneration(item: LibraryItem) {
+    const manifest = getManifest(item.modelId);
+    if (!manifest) return;
+    let values: Record<string, unknown>;
+    try {
+      values = JSON.parse(item.generation.input_params);
+    } catch {
+      return;
+    }
+    void kwesiGeneration
+      .submit(item.generation.project_id, item.generation.checkpoint_variant, values, outputKindOf(manifest))
+      .then((result) => {
+        if (result.ok) refresh();
+      });
+  }
+
   const items: LibraryItem[] = useMemo(
     () =>
       (rows ?? []).map((row) => ({
@@ -70,6 +91,7 @@ export function HomeScreen() {
           await kwesiDb.deleteGeneration(item.generation.id, true);
           refresh();
         }}
+        onRetry={retryGeneration}
         mode="library"
         headerSlot={
           <span className="kwesi-glass inline-flex h-9 items-center gap-1.5 rounded-chip px-3 text-xs text-ink">

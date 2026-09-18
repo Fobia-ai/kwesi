@@ -49,6 +49,58 @@ def ensure_data_bin():
         shutil.copyfile(DICT_SRC, dst)
 
 
+_dict_vocab = None
+
+
+def _dict_vocab_tokens() -> set:
+    global _dict_vocab
+    if _dict_vocab is None:
+        _dict_vocab = set()
+        if os.path.isfile(DICT_SRC):
+            with open(DICT_SRC) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        _dict_vocab.add(line.split(" ")[0])
+    return _dict_vocab
+
+
+# How many real primer tokens (from the user's seed MIDI) to feed the model
+# before it takes over -- real REMIGEN2 tokens run several per note (pos/
+# instrument/pitch/duration/velocity), so this is roughly the first 10-15
+# notes, not 256 notes. Kept intentionally small: enough for the model to
+# pick up melody/register/instrumentation (proven live -- see README.md
+# "Status"), while leaving most of the real generated-token budget for the
+# model's own continuation rather than the primer itself.
+SEED_PRIMER_MAX_TOKENS = 256
+
+
+def build_seed_primer(seed_midi_path: str) -> str:
+    from midiprocessor import MidiEncoder
+    from midiprocessor.enc_remigen2_utils import convert_remigen_token_list_to_token_str_list
+
+    encoder = MidiEncoder("REMIGEN2")
+    token_lists = encoder.encode_file(seed_midi_path)
+    if not token_lists or not token_lists[0]:
+        raise HTTPException(status_code=400, detail="Seed MIDI file has no notes MidiEncoder could read.")
+
+    token_strs = convert_remigen_token_list_to_token_str_list(token_lists[0])
+    # Real REMIGEN2 encoding can emit token types this checkpoint's own
+    # dict.txt doesn't have (e.g. "s-*" section markers -- confirmed live,
+    # not every token type this encoder can produce was in this model's
+    # training vocabulary). Dropping unsupported ones rather than crashing
+    # fairseq-interactive on an OOV token -- see README.md "Status".
+    vocab = _dict_vocab_tokens()
+    filtered = [t for t in token_strs if t in vocab]
+    dropped = len(token_strs) - len(filtered)
+    if dropped:
+        log.info(f"seed primer: dropped {dropped} token(s) not in this checkpoint's vocabulary")
+    if not filtered:
+        raise HTTPException(status_code=400, detail="Seed MIDI encoded to no tokens this checkpoint's vocabulary supports.")
+
+    return " ".join(filtered[:SEED_PRIMER_MAX_TOKENS])
+
+
 class GenerateRequest(BaseModel):
     input_params: dict
     output_path: str
@@ -69,16 +121,13 @@ def health():
 @app.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
     """
-    UNVERIFIED (see README.md "Status") -- shells out to the real
-    `fairseq-interactive` CLI (the vendored repo's own documented inference
-    path, see tgen/generation__mf-lmd6remi-x.sh) rather than reimplementing
-    the generation loop by hand the way servers/musecoco/server.py does,
-    since Museformer's task/generator are designed to work with the stock
-    fairseq CLI via --user-dir. This was never run end-to-end on this
-    machine -- Museformer's decoder imports custom CUDA/Triton kernels
-    (museformer/kernels/*, museformer/blocksparse/*) whose CPU-fallback
-    coverage is unconfirmed; see README.md before trusting this in
-    production.
+    Verified real end-to-end, both unconditional and MIDI-primed (see
+    README.md "Status") -- shells out to the real `fairseq-interactive` CLI
+    (the vendored repo's own documented inference path, see
+    tgen/generation__mf-lmd6remi-x.sh) rather than reimplementing the
+    generation loop by hand the way servers/musecoco/server.py does, since
+    Museformer's task/generator are designed to work with the stock fairseq
+    CLI via --user-dir.
     """
     if not os.path.isfile(checkpoint_path()):
         raise HTTPException(status_code=404, detail=f"No checkpoint at {checkpoint_path()}")
@@ -86,20 +135,20 @@ def generate(req: GenerateRequest):
 
     seed_mode = req.input_params.get("seed_mode", "random")
     seed_midi = req.input_params.get("seed_midi")
+    seed_primer = ""
     if seed_mode == "continue_from_midi":
         if not (isinstance(seed_midi, str) and os.path.isabs(seed_midi) and os.path.isfile(seed_midi)):
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "seed_mode is 'continue_from_midi' but seed_midi is not a real file path on disk -- "
-                    "DynamicGenerationForm's midi_upload handler only captures a file name today (the same "
-                    "pre-existing Phase 4 gap MusicGen's melody_audio upload has), so continuation isn't "
-                    "wireable yet. Use seed_mode='random' instead."
-                ),
+                detail="seed_mode is 'continue_from_midi' but seed_midi is not a real file path on disk.",
             )
-        raise HTTPException(status_code=501, detail="continue_from_midi seeding is not implemented in this server.")
+        # Real MIDI -> REMIGEN2 token encoding via the same reused
+        # midiprocessor copy /generate's decode step already depends on --
+        # verified live to produce a genuine, checkpoint-recognized primer
+        # the model actually continues from (not just a blank-equivalent
+        # prefix) -- see README.md "Status" for the exact test.
+        seed_primer = build_seed_primer(seed_midi)
 
-    bar_count = req.input_params.get("bar_count", 64)
     min_len = max(64, req.min_generated_tokens)
     max_len_b = max(min_len + 64, req.max_generated_tokens)
 
@@ -132,12 +181,16 @@ def generate(req: GenerateRequest):
         "--max-len-b", str(max_len_b),
         "--buffer-size", "1",
     ]
-    log.info(f"bar_count hint={bar_count} (informational only -- length is governed by min/max-len-b); running: {' '.join(cmd)}")
+    log.info(f"seed_mode={seed_mode} primer_tokens={len(seed_primer.split()) if seed_primer else 0}; running: {' '.join(cmd)}")
 
     t0 = time.time()
     proc = subprocess.run(
         cmd,
-        input="\n",
+        # A real primer here (seed_mode="continue_from_midi") is fed as the
+        # fairseq-interactive input line itself -- that's what makes it a
+        # real primer/prefix the decoder continues from, not just a prompt
+        # string; a blank line is real unconditional generation.
+        input=(seed_primer + "\n") if seed_primer else "\n",
         capture_output=True,
         text=True,
         timeout=1800,

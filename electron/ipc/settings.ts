@@ -6,6 +6,10 @@ import { detectModelDrift, reconcileInstalledModelsFromDisk, type ModelDrift } f
 
 const EXPORTS_DIR_SETTING_KEY = "exportsDir";
 const MODELS_DIR_SETTING_KEY = "modelsDir";
+// Presence-only flag (mirrors electron/security/appLock.ts's PASSCODE_KEY
+// pattern) -- the Acknowledgments screen is meant to show once, ever, not
+// on every launch.
+const ACKNOWLEDGED_KEY = "acknowledgedFirstLaunch";
 
 // Same native folder-picker pattern electron/ipc/training.ts's
 // pickOutputDir/pickDatasetDir already use.
@@ -93,4 +97,10 @@ export function registerSettingsIpcHandlers(defaultExportsDir: string, defaultMo
   // call site alone.
   ipcMain.handle("kwesi:settings:checkModelsDrift", () => detectModelDrift());
   ipcMain.handle("kwesi:settings:resolveModelsDrift", () => reconcileInstalledModelsFromDisk());
+
+  ipcMain.handle("kwesi:settings:getAcknowledged", () => repo.getSetting(ACKNOWLEDGED_KEY) !== null);
+  ipcMain.handle("kwesi:settings:setAcknowledged", () => {
+    repo.setSetting(ACKNOWLEDGED_KEY, "1");
+    return { ok: true };
+  });
 }

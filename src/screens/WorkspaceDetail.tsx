@@ -16,10 +16,12 @@ import {
   type ModelVariantRow,
 } from "../lib/db";
 import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation";
+import { kwesiEnvironment } from "../lib/environment";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { getManifest, outputKindOf } from "../data/manifests";
 import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
 import { LibraryCard, type LibraryItem } from "../components/library/LibraryCard";
+import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 
 function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => void }) {
   const [name, setName] = useState("");
@@ -241,6 +243,7 @@ function ProjectPane({
   const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(null);
   // The new-track form takes over the whole card while this is true.
   const [isCreating, setIsCreating] = useState(false);
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
 
   const installedVariantNames = useMemo(
     () => variants.filter((v) => v.install_status === "installed").map((v) => v.variant_name),
@@ -289,6 +292,16 @@ function ProjectPane({
   async function submitGeneration(checkpointVariant: string | null, values: Record<string, unknown>) {
     const manifest = getManifest(modelId);
     if (!manifest) return;
+    // Checked here (not just left to fail late inside the real spawn) so a
+    // missing venv surfaces as an actionable dialog instead of a
+    // queued-then-failed row — see modelServer.ts's spawnRealServer, which
+    // otherwise only throws its real, descriptive error after the row is
+    // already created and shown to the user.
+    const envStatus = await kwesiEnvironment.checkStatus(modelId);
+    if (!envStatus.venvExists) {
+      setSetupDialogOpen(true);
+      return;
+    }
     const result = await kwesiGeneration.submit(project.id, checkpointVariant, values, outputKindOf(manifest));
     if (result.ok) {
       setIsCreating(false);
@@ -322,38 +335,41 @@ function ProjectPane({
   );
 
   return (
-    <LibraryCard
-      items={items}
-      artistProfiles={artistProfiles}
-      selectedId={selectedGenerationId}
-      onSelect={setSelectedGenerationId}
-      onDelete={async (item) => {
-        await kwesiDb.deleteGeneration(item.generation.id, true);
-        refresh();
-      }}
-      mode="project"
-      headerSlot={
-        <ProjectSwitcher
-          projects={projects}
-          selectedId={project.id}
-          onSelect={onSelectProject}
-          onRequestDelete={onRequestDeleteProject}
-        />
-      }
-      onNew={() => setIsCreating(true)}
-      onRetry={retryGeneration}
-      isCreating={isCreating}
-      form={
-        <NewTrackForm
-          modelId={modelId}
-          installedVariantNames={installedVariantNames}
-          extraVariantNames={trainedVariantNames}
-          artistProfiles={artistProfiles}
-          onCancel={() => setIsCreating(false)}
-          onSubmit={submitGeneration}
-        />
-      }
-    />
+    <>
+      <LibraryCard
+        items={items}
+        artistProfiles={artistProfiles}
+        selectedId={selectedGenerationId}
+        onSelect={setSelectedGenerationId}
+        onDelete={async (item) => {
+          await kwesiDb.deleteGeneration(item.generation.id, true);
+          refresh();
+        }}
+        mode="project"
+        headerSlot={
+          <ProjectSwitcher
+            projects={projects}
+            selectedId={project.id}
+            onSelect={onSelectProject}
+            onRequestDelete={onRequestDeleteProject}
+          />
+        }
+        onNew={() => setIsCreating(true)}
+        onRetry={retryGeneration}
+        isCreating={isCreating}
+        form={
+          <NewTrackForm
+            modelId={modelId}
+            installedVariantNames={installedVariantNames}
+            extraVariantNames={trainedVariantNames}
+            artistProfiles={artistProfiles}
+            onCancel={() => setIsCreating(false)}
+            onSubmit={submitGeneration}
+          />
+        }
+      />
+      {setupDialogOpen && <ModelSetupDialog modelId={modelId} onClose={() => setSetupDialogOpen(false)} />}
+    </>
   );
 }
 

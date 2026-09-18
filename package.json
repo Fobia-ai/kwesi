@@ -29,6 +29,7 @@
     "package:win": "npm run prepackage && electron-builder --win --publish=never"
   },
   "dependencies": {
+    "@tonejs/midi": "^2.0.28",
     "abcjs": "^6.7.0",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
@@ -36,6 +37,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
+    "tone": "^15.1.22",
     "undici": "^6.28.1"
   },
   "devDependencies": {

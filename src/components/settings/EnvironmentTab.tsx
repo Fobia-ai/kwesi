@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import { MANIFESTS, type ModelHardware, type KwesiPlatform } from "../../data/manifests";
 import { kwesiEnvironment, type EnvStatus } from "../../lib/environment";
 import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
@@ -18,12 +18,14 @@ function PrereqRow({ label, info }: { label: string; info: { available: boolean;
   );
 }
 
-function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu }: {
+function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu, highlighted, rowRef }: {
   modelId: string;
   displayName: string;
   hardware: ModelHardware;
   currentPlatform: string;
   gpu: GpuVramInfo;
+  highlighted?: boolean;
+  rowRef?: Ref<HTMLDivElement>;
 }) {
   const [status, setStatus] = useState<EnvStatus | null>(null);
   const [checking, setChecking] = useState(true);
@@ -78,7 +80,10 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu }: {
           .join(" · ");
 
   return (
-    <div className="rounded-[12px] bg-ink/[0.03] px-4 py-3">
+    <div
+      ref={rowRef}
+      className={`rounded-[12px] bg-ink/[0.03] px-4 py-3 transition-shadow duration-300 ${highlighted ? "ring-2 ring-accent" : ""}`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -129,18 +134,25 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu }: {
  * (see electron/models/envInstaller.ts for exactly what each model's
  * Install button runs and why).
  */
-export function EnvironmentTab() {
+export function EnvironmentTab({ highlightModelId }: { highlightModelId?: string }) {
   const [prereqs, setPrereqs] = useState<{
     uv: { available: boolean; version: string | null };
     git: { available: boolean; version: string | null };
     platform: string;
   } | null>(null);
   const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
+  const highlightedRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     kwesiEnvironment.checkPrerequisites().then(setPrereqs);
     kwesiHardware.gpuVram().then(setGpu);
   }, []);
+
+  // Arrived here from ModelSetupDialog's "Or open Settings → Environment"
+  // link -- scroll the model it was opened for into view.
+  useEffect(() => {
+    if (highlightModelId) highlightedRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightModelId]);
 
   const models = Object.values(MANIFESTS);
 
@@ -188,6 +200,8 @@ export function EnvironmentTab() {
               hardware={m.hardware}
               currentPlatform={prereqs?.platform ?? "linux"}
               gpu={gpu ?? { available: false, totalVramGb: 0, freeVramGb: 0 }}
+              highlighted={m.modelId === highlightModelId}
+              rowRef={m.modelId === highlightModelId ? highlightedRowRef : undefined}
             />
           ))}
         </div>

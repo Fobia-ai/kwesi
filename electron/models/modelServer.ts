@@ -30,6 +30,7 @@ import path from "node:path";
 import { Agent, setGlobalDispatcher } from "undici";
 import * as repo from "../db/repositories.js";
 import { generationDir, ensureDir, modelsRootDir, venvDir } from "../db/paths.js";
+import { requestRendererAudioRender } from "../ipc/audioRender.js";
 
 const PROGRESS_CHANNEL = "kwesi:generation:progress";
 
@@ -722,11 +723,25 @@ async function runRealMidiJob(
     }
 
     const data = (await res.json()) as { output_path: string; duration_ms: number };
-    repo.updateGenerationStatus(generationId, "done", {
-      outputFiles: [data.output_path],
-      durationMs: data.duration_ms,
-    });
-    broadcast({ type: "done", generationId, projectId, outputFiles: [data.output_path], durationMs: data.duration_ms });
+    const outputFiles = [data.output_path];
+
+    // Real Tone.js render, in the renderer (Node has no Web Audio API --
+    // see requestRendererAudioRender's own comment). Soft/best-effort: a
+    // render failure degrades to MIDI-only "done", it never fails an
+    // otherwise-successful generation. Must happen before the single
+    // updateGenerationStatus call below, not after -- that call always
+    // replaces output_files wholesale (omitting it wipes to "[]"), so
+    // there's no safe way to "add" the WAV in a second call.
+    const wavPath = path.join(dir, "output.wav");
+    const renderResult = await requestRendererAudioRender(data.output_path, wavPath);
+    if (renderResult.ok && renderResult.outputPath) {
+      outputFiles.push(renderResult.outputPath);
+    } else {
+      console.warn(`[${modelId}] audio render failed, keeping MIDI-only output: ${renderResult.reason}`);
+    }
+
+    repo.updateGenerationStatus(generationId, "done", { outputFiles, durationMs: data.duration_ms });
+    broadcast({ type: "done", generationId, projectId, outputFiles, durationMs: data.duration_ms });
   } catch (err) {
     finishFailedOrCancelled(generationId, projectId, err);
   } finally {
