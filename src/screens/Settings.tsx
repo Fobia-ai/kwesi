@@ -310,12 +310,12 @@ function ArtistsTab() {
   }
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex max-w-xl flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
         <p className="text-xs text-ink-muted">
           Personas generations can be attributed to — pick one when creating a generation.
         </p>
-        <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => setShowForm("new")}>
+        <PillButton className="!px-3 !py-1.5 shrink-0 text-xs" onClick={() => setShowForm("new")}>
           + New Profile
         </PillButton>
       </div>

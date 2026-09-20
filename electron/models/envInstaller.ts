@@ -213,12 +213,11 @@ async function installMusecoco(onOutput: OnOutput): Promise<void> {
   }
 
   await uvVenv("musecoco", "3.8", onOutput);
-  // cu113 torch is what the real published checkpoint/vendored code was
-  // validated against; the fast-transformers extension this pulls in
-  // gracefully builds CPU-only if no system CUDA toolchain is present
-  // (its own setup.py checks -- see servers/musecoco/requirements.txt),
-  // it doesn't fail the install.
-  await uvPipInstall("musecoco", ["--index-url", "https://download.pytorch.org/whl/cu113", "torch==1.11.0"], onOutput);
+  // requirements.txt now includes torch==1.11.0 and --extra-index-url for
+  // PyTorch's cu113 wheels, so one install is enough. The separate torch
+  // install step that used --index-url was brittle: it hid PyPI from uv,
+  // and it didn't give pytorch-fast-transformers (builds from source) the
+  // torch/numpy build environment it needs in one pass.
   await uvPipInstall("musecoco", ["-r", path.join(serverDir("musecoco"), "requirements.txt")], onOutput);
 
   // Symlink (not copy) the checkpoint into the vendored layout the code

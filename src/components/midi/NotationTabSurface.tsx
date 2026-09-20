@@ -52,7 +52,7 @@ export function NotationTabSurface({
 
   return (
     <div className={`relative ${className ?? ""}`} style={height !== undefined ? { height } : undefined}>
-      <div className={`kwesi-scroll-inset absolute inset-0 overflow-y-auto ${contentClassName ?? "p-4"}`}>
+      <div className={`kwesi-scroll-inset absolute inset-0 overflow-auto ${contentClassName ?? "p-4"}`}>
         {children}
       </div>
       {copy && (

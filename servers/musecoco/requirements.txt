@@ -8,8 +8,15 @@
 # tensorboardX — none of those are imported by the generation path this
 # server exercises, so they're deliberately left out).
 #
-# Install with: pip install --index-url https://download.pytorch.org/whl/cu113 torch==1.11.0
-# then:         pip install -r servers/musecoco/requirements.txt
+# PyTorch cu113 wheels live on PyTorch's own index; everything else (fairseq,
+# miditoolkit, fastapi, etc.) comes from PyPI. --extra-index-url keeps both
+# indexes available. The old two-step install (torch first with --index-url,
+# then the rest) was brittle with uv and left build tools underspecified for
+# pytorch-fast-transformers, which builds from source. A single install with
+# --extra-index-url is cleaner.
+--extra-index-url https://download.pytorch.org/whl/cu113
+
+torch==1.11.0
 fairseq==0.10.2
 pytorch-fast-transformers==0.4.0
 miditoolkit==0.1.16

@@ -231,3 +231,19 @@ body {
 .kwesi-scroll-inset::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--kwesi-ink) / 0.32);
 }
+
+/* abcjs engraves staff notation as SVG(s) at a fixed pixel width. Without
+   these rules the SVG can be told to width:100% by abcjs's own defaults, or
+   the container can shrink to the viewport and hide the overflow. This keeps
+   the notation at its natural width and lets NotationTabSurface's overflow-auto
+   surface horizontal (and vertical) scroll when a score is wider than the card. */
+.abcjs-container {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.abcjs-container svg {
+  max-width: none;
+  width: auto;
+  height: auto;
+}

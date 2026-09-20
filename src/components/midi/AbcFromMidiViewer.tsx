@@ -86,5 +86,5 @@ export function AbcFromMidiViewer({ filePath, title, bare }: AbcFromMidiViewerPr
 
   const content = <AbcNotationRenderer abc={abc ?? ""} />;
   if (bare) return content;
-  return <GlassPanel className="max-h-72 overflow-y-auto p-3">{content}</GlassPanel>;
+  return <GlassPanel className="max-h-72 overflow-auto p-3">{content}</GlassPanel>;
 }

@@ -7,7 +7,12 @@
 # standalone timing test bore that out (see README.md), so this venv
 # deliberately skips the multi-GB CUDA torch build servers/musicgen and
 # servers/ace-step-1.5 need.
---index-url https://download.pytorch.org/whl/cpu
+# PyTorch CPU wheels live on PyTorch's own index; everything else (soundfile,
+# fastapi, uvicorn, python-multipart) comes from PyPI. --extra-index-url keeps
+# both indexes available. Using --index-url instead would make uv/pip look ONLY
+# at PyTorch's index, and packages like soundfile are not mirrored there,
+# causing a "No solution found" failure on install.
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 torch==2.6.0
 torchaudio==2.6.0

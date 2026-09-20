@@ -20,10 +20,9 @@ export function AbcNotationRenderer({ abc }: AbcNotationRendererProps) {
     if (!containerRef.current) return;
     containerRef.current.innerHTML = "";
     renderAbc(containerRef.current, abc, {
-      responsive: "resize",
       foregroundColor: "currentColor",
     });
   }, [abc]);
 
-  return <div ref={containerRef} className="abcjs-container w-full text-ink" />;
+  return <div ref={containerRef} className="abcjs-container inline-block min-w-full text-ink" />;
 }
