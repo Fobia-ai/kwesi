@@ -61,21 +61,19 @@ linux:
   # No icon asset exists yet (see roadmap notes) -- electron-builder falls
   # back to its own default Electron icon rather than failing the build.
 
-# --- macOS: config-only on this machine, no signing credentials exist ---
-# `identity: null` explicitly disables macOS identity auto-detection so a
-# future CI/dev-machine build never accidentally requires a Developer ID it
-# doesn't have -- electron-builder already skips signing when CSC_LINK/
-# CSC_KEY_PASSWORD are unset, this just makes that intent explicit rather
-# than implicit. See kwesi.docs/02-architecture.md's "Packaging & signing"
-# section for the full honest breakdown (unsigned dmg installs will show a
-# Gatekeeper warning -- expected, not a bug).
+# --- macOS: signed when CSC_LINK/CSC_KEY_PASSWORD are present, unsigned otherwise ---
+# electron-builder auto-detects the Developer ID from CSC_LINK when the
+# env vars are set. With real credentials (GitHub Secrets in CI), hardened
+# runtime + notarization are enabled. Without them, electron-builder skips
+# signing automatically and the dmg will show the standard Gatekeeper warning.
 mac:
   target:
     - dmg
   category: public.app-category.music
-  identity: null
-  hardenedRuntime: false
-  gatekeeperAssess: false
+  hardenedRuntime: true
+  gatekeeperAssess: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 
 # --- Windows: config-only on this machine, no Authenticode cert exists ---
 # Same posture as macOS: electron-builder already skips signing when
