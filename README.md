@@ -334,7 +334,20 @@ The first-launch acknowledgments screen in the app shows the exact license for e
 
 ## License
 
-The Kwesi application code does not yet have a top-level license file. Please add one before distributing. Note that the bundled models carry their own licenses (MIT, CC-BY-NC, CC-BY-NC-SA), which are surfaced in the app and must be respected independently of the application license.
+Kwesi's own application code and original documentation are licensed under the
+**Creative Commons Attribution-NonCommercial 4.0 International License**
+(CC BY-NC 4.0). See [`LICENSES/LICENSE-Kwesi.md`](LICENSES/LICENSE-Kwesi.md).
+
+Bundled open-source models remain under their own licenses. See
+[`LICENSES/`](LICENSES/) for the full list. Important notes:
+
+- Some model **weights** are non-commercial (MusicGen, YuE2, RAVE).
+- Some model **code** is permissively licensed (MIT, Apache 2.0).
+- Generated music/audio may be subject to the model's own license and to
+  third-party rights.
+
+You must comply with every bundled model's license in addition to the Kwesi
+license.
 
 ---
 
