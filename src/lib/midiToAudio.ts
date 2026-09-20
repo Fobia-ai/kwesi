@@ -71,40 +71,43 @@ const HIHATS_OPEN = new Set([46]);
 const CYMBALS = new Set([49, 51, 52, 55, 57, 59]);
 const TOMS = new Set([41, 43, 45, 47, 48, 50]);
 
-interface DrumKit {
-  kick: Tone.MembraneSynth;
-  snare: Tone.NoiseSynth;
-  hihatClosed: Tone.MetalSynth;
-  hihatOpen: Tone.MetalSynth;
-  cymbal: Tone.MetalSynth;
-  tom: Tone.MembraneSynth;
-  fallback: Tone.MetalSynth;
+// Each drum hit gets its own fresh, single-use voice rather than sharing one
+// monophonic synth per drum type. Real generated MIDI overlaps hits: a hit's
+// scheduled *release* (time + duration) routinely extends past the next
+// same-type hit's *attack*, and Tone's monophonic drum synths track a single
+// StateTimeline that then throws "time must be greater than or equal to the
+// last scheduled time" -- which crashed the whole render (verified live
+// against a real output.mid, see git history). Per-hit voices sidestep that
+// timeline entirely. Deliberately NO MetalSynth here: it packs ~6 FM
+// oscillators per voice, and one-per-hit made a 34s piece with ~130 drum
+// hits take far too long to render offline (verified live) -- filtered
+// NoiseSynth gives an acceptable hat/snare/cymbal character an order of
+// magnitude cheaper. Also can't just wrap these in PolySynth (NoiseSynth
+// isn't a Monophonic voice).
+function hatNoise(decay: number, cutoff: number): Tone.NoiseSynth {
+  const filter = new Tone.Filter(cutoff, "highpass").toDestination();
+  return new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay, sustain: 0 } }).connect(filter);
 }
 
-function createDrumKit(): DrumKit {
-  return {
-    kick: new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6 }).toDestination(),
-    snare: new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.15, sustain: 0 } }).toDestination(),
-    hihatClosed: new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.02 } }).toDestination(),
-    hihatOpen: new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.3, release: 0.1 } }).toDestination(),
-    cymbal: new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 1.2, release: 0.5 } }).toDestination(),
-    tom: new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 4 }).toDestination(),
-    fallback: new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.1, release: 0.05 } }).toDestination(),
-  };
-}
-
-function triggerDrumHit(kit: DrumKit, midiNote: number, time: number, velocity: number) {
-  if (KICKS.has(midiNote)) kit.kick.triggerAttackRelease("C2", "8n", time, velocity);
-  else if (SNARES.has(midiNote)) kit.snare.triggerAttackRelease("8n", time, velocity);
-  else if (HIHATS_CLOSED.has(midiNote)) kit.hihatClosed.triggerAttackRelease("32n", time, velocity);
-  else if (HIHATS_OPEN.has(midiNote)) kit.hihatOpen.triggerAttackRelease("8n", time, velocity);
-  else if (CYMBALS.has(midiNote)) kit.cymbal.triggerAttackRelease("2n", time, velocity);
-  else if (TOMS.has(midiNote)) {
+function triggerDrumHit(midiNote: number, time: number, velocity: number) {
+  if (KICKS.has(midiNote)) {
+    new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6 }).toDestination().triggerAttackRelease("C2", "8n", time, velocity);
+  } else if (SNARES.has(midiNote)) {
+    hatNoise(0.15, 1500).triggerAttackRelease("8n", time, velocity);
+  } else if (HIHATS_CLOSED.has(midiNote)) {
+    hatNoise(0.04, 7000).triggerAttackRelease("32n", time, velocity);
+  } else if (HIHATS_OPEN.has(midiNote)) {
+    hatNoise(0.25, 7000).triggerAttackRelease("8n", time, velocity);
+  } else if (CYMBALS.has(midiNote)) {
+    hatNoise(1.0, 5000).triggerAttackRelease("2n", time, velocity);
+  } else if (TOMS.has(midiNote)) {
     // Toms are pitched, roughly, by note number -- higher GM tom note
     // numbers are higher-pitched toms.
     const octave = 2 + Math.floor((midiNote - 41) / 3);
-    kit.tom.triggerAttackRelease(`C${Math.min(4, Math.max(2, octave))}`, "8n", time, velocity);
-  } else kit.fallback.triggerAttackRelease("16n", time, velocity);
+    new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 4 }).toDestination().triggerAttackRelease(`C${Math.min(4, Math.max(2, octave))}`, "8n", time, velocity);
+  } else {
+    hatNoise(0.1, 4000).triggerAttackRelease("16n", time, velocity);
+  }
 }
 
 /**
@@ -131,8 +134,7 @@ export async function renderMidiToWav(midiPath: string): Promise<Uint8Array> {
   const rendered = await Tone.Offline(() => {
     for (const track of tracksWithNotes) {
       if (track.channel === 9) {
-        const kit = createDrumKit();
-        for (const note of track.notes) triggerDrumHit(kit, note.midi, note.time, note.velocity);
+        for (const note of track.notes) triggerDrumHit(note.midi, note.time, note.velocity);
       } else {
         const instrument = createInstrument(familyForProgram(track.instrument.number));
         for (const note of track.notes) {
