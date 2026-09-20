@@ -29,9 +29,10 @@ Phases 0–13 of 13 are done — see [04-roadmap.md](04-roadmap.md) for the
 precise per-phase/per-model breakdown. In short: the app shell, data layer,
 Model Manager (real Hugging Face downloads), the manifest-driven dynamic
 generation UI, and real local inference are all working end to end for
-MusicGen, MuseCoco, ACE-Step 1.5, and RAVE (Museformer inference is code-
-complete but unverified — blocked on an unconfirmed Triton/CPU-fallback
-question; YuE2 inference is proven standalone but not wired into the app).
+MusicGen, MuseCoco, ACE-Step 1.5, RAVE, and Museformer (GPU only). YuE2
+inference is proven standalone and wired into the app, but a full end-to-end
+run through the Electron UI has not been exercised because the YuE2 model
+weights are not present on this machine.
 A real training pipeline exists too — RAVE (the pilot), MusicGen, and
 ACE-Step can all be fine-tuned on your own audio for real, with the
 resulting checkpoint immediately usable in a new workspace. A local profile

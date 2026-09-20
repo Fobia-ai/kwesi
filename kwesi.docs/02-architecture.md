@@ -332,9 +332,9 @@ declare `supported: true` (both real, verified end-to-end — see the "Phase
 11 update" note below "Training pipeline architecture"); MuseCoco's real
 `fairseq-train` CLI is wired up too, though a full run wasn't verified to
 completion in-session. Museformer and YuE2 still declare `supported:
-false`, for two different real reasons (Museformer's own inference path
-was never verified; YuE2 is a genuine hardware-infeasibility call, not a
-scope cut).
+false`, for two different real reasons (Museformer inference is verified
+on GPU but training was never wired up; YuE2 is a genuine hardware-
+infeasibility call for training, not a scope cut).
 
 A completed training run's checkpoint is registered two ways, not one:
 a `trained_model` row (the user-facing "My Trained Models" record) **and**
@@ -568,7 +568,13 @@ training and with what input kind, and
   non-zero samples) — for the `acestep-v15-turbo` checkpoint at a short
   duration; XL variants and non-turbo (base/sft) checkpoints are wired
   identically but untested (see the README's "What's not verified"). `yue2`
-  still walks the exact Phase 4 mock path, unmodified. **Phase 9 status:**
+  is now wired into the real-server path too — `servers/yue2/server.py` is a
+  hand-written FastAPI wrapper around `YuE2Pipeline`, `modelServer.ts` routes
+  to it on port `17660`, and the manifest declares dual `audio` + `midi`
+  outputs for the existing audio player and `AbcScoreViewer`. A real
+  standalone generation was proven in Phase 8; the wrapped server has not
+  been exercised end-to-end through Electron on this machine because the
+  YuE2 model weights are not present here. **Phase 9 status:**
   `modelId === "rave"` is now real and proven — a hand-written
   `servers/rave/server.py` wrapper following MusicGen's exact shape (single
   blocking `POST /generate`, in-process checkpoint cache), which turned out

@@ -87,7 +87,7 @@ Communication:
 | **ACE-Step 1.5** | Text/lyrics-to-audio | Prompt, lyrics in 50+ languages, BPM/key, genre/instrument tags, reference audio | WAV 48 kHz | MIT | Inference & training verified |
 | **RAVE** (IRCAM/ACIDS) | Neural timbre transfer / resynthesis | Audio file (the source to transform) | WAV 44.1 kHz | CC-BY-NC-SA (code + weights) | Inference & training verified |
 | **Museformer** (Microsoft) | Symbolic music continuation | Random generation or MIDI seed | MIDI | MIT | Inference verified end-to-end **on GPU**; training not wired |
-| **YuE2** | Lyrics/style-to-audio + symbolic | Lyrics, style, optional reference audio | Audio + ABC/MIDI/annotations | Code Apache 2.0; weights CC-BY-NC | Proven standalone; **not yet wired into the app UI** |
+| **YuE2** | Lyrics/style-to-audio + symbolic | Lyrics, style, optional reference audio | Audio + ABC/MIDI/annotations | Code Apache 2.0; weights CC-BY-NC | Standalone generation proven; **wired into app, end-to-end Electron run not yet exercised** |
 
 **Important:** Some model weights are non-commercial or share-alike. Kwesi shows a license badge in the Model Manager and on the first-launch acknowledgments screen. You are responsible for using each model in compliance with its license.
 
@@ -309,7 +309,7 @@ This repo is honest about what has actually been built and run:
 | ACE-Step 1.5 training | Verified end-to-end |
 | MuseCoco training | CLI wired, run started, not completed |
 | Museformer inference | Verified end-to-end **on GPU** (CPU not supported) |
-| YuE2 inference | Proven standalone, **not wired into app UI** |
+| YuE2 inference | Standalone proven; wired into app, full Electron end-to-end not yet exercised (weights not present on this machine) |
 | Linux packaging (AppImage + deb) | Built and verified |
 | macOS packaging | Config-only |
 | Windows packaging | Config-only |

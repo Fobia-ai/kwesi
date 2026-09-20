@@ -1,4 +1,4 @@
-# YuE2 inference — real standalone generation proven, not yet wired into the app
+# YuE2 inference — real standalone generation proven, now wired into the app
 
 Stretch goal for Phase 8, time-boxed per the roadmap's explicit guidance not
 to let this crowd out Part 1 (hardware gating) or Part 2 (ACE-Step 1.5).
@@ -6,11 +6,14 @@ to let this crowd out Part 1 (hardware gating) or Part 2 (ACE-Step 1.5).
 expected going in** — it was budgeted as "likely blocked on OOM/dependency
 conflicts," but a real song (real FLAC audio + real ABC-notation score) was
 produced successfully in 34.6 seconds on this machine's RTX 3090, using far
-less VRAM than the model's own documented 24GB minimum. **What's genuinely
-not done**: no FastAPI server wrapper, no `electron/models/modelServer.ts`
-wiring, no dual-viewer UI — see "What's not done" below for exactly why,
-each a real scope decision given the time this took, not something that
-failed.
+less VRAM than the model's own documented 24GB minimum.
+
+**Subsequently wired into the app**: `servers/yue2/server.py` is now a
+hand-written FastAPI wrapper around `YuE2Pipeline`, `electron/models/modelServer.ts`
+spawns and routes to it the same way it does for MusicGen/MuseCoco, and
+the YuE2 manifest declares dual audio + ABC outputs that the app's existing
+audio player and `AbcScoreViewer` can display. See "What's not done" below for
+the one remaining honest gap.
 
 ## Repo and what it actually is
 
@@ -117,54 +120,33 @@ exercising the pipeline's caching/context-manager teardown via `with
 YuE2Pipeline.from_pretrained(...) as pipe:` — the process exits cleanly,
 freeing VRAM) to confirm the first run wasn't a fluke.
 
-## What's not done (deliberate scope cuts, not failures)
+## What's not done (honest remaining gaps)
 
-- **No FastAPI server wrapper, no `electron/models/modelServer.ts`
-  wiring.** Unlike ACE-Step, YuE2 ships no server of its own — this app
-  would need a genuinely new hand-written wrapper (`servers/yue2/server.py`,
-  the MusicGen/MuseCoco shape) to expose `YuE2Pipeline` over HTTP for
-  `modelServer.ts` to spawn/health-check/call. Not attempted: real, once
-  standalone generation was already proven, the roadmap's explicit
-  instruction not to let this crowd out Part 1/Part 2 took priority, and
-  this is meaningfully more work than ACE-Step's integration was (there,
-  the server already existed).
-- **No dual-viewer UI.** The manifest's real symbolic output turned out to
-  be **ABC notation text** (`score.abc`), not a binary Standard MIDI File —
-  a real, non-obvious correction (see `src/data/manifests.ts`'s `YUE2`
-  entry) found only by actually running a generation and inspecting the
-  output directory, not documented anywhere in the repo's README. This
-  app's real `PianoRollViewer` (`src/components/midi/PianoRollViewer.tsx`,
-  Phase 7) only parses real SMF `.mid` bytes with its own hand-rolled
-  parser — it cannot render ABC notation as-is, and there is no ABC→MIDI
-  conversion utility anywhere in the YuE2 repo to bridge the gap. Building
-  a real ABC-notation viewer (or a real, correct ABC→MIDI converter) is a
-  genuinely separate, non-trivial piece of scope this phase's time budget
-  didn't have room for — explicitly out of bounds anyway per the
-  constraint against modifying Phase 6/7's player components beyond
-  reusing them as-is.
+- **End-to-end through the Electron UI not yet exercised.** The server
+  wrapper, IPC routing, manifest, and venv install path are all wired, but
+  a real generation has not been triggered from inside the Electron app on
+  this machine — the YuE2 model weights (`models/yue2/`) are not present
+  here. The standalone proof below gives high confidence the wrapped server
+  will work once weights are available.
 - **`reference_audio` (cover/transcription) is unwired**, same pre-existing
   Phase 4 gap as every other model's audio-upload field
   (`DynamicGenerationForm`'s `audio_upload` handler only ever captures a
   file's *name*) — and covers specifically also need SheetSage2, which was
   never installed (correctly out of scope, since it's not needed for core
   generation — see above).
-- **Not run through Electron at all** — pure Python standalone, consistent
-  with every other real model's proof in this codebase and the "no display
-  server" constraint, but one step further from integration than ACE-Step,
-  which at least has real `modelServer.ts` wiring even if unexercised
-  through a live Electron process this phase.
-- **Hardware-gating UI (Part 1) already covers YuE2 correctly** even
-  without server wiring — `manifest.hardware.minVramGb: 24` and
-  `cpuFallback: false` mean `DynamicGenerationForm`'s hardware gate would
-  correctly hard-block a generation attempt on a GPU-less machine or warn
-  on an insufficient one, the moment YuE2 gets real server wiring in a
-  later phase — this part of the plumbing is genuinely ready today.
+- **`max_seconds` is a UI field without a real constraint.** The pipeline's
+  actual length knob is a semantic-token budget, and no tokens-per-second
+  rate is documented in the vendored repo; wiring it to a real value would
+  require empirical measurement first.
+- **Hardware-gating UI already covers YuE2 correctly** —
+  `manifest.hardware.minVramGb: 24` and `cpuFallback: false` mean
+  `DynamicGenerationForm`'s hardware gate will hard-block a generation
+  attempt on a GPU-less machine or warn on an insufficient one.
 
 ## Honest summary
 
-Given the choice this phase actually faced — a fully-wired but MIDI-viewer-
-incompatible symbolic output for a model whose own server needs writing
-from scratch, versus a well-documented, genuinely real, twice-verified
-standalone proof — the latter was the better use of the remaining time
-budget, matching Museformer's Phase 7 precedent of an honest partial state
-over a rushed, half-verified full integration.
+Real standalone generation was proven, and the app-side plumbing (FastAPI
+wrapper, `modelServer.ts` spawn/call path, dual audio + ABC manifest outputs,
+venv install in Settings) is now wired. The remaining honest gap is a full
+end-to-end run through the Electron UI, which needs the YuE2 model weights
+present on the machine running the test.
