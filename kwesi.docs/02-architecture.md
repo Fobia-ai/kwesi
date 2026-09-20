@@ -596,6 +596,14 @@ training and with what input kind, and
   sample-rate assumption (no `.ts` file carries sample-rate metadata; 44100Hz
   is IRCAM/ACIDS's own documented default for most of their pretrained
   examples, not a per-checkpoint-confirmed fact).
+  Also during this phase, `modelId === "museformer"` moved from
+  "wired but unverified" to **verified end-to-end on GPU**: a fresh
+  `uv` venv built from `servers/museformer/requirements.txt` generated a
+  real, valid, non-empty `.mid` file through the real `fairseq-interactive`
+  decoder (see `servers/museformer/README.md` for the exact fixes and
+  kernel workarounds). CPU generation is confirmed not supported because
+  the checkpoint's default blocksparse attention uses Triton kernels with
+  no CPU backend.
 - A sibling **Training Job Manager** (`electron/models/trainingManager.ts`,
   Phase 10, real and proven for RAVE — see "Training pipeline architecture"
   above and `servers/rave/README.md`'s "Training (Phase 10)" section)
