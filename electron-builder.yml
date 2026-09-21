@@ -32,6 +32,7 @@ directories:
 files:
   - dist/**/*
   - dist-electron/**/*
+  - build/icons/**/*
   - package.json
 
 # better-sqlite3 ships a compiled .node native addon (better_sqlite3.node).
@@ -43,6 +44,7 @@ files:
 # the kind of thing worth being defensive about.
 asarUnpack:
   - "**/node_modules/better-sqlite3/**/*"
+  - build/icons/**/*
 
 # Default is true; kept explicit -- electron-builder rebuilds native
 # dependencies (better-sqlite3) against the target Electron's ABI as part
