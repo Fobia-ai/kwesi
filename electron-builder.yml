@@ -65,11 +65,12 @@ linux:
   # No icon asset exists yet (see roadmap notes) -- electron-builder falls
   # back to its own default Electron icon rather than failing the build.
 
-# --- macOS: signed when CSC_LINK/CSC_KEY_PASSWORD are present, unsigned otherwise ---
-# electron-builder auto-detects the Developer ID from CSC_LINK when the
-# env vars are set. With real credentials (GitHub Secrets in CI), hardened
-# runtime + notarization are enabled. Without them, electron-builder skips
-# signing automatically and the dmg will show the standard Gatekeeper warning.
+# --- macOS: signed/notarized via CI secrets; unsigned otherwise ---
+# The GitHub Actions runner creates a dedicated keychain from CSC_LINK/
+# CSC_KEY_PASSWORD and points electron-builder at it with CSC_KEYCHAIN.
+# Notarization is enabled when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and
+# APPLE_TEAM_ID are present. Without credentials, electron-builder skips
+# signing and the .dmg shows the standard Gatekeeper warning.
 mac:
   target:
     - dmg
@@ -79,6 +80,7 @@ mac:
   gatekeeperAssess: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
 
 # --- Windows: config-only on this machine, no Authenticode cert exists ---
 # Same posture as macOS: electron-builder already skips signing when
