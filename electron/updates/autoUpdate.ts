@@ -39,6 +39,12 @@ export function checkForUpdates(): void {
   // to pay for.
   if (!app.isPackaged) return;
 
+  // A managed launcher (Fobia) owns install/update for this package -- the
+  // upstream feed also always fails today anyway (private repo, see the
+  // doc comment above), so skip paying for the doomed request and the
+  // resulting crash-log entry on every single launch under one.
+  if (process.env.KWESI_MANAGED_PACKAGE === "1") return;
+
   const { autoUpdater } = electronUpdater;
   autoUpdater.autoDownload = false;
 

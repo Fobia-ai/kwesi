@@ -42,6 +42,19 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
 
+// When a managed launcher (Fobia) sets KWESI_HOME, redirect Electron's own
+// internal userData path there too -- BEFORE resolveKwesiEnv below, which
+// only touches the KWESI_* application directories (db, models, venvs,
+// workspaces, ...) and otherwise leaves Chromium's session data (cookies,
+// localStorage, IndexedDB, GPU shader cache) in the OS default location.
+// Without this, uninstalling a managed install would leave that Chromium
+// state behind outside the directory the launcher actually owns and cleans
+// up. A plain `electron .` dev run has no KWESI_HOME set, so this is a
+// no-op in development.
+if (process.env.KWESI_HOME) {
+  app.setPath("userData", process.env.KWESI_HOME);
+}
+
 // Every directory the app depends on is resolved once at startup from
 // KWESI_* env vars with sensible defaults — see kwesi.docs/02-architecture.md
 // "Configuration & environment variables".
