@@ -42,3 +42,7 @@ servers/musicgen/vendor
 
 # Claude Code harness internals, not project state.
 .claude/
+
+# Deployment scripts — local, interactive tooling not needed in the published repo.
+scripts/deploy.sh
+
