@@ -56,7 +56,29 @@ Core concepts:
 
 ## Demo / screenshots
 
-_(Screenshots will be added once the public release assets are ready.)_
+| Home / Player | New track form | Workspace setup |
+|---|---|---|
+| ![Home — player card with track overview and lyrics](./.github/screenshots/home.png) | ![New track form for ACE-Step 1.5](./.github/screenshots/form.png) | ![Creating a new workspace tied to a model](./.github/screenshots/workspace.png) |
+
+| Model Manager | Settings → Environment | Setup / install model |
+|---|---|---|
+| ![Download checkpoints per model variant](./.github/screenshots/modelmanager.png) | ![Install or check each model's Python environment](./.github/screenshots/settings.png) | ![Per-model setup dialog for weights and environment](./.github/screenshots/setup.png) |
+
+| Setup in progress | Generating | Training |
+|---|---|---|
+| ![Live install log while a venv is being created](./.github/screenshots/setupongoing.png) | ![Track queued and generating inside the player card](./.github/screenshots/generating.png) | ![Start a custom training run from the Training tab](./.github/screenshots/training.png) |
+
+**What the screenshots show**
+
+- **Home / player card** — The main playback view for a project. Switch between Overview, Lyrics, MIDI piano roll, ABC notation, and text exports.
+- **New track form** — Model-specific inputs: prompt, lyrics, genre/instrument tags, checkpoint variant, and artist profile.
+- **Workspace setup** — A workspace is permanently bound to one model family when it is created.
+- **Model Manager** — Browse available checkpoints, see size and status, and queue downloads.
+- **Settings → Environment** — Check prerequisites and install each model's isolated Python venv without touching a terminal.
+- **Setup dialog** — Some models need both weights and an environment before they can generate; install them from this modal or jump to Settings.
+- **Setup in progress** — Live output from `uv` as dependencies are downloaded and installed.
+- **Generating** — A track queued for generation with progress and a Stop control.
+- **Training** — Pick a base model, drop in your dataset, and start a local training run.
 
 ---
 
