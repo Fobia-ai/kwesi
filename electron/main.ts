@@ -10,6 +10,7 @@ import {
   initModelsPaths,
   initVenvsPaths,
   initServersPaths,
+  syncShippedServers,
   initLogsPaths,
   initTrainedModelsPaths,
   initArtistAvatarsPaths,
@@ -71,6 +72,11 @@ initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
 initModelsPaths(repo.getSetting("modelsDir") || kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
 initServersPaths(kwesiEnv.KWESI_SERVERS_DIR);
+// Packaged builds ship each model's hand-written server source (server.py,
+// requirements.txt, ...) as extraResources; copy them into the writable
+// serversRoot so pip-based installs and server spawns can find them beside
+// the runtime-cloned vendor/. No-op in dev. See syncShippedServers.
+syncShippedServers(path.join(process.resourcesPath, "servers"));
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
 initArtistAvatarsPaths(kwesiEnv.KWESI_ARTIST_AVATARS_DIR);

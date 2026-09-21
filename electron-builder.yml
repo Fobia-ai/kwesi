@@ -4,18 +4,17 @@
 # writeup of what this does and doesn't cover.
 #
 # Scope note: this packages the Electron app shell + renderer + SQLite data
-# layer only. The per-model Python inference servers (servers/<model_id>/)
-# and their venvs (KWESI_VENVS_DIR) are deliberately NOT bundled as
-# extraResources -- they're multi-gigabyte, platform/hardware-specific, and
-# already flagged as an explicit Phase 5 scope cut in
-# kwesi.docs/04-roadmap.md ("a real installer (Phase 13) needs servers/ and
-# each model's venv shipped as extraResources -- not attempted here"). That
-# remains true after this phase: a packaged build launches, renders, and
-# exercises every SQLite-backed feature (workspaces/projects/generations,
-# Model Manager listing, profile, app lock) correctly, but running real
-# model inference from a packaged install still requires the dev repo's
-# servers/ + venvs/ on disk, same as it does today. Closing that gap is a
-# real, separate follow-up (see roadmap notes), not attempted here.
+# layer, PLUS each model's hand-written Python server source (server.py,
+# requirements.txt, _run_interactive.py, ...) as extraResources below --
+# ~136KB total, since the multi-gigabyte git-cloned vendor/ trees and the
+# per-model venvs (KWESI_VENVS_DIR) are still deliberately excluded (they're
+# fetched/built on demand from Settings > Environment into a writable
+# KWESI_HOME location, not shippable). At startup syncShippedServers copies
+# those shipped files from process.resourcesPath/servers into the writable
+# serversRoot so pip-based installs (`uv pip install -r .../requirements.txt`)
+# and hand-wrapped server spawns (`.../server.py`) actually find them beside
+# the cloned vendor/. Before this, only ace-step-1.5 (fully self-contained in
+# its own clone) could install/run from a packaged build.
 appId: ai.fobia.kwesi
 productName: Kwesi
 copyright: "Copyright © 2026 Fobia"
@@ -34,6 +33,20 @@ files:
   - dist-electron/**/*
   - build/icons/**/*
   - package.json
+
+# Each model's hand-written server source only (server.py, requirements.txt,
+# _run_interactive.py, README). The git-cloned vendor/ trees (~228MB) and
+# __pycache__/*.pyc are excluded -- vendor/ is fetched on demand at install
+# time. Lands at process.resourcesPath/servers; syncShippedServers (main.ts)
+# copies it into the writable serversRoot at startup. See the scope note above.
+extraResources:
+  - from: servers
+    to: servers
+    filter:
+      - "**/*"
+      - "!**/vendor/**"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
 
 # better-sqlite3 ships a compiled .node native addon (better_sqlite3.node).
 # Native addons can't be dlopen'd from inside an asar archive, so its

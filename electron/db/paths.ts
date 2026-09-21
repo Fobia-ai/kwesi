@@ -34,6 +34,29 @@ export function initServersPaths(kwesiServersDir: string) {
   serversRoot = kwesiServersDir;
 }
 
+// Makes each model's hand-written server source (server.py, requirements.txt,
+// _run_interactive.py, ...) actually present at serversRoot in a packaged
+// build. Those files ship as electron-builder `extraResources` at
+// `process.resourcesPath/servers` -- read-only, and in an install location
+// the app can't clone `vendor/` into -- so this copies them once into the
+// writable serversRoot (KWESI_HOME/servers), where the runtime-cloned
+// vendor/ also lives. Without this, every pip-based model (rave, musicgen,
+// yue2, musecoco, museformer) would fail a packaged install at
+// `uv pip install -r <serversRoot>/<model>/requirements.txt` and every
+// hand-wrapped server would fail to spawn its missing server.py -- only
+// ace-step-1.5 (fully self-contained in its own clone) worked before.
+//
+// Merge-copy on purpose: `fs.cpSync` recursive only adds/overwrites entries
+// from the shipped source and never deletes serversRoot-only entries, so an
+// already-cloned vendor/ is left untouched while an app update still
+// refreshes the shipped files. No-op in dev, where serversRoot already *is*
+// the repo's servers/ (source === dest) and there's nothing shipped to copy.
+export function syncShippedServers(shippedServersDir: string) {
+  if (!fs.existsSync(shippedServersDir)) return;
+  if (path.resolve(shippedServersDir) === path.resolve(serversRoot)) return;
+  fs.cpSync(shippedServersDir, serversRoot, { recursive: true });
+}
+
 // Phase 10: the Training Job Manager needs somewhere to keep each run's log
 // tail, PID/heartbeat file, staged dataset copy, and intermediate
 // preprocessed/checkpoint working files — reuses the already-configurable
