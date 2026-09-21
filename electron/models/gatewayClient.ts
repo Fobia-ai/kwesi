@@ -10,6 +10,13 @@
 
 const GATEWAY_BASE_URL = "https://gateway.fobia.ai/v1/kwesi/model";
 
+// Public download token for Fobia's mirrored model gateway. Wired into the
+// app so users don't need to set an env var. This token only authorizes
+// resolving presigned download URLs for the open models Kwesi already ships;
+// it is not a per-user secret and is intentionally distributed with the app.
+export const KWESI_ACCESS_TOKEN =
+  "kNUvR9YysB9rq60534RbJFi1J69xmljMNw-GBSZTrAuYIsYc9r9AfYFatmZc4eEh";
+
 interface GatewayResolveResponse {
   path?: string;
   url?: string;
@@ -19,9 +26,9 @@ interface GatewayResolveResponse {
 /**
  * Resolves one file to a presigned download URL through Fobia's backend.
  * Returns null (never throws) on anything short of getting a real URL back
- * -- no token configured, network failure, non-OK response, malformed body
- * -- so callers can silently fall back to a direct Hugging Face download
- * rather than failing the whole install over a gateway hiccup.
+ * -- network failure, non-OK response, malformed body -- so callers can
+ * silently fall back to a direct Hugging Face download rather than failing
+ * the whole install over a gateway hiccup.
  */
 export async function tryResolveGatewayFileUrl(
   modelId: string,
@@ -29,7 +36,7 @@ export async function tryResolveGatewayFileUrl(
   filename: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  const token = process.env.KWESI_ACCESS_TOKEN;
+  const token = KWESI_ACCESS_TOKEN;
   if (!token) return null;
 
   try {

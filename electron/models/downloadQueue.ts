@@ -4,7 +4,7 @@ import path from "node:path";
 import * as repo from "../db/repositories.js";
 import { modelVariantDir, ensureDir, removeDirIfExists } from "../db/paths.js";
 import { listRepoFiles, resolveFileUrl, type HfFileInfo } from "./hfClient.js";
-import { tryResolveGatewayFileUrl } from "./gatewayClient.js";
+import { tryResolveGatewayFileUrl, KWESI_ACCESS_TOKEN } from "./gatewayClient.js";
 import { checkDiskSpace } from "./diskSpace.js";
 import { dirSizeBytes } from "../lib/fsSize.js";
 
@@ -82,12 +82,6 @@ export function enqueueInstall(modelId: string, variantName: string): InstallRes
     // Same as huggingface's repo_id check, but for manual variants Fobia
     // has actually mirrored onto its gateway/R2 -- otherwise stays a pure
     // external-link pointer, same as before.
-    if (!process.env.KWESI_ACCESS_TOKEN) {
-      return {
-        ok: false,
-        reason: "This model requires a Fobia access token to download — see its note for the manual download location instead.",
-      };
-    }
     job = {
       variantId: variant.id,
       modelId,
