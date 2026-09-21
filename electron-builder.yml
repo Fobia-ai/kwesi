@@ -85,6 +85,7 @@ mac:
 win:
   target:
     - nsis
+  icon: build/icons/icon.ico
 
 nsis:
   oneClick: false

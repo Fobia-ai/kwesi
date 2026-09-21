@@ -66,6 +66,7 @@ function runCommand(
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
 
     let buffered = "";
@@ -90,7 +91,7 @@ function runCommand(
 async function commandVersion(command: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     let out = "";
-    const proc = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     proc.stdout?.on("data", (c) => (out += c.toString()));
     proc.stderr?.on("data", (c) => (out += c.toString()));
     proc.on("error", () => resolve(null));
@@ -128,6 +129,7 @@ export async function checkEnvironmentStatus(modelId: string): Promise<EnvStatus
     let out = "";
     const proc = spawn(python, ["-c", "import torch,json;print(json.dumps({'cuda':bool(torch.cuda.is_available())}))"], {
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     proc.stdout?.on("data", (c) => (out += c.toString()));
     proc.on("error", () => resolve(null));

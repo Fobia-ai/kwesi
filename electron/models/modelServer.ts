@@ -374,6 +374,7 @@ async function spawnAceStepServer(python: string): Promise<RealServerHandle> {
       ACESTEP_INIT_LLM: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
   wireRealServerProcess(ACE_STEP_MODEL_ID, proc);
 
@@ -412,6 +413,7 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
   const proc = spawn(python, [entrypoint, "--port", String(port)], {
     env: { ...process.env, KWESI_MODELS_DIR: modelsRootDir() },
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 
   proc.stdout?.on("data", (chunk) => console.log(`[${modelId}-server] ${chunk.toString().trimEnd()}`));

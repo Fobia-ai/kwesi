@@ -6,6 +6,7 @@ import { OrgLogo } from "../components/ui/OrgLogo";
 import { GitHubIcon } from "../components/ui/icons";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiSettings } from "../lib/settings";
+import kwesiLogoFull from "../assets/logo-full.png";
 
 // Shows once, ever -- checked on mount against a persisted flag (see
 // kwesiSettings.getAcknowledged/setAcknowledged); every later launch skips
@@ -32,8 +33,8 @@ export function AcknowledgmentsScreen() {
     <div className="relative flex h-full w-full items-center justify-center overflow-y-auto px-6 py-12">
       <div className="kwesi-backdrop" />
       <div className="relative z-10 flex w-full max-w-3xl flex-col items-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Kwesi</h1>
-        <p className="mt-2 max-w-sm text-center text-sm text-ink-muted">
+        <img src={kwesiLogoFull} alt="Kwesi" className="h-12 w-auto" />
+        <p className="mt-3 max-w-sm text-center text-sm text-ink-muted">
           Built on the work of the open-source music research community.
           Every model below is credited to its original authors.
         </p>

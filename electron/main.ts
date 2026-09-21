@@ -110,6 +110,13 @@ Menu.setApplicationMenu(
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
+  const windowIcon =
+    process.platform === "win32"
+      ? path.join(__dirname, "..", "build", "icons", "icon.ico")
+      : process.platform === "linux"
+        ? path.join(__dirname, "..", "build", "icons", "512x512.png")
+        : undefined;
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -117,6 +124,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: "#00000000",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    icon: windowIcon,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
