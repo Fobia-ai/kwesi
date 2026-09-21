@@ -1,5 +1,9 @@
 # Kwesi
 
+<p align="center">
+  <img src="logo.png" alt="Kwesi logo" width="160" height="160">
+</p>
+
 A local-first desktop app for generating and training music with open-source AI models. Everything runs on your own machine—no account, no cloud upload, no subscription.
 
 Kwesi wraps several open-source music generation models behind one consistent interface. Pick a model, and the app reconfigures its input form and output viewer to match exactly what that model takes in and produces: text prompts, MIDI piano rolls, ABC notation, reference audio, lyrics, genre tags, or training data.
