@@ -62,8 +62,10 @@ linux:
     - deb
   category: AudioVideo
   maintainer: "Fobia <hello@fobia.ai>"
-  # No icon asset exists yet (see roadmap notes) -- electron-builder falls
-  # back to its own default Electron icon rather than failing the build.
+  # Use the top-level build/icon.png for Linux. The build/icons/icon.icns is a
+  # newer/compressed .icns format that electron-builder's Linux icon converter
+  # cannot decode via OpenJPEG; pointing linux.icon at a plain PNG avoids that path.
+  icon: build/icon.png
 
 # --- macOS: signed/notarized via CI secrets; unsigned otherwise ---
 # The GitHub Actions runner creates a dedicated keychain from CSC_LINK/

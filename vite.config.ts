@@ -16,5 +16,22 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Framework core
+          react: ["react", "react-dom", "react-router-dom"],
+          // Audio/MIDI libraries
+          audio: ["tone", "@tonejs/midi"],
+          // Music notation rendering
+          notation: ["abcjs"],
+          // Markdown rendering
+          markdown: ["react-markdown", "remark-gfm", "remark-breaks"],
+          // Database + utilities
+          data: ["better-sqlite3", "dotenv", "undici"],
+        },
+      },
+    },
   },
 });
