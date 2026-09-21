@@ -1,7 +1,7 @@
 # Kwesi
 
 <p align="center">
-  <img src="logo.png" alt="Kwesi logo" width="160" height="160">
+  <img src="src/assets/logo-full.png" alt="Kwesi" width="320">
 </p>
 
 A local-first desktop app for generating and training music with open-source AI models. Everything runs on your own machine—no account, no cloud upload, no subscription.
