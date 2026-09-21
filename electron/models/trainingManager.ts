@@ -34,9 +34,8 @@ import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import * as repo from "../db/repositories.js";
-import { ensureDir, modelVariantDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
+import { ensureDir, modelVariantDir, serversRootDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
 import { queryGpuVram } from "./gpuInfo.js";
 import { aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
 
@@ -695,7 +694,7 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
     // installed `audiocraft` package, since `audiocraft/train.py`'s own
     // `@hydra_main(config_path='../config', ...)` resolves relative to its
     // own file location. Idempotent — only created once per venv.
-    const vendorConfigDir = path.join(projectRootDirForTraining(), "servers", "musicgen", "vendor", "config");
+    const vendorConfigDir = path.join(serversRootDir(), "musicgen", "vendor", "config");
     if (!fs.existsSync(vendorConfigDir)) {
       throw new Error(`MusicGen training config not vendored at ${vendorConfigDir} — see servers/musicgen/README.md.`);
     }
@@ -930,7 +929,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     if (!fs.existsSync(fairseqTrain)) {
       throw new Error(`MuseCoco venv not found at ${venvDir} (expected fairseq-train). See servers/musecoco/README.md.`);
     }
-    const vendorModelDir = path.join(projectRootDirForTraining(), "servers", "musecoco", "vendor", "2-attribute2music_model");
+    const vendorModelDir = path.join(serversRootDir(), "musecoco", "vendor", "2-attribute2music_model");
     const restoreFrom = path.join(vendorModelDir, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt");
     if (!fs.existsSync(restoreFrom)) {
       throw new Error(`MuseCoco base checkpoint not found at ${restoreFrom}. See servers/musecoco/README.md.`);
@@ -1051,14 +1050,6 @@ const PIPELINE_RUNNERS: Record<string, TrainingPipelineRunner> = {
   musicgen: runMusicGenTrainingPipeline,
   musecoco: runMuseCocoTrainingPipeline,
 };
-
-// dist-electron/models/trainingManager.js -> dist-electron -> project root —
-// same computation as modelServer.ts's own projectRootDir(), duplicated
-// rather than imported since that one isn't exported (training-only need).
-function projectRootDirForTraining(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(here, "..", "..");
-}
 
 function pythonLibDirName(venvDir: string): string {
   const libDir = path.join(venvDir, "lib");

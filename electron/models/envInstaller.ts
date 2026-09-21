@@ -12,8 +12,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { modelsRootDir, venvDir } from "../db/paths.js";
+import { modelsRootDir, serversRootDir, venvDir } from "../db/paths.js";
 import { ensureAceStepCheckpointsLayout } from "./modelServer.js";
 
 export interface EnvProgress {
@@ -35,18 +34,13 @@ export interface EnvInstallResult {
   reason?: string;
 }
 
-function projectRootDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(here, "..", "..");
-}
-
 function venvPythonPath(modelId: string): string {
   const dir = venvDir(modelId);
   return process.platform === "win32" ? path.join(dir, "Scripts", "python.exe") : path.join(dir, "bin", "python");
 }
 
 function serverDir(modelId: string): string {
-  return path.join(projectRootDir(), "servers", modelId);
+  return path.join(serversRootDir(), modelId);
 }
 
 function vendorDir(modelId: string): string {
@@ -199,7 +193,7 @@ async function installMusecoco(onOutput: OnOutput): Promise<void> {
     // Sparse-checkout: the real muzic repo has other models/tools in it,
     // and a full clone pulls ~140MB of history for one subfolder -- see
     // servers/musecoco/README.md's own "rebuild vendor/ from scratch".
-    const tmpDir = path.join(projectRootDir(), ".tmp-muzic-clone");
+    const tmpDir = path.join(serversRootDir(), ".tmp-muzic-clone");
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     await runCommand(
       "git",
@@ -245,7 +239,7 @@ async function installMuseformer(onOutput: OnOutput): Promise<void> {
   if (!fs.existsSync(dest)) {
     // Sparse-checkout, same pattern and reasoning as installMusecoco's --
     // both are subfolders of the same microsoft/muzic monorepo.
-    const tmpDir = path.join(projectRootDir(), ".tmp-muzic-clone-museformer");
+    const tmpDir = path.join(serversRootDir(), ".tmp-muzic-clone-museformer");
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     await runCommand(
       "git",

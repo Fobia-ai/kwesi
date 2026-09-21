@@ -4,6 +4,7 @@ import fs from "node:fs";
 let workspacesRoot = "";
 let modelsRoot = "";
 let venvsRoot = "";
+let serversRoot = "";
 let logsRoot = "";
 let trainedModelsRoot = "";
 let artistAvatarsRoot = "";
@@ -19,6 +20,18 @@ export function initModelsPaths(kwesiModelsDir: string) {
 
 export function initVenvsPaths(kwesiVenvsDir: string) {
   venvsRoot = kwesiVenvsDir;
+}
+
+// Where a model's vendored source (git-cloned on demand, e.g. ace-step-1.5's vendor/) lives.
+// Every model-server/training-manager path that used to derive this from the *compiled
+// module's own file location* (two directories up from dist-electron/models/*.js) now reads
+// it from here instead - that trick only worked in a dev checkout, where the compiled files
+// really do sit two levels under the repo root; in a packaged build those files load from
+// inside app.asar, so "two levels up" landed inside the archive itself, and `git clone`
+// failed outright trying to create directories inside what the OS sees as a single file, not
+// a folder. See kwesiEnv.ts's KWESI_SERVERS_DIR comment for the full story.
+export function initServersPaths(kwesiServersDir: string) {
+  serversRoot = kwesiServersDir;
 }
 
 // Phase 10: the Training Job Manager needs somewhere to keep each run's log
@@ -58,6 +71,10 @@ export function workspacesRootDir(): string {
 
 export function venvsRootDir(): string {
   return venvsRoot;
+}
+
+export function serversRootDir(): string {
+  return serversRoot;
 }
 
 export function logsRootDir(): string {

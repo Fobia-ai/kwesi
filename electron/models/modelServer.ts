@@ -24,12 +24,11 @@
 // gets a real README/server of its own.
 import { BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import { Agent, setGlobalDispatcher } from "undici";
 import * as repo from "../db/repositories.js";
-import { generationDir, ensureDir, modelsRootDir, venvDir } from "../db/paths.js";
+import { generationDir, ensureDir, modelsRootDir, serversRootDir, venvDir } from "../db/paths.js";
 import { requestRendererAudioRender } from "../ipc/audioRender.js";
 
 const PROGRESS_CHANNEL = "kwesi:generation:progress";
@@ -230,12 +229,6 @@ function isRealServerModel(modelId: string): boolean {
   return modelId in REAL_SERVER_PORTS;
 }
 
-// dist-electron/models/modelServer.js -> dist-electron -> project root.
-function projectRootDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(here, "..", "..");
-}
-
 function venvPythonPath(modelId: string): string {
   const dir = venvDir(modelId);
   return process.platform === "win32"
@@ -272,7 +265,7 @@ async function waitForHealthy(port: number, timeoutMs: number): Promise<boolean>
 // guessed. Read-only reuse of inference-side path logic, not a change to
 // the inference server's own behavior.
 export function aceStepVendorDir(): string {
-  return path.join(projectRootDir(), "servers", ACE_STEP_MODEL_ID, ACE_STEP_VENDOR_DIRNAME);
+  return path.join(serversRootDir(), ACE_STEP_MODEL_ID, ACE_STEP_VENDOR_DIRNAME);
 }
 
 /**
@@ -404,7 +397,7 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
     return spawnAceStepServer(python);
   }
 
-  const entrypoint = path.join(projectRootDir(), "servers", modelId, REAL_SERVER_ENTRYPOINT);
+  const entrypoint = path.join(serversRootDir(), modelId, REAL_SERVER_ENTRYPOINT);
   if (!fs.existsSync(entrypoint)) {
     throw new Error(`${modelId} server entrypoint not found at ${entrypoint}`);
   }

@@ -9,6 +9,7 @@ import {
   initPaths,
   initModelsPaths,
   initVenvsPaths,
+  initServersPaths,
   initLogsPaths,
   initTrainedModelsPaths,
   initArtistAvatarsPaths,
@@ -69,6 +70,7 @@ initPaths(kwesiEnv.KWESI_WORKSPACES_DIR);
 // precedent as exportsDir below.
 initModelsPaths(repo.getSetting("modelsDir") || kwesiEnv.KWESI_MODELS_DIR);
 initVenvsPaths(kwesiEnv.KWESI_VENVS_DIR);
+initServersPaths(kwesiEnv.KWESI_SERVERS_DIR);
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
 initArtistAvatarsPaths(kwesiEnv.KWESI_ARTIST_AVATARS_DIR);
