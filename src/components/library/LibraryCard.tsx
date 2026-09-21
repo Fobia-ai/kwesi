@@ -39,6 +39,9 @@ import { findAudioFile, findMidiFile, findAbcFile, parseOutputFiles } from "../.
 import { buildExportPlan } from "../../lib/exportPackage";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { getManifest } from "../../data/manifests";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
 export interface LibraryItem {
   generation: GenerationRow;
@@ -685,9 +688,9 @@ function LyricsView({ lyrics }: { lyrics: string | undefined }) {
   return (
     <div className="kwesi-scroll-inset min-h-0 flex-1 overflow-y-auto scroll-smooth px-8 py-6">
       {lyrics ? (
-        <pre className="mx-auto max-w-[60ch] whitespace-pre-wrap text-center font-sans text-sm leading-7 text-ink/90">
-          {lyrics}
-        </pre>
+        <div className="kwesi-markdown mx-auto max-w-[60ch] text-left text-sm leading-7 text-ink/90">
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{lyrics}</ReactMarkdown>
+        </div>
       ) : (
         <p className="flex h-full items-center justify-center text-center text-sm text-ink-muted">
           No lyrics on this track.
