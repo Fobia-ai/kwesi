@@ -1,7 +1,7 @@
 {
   "name": "kwesi",
   "productName": "Kwesi",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first desktop app for generating and training open-source music models.",
   "author": "Fobia",
   "homepage": "https://github.com/Fobia-ai/kwesi",
