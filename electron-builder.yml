@@ -20,6 +20,8 @@ appId: ai.fobia.kwesi
 productName: Kwesi
 copyright: "Copyright © 2026 Fobia"
 
+# Application icon. build/icons/ contains icon.ico (Windows), icon.icns (macOS),
+# and size-named PNGs for Linux/AppImage, all generated from src/assets/logo.png.
 directories:
   output: release
   buildResources: build
@@ -70,6 +72,7 @@ mac:
   target:
     - dmg
   category: public.app-category.music
+  icon: build/icons/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: true
   entitlements: build/entitlements.mac.plist
