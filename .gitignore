@@ -46,3 +46,6 @@ servers/musicgen/vendor
 # Deployment scripts — local, interactive tooling not needed in the published repo.
 scripts/deploy.sh
 
+# Local social media draft content, not part of the shipped app.
+social-post.txt
+
