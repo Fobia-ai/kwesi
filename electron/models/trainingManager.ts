@@ -38,6 +38,7 @@ import * as repo from "../db/repositories.js";
 import { ensureDir, modelVariantDir, serversRootDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
 import { queryGpuVram } from "./gpuInfo.js";
 import { aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
+import { TRAINING_VENV_BY_MODEL } from "./envInstaller.js";
 
 const PROGRESS_CHANNEL = "kwesi:training:progress";
 
@@ -103,12 +104,9 @@ export interface SubmitTrainingResult {
 // modules from each installed venv rather than assumed. musecoco's
 // `fairseq-train` console script is likewise already in its Phase 7
 // inference venv. Museformer stays unmapped — see the file-header comment.
-const TRAINING_VENV_BY_MODEL: Record<string, string> = {
-  rave: "rave-train",
-  "ace-step-1.5": "ace-step-1.5",
-  musicgen: "musicgen",
-  musecoco: "musecoco",
-};
+// The mapping (TRAINING_VENV_BY_MODEL) lives in envInstaller.ts (which also
+// installs these venvs) so the two can't drift; imported at the top rather
+// than duplicated here.
 
 // Phase 11: per-model pipeline dispatch — each model's real training tooling
 // has its own real phase shape (see file header), so the manager routes to

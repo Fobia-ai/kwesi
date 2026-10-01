@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld("kwesi", {
     checkStatus: (modelId: string) => ipcRenderer.invoke("kwesi:environment:checkStatus", modelId),
     install: (modelId: string) => ipcRenderer.invoke("kwesi:environment:install", modelId),
     installingModelId: () => ipcRenderer.invoke("kwesi:environment:installingModelId"),
+    checkTrainingStatus: (modelId: string) => ipcRenderer.invoke("kwesi:environment:checkTrainingStatus", modelId),
+    installTraining: (modelId: string) => ipcRenderer.invoke("kwesi:environment:installTraining", modelId),
     onProgress: (callback: (event: unknown) => void) => {
       const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
       ipcRenderer.on("kwesi:environment:progress", listener);

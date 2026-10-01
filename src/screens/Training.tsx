@@ -14,6 +14,8 @@ import {
 } from "../components/generation/DynamicGenerationForm";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
+import { kwesiEnvironment, type EnvStatus } from "../lib/environment";
+import { Modal } from "../components/ui/Modal";
 import type { TrainingRunRow } from "../lib/db";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -47,28 +49,132 @@ function resolveUploadedFilePath(file: File): string {
   return realPath && realPath.length > 0 ? realPath : file.name;
 }
 
+// Caption/subtitle sidecar file types accepted in "From files" mode. CSV/JSON
+// are deliberately NOT here -- those are whole-dataset maps, handled by the
+// bulk import in "Type manually" mode, not one-file-per-clip sidecars.
+const CAPTION_EXTS = [".txt", ".lrc", ".srt", ".vtt"];
+
+function fileStem(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return (dot === -1 ? name : name.slice(0, dot)).toLowerCase();
+}
+
+function fileExt(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot).toLowerCase();
+}
+
 /**
- * Phase 11: per-clip caption table, rendered under the dataset drop-zone
- * whenever `training.inputKind === "audio_captioned"` (ACE-Step 1.5,
- * MusicGen — both models' own real training tooling reads a per-clip text
- * caption alongside each audio file, a meaningfully different dataset shape
- * from RAVE's audio-only input, not a nice-to-have). Captions are optional
- * per file — both real backends fall back to a filename-derived caption
- * when one is left blank, so this never hard-blocks submission.
+ * Turns a caption/subtitle file's raw text into a single plain caption:
+ * .srt/.vtt drop their index + "00:00 --> 00:00" timing lines, .lrc drops its
+ * "[mm:ss.xx]" tags, .txt is used as-is. The real backends (ACE-Step's
+ * train.py, MusicGen's dora manifest) just want one caption string per clip.
  */
-function CaptionTable({
-  files,
-  captions,
-  onCaptionsChange,
+function parseCaptionText(filename: string, raw: string): string {
+  const ext = fileExt(filename);
+  if (ext === ".srt" || ext === ".vtt") {
+    return raw
+      .split(/\r?\n/)
+      .filter((l) => l.trim() && !/^WEBVTT/i.test(l.trim()) && !/^\d+$/.test(l.trim()) && !l.includes("-->"))
+      .join(" ")
+      .trim();
+  }
+  if (ext === ".lrc") {
+    return raw
+      .split(/\r?\n/)
+      .map((l) => l.replace(/\[[0-9:.]+\]/g, "").trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  }
+  return raw.trim();
+}
+
+/** Pairs each audio file with a caption file of the same stem (song1.wav ↔ song1.txt). */
+function autoMatchCaptions(audioFiles: File[], captionFiles: File[]): Record<string, string> {
+  const pairing: Record<string, string> = {};
+  for (const audio of audioFiles) {
+    const match = captionFiles.find((c) => fileStem(c.name) === fileStem(audio.name));
+    if (match) pairing[audio.name] = match.name;
+  }
+  return pairing;
+}
+
+/**
+ * Phase 11 / dynamic training dataset: the real per-clip caption input for
+ * `inputKind === "audio_captioned"` models (ACE-Step 1.5, MusicGen), whose
+ * tooling reads a text caption alongside each audio clip. Two ways to supply
+ * them, toggled:
+ *   - "From files": drop audio AND caption/subtitle files (together or
+ *     separately); each clip auto-pairs with the same-named caption file, and
+ *     any mismatch is re-pairable per row via the dropdown. The file's text is
+ *     read at submit time (subtitles get their timestamps stripped).
+ *   - "Type manually": type a caption per clip, or bulk-import a
+ *     filename,caption CSV/JSON.
+ * Captions stay optional either way -- both backends fall back to a
+ * filename-derived caption, so this never hard-blocks a run.
+ */
+function CaptionedDataset({
+  fileTypes,
+  minFiles,
+  audioFiles,
+  onAudioFilesChange,
+  captionMode,
+  onCaptionModeChange,
+  typedCaptions,
+  onTypedCaptionsChange,
+  captionFiles,
+  onCaptionFilesChange,
+  pairing,
+  onPairingChange,
 }: {
-  files: File[];
-  captions: Record<string, string>;
-  onCaptionsChange: (next: Record<string, string>) => void;
+  fileTypes: string[];
+  minFiles: number;
+  audioFiles: File[];
+  onAudioFilesChange: (files: File[]) => void;
+  captionMode: "files" | "text";
+  onCaptionModeChange: (mode: "files" | "text") => void;
+  typedCaptions: Record<string, string>;
+  onTypedCaptionsChange: (next: Record<string, string>) => void;
+  captionFiles: File[];
+  onCaptionFilesChange: (files: File[]) => void;
+  pairing: Record<string, string>;
+  onPairingChange: (next: Record<string, string>) => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  function setCaption(filename: string, value: string) {
-    onCaptionsChange({ ...captions, [filename]: value });
+  function handlePicked(picked: FileList | null) {
+    if (!picked || picked.length === 0) return;
+    const nextAudio = [...audioFiles];
+    const nextCaption = [...captionFiles];
+    const rejected: string[] = [];
+    for (const file of Array.from(picked)) {
+      const ext = fileExt(file.name);
+      if (fileTypes.includes(ext)) nextAudio.push(file);
+      else if (CAPTION_EXTS.includes(ext)) nextCaption.push(file);
+      else rejected.push(`${file.name} (${ext || "no extension"})`);
+    }
+    setError(
+      rejected.length > 0
+        ? `Unsupported file${rejected.length === 1 ? "" : "s"} (expects audio ${fileTypes.join(", ")} or captions ${CAPTION_EXTS.join(", ")}): ${rejected.join(", ")}`
+        : null,
+    );
+    onAudioFilesChange(nextAudio);
+    onCaptionFilesChange(nextCaption);
+    // Re-pair any audio that doesn't already have an explicit pairing.
+    const auto = autoMatchCaptions(nextAudio, nextCaption);
+    onPairingChange({ ...auto, ...pairing });
+  }
+
+  function removeAudio(index: number) {
+    const removed = audioFiles[index];
+    onAudioFilesChange(audioFiles.filter((_, i) => i !== index));
+    if (removed) {
+      const next = { ...pairing };
+      delete next[removed.name];
+      onPairingChange(next);
+    }
   }
 
   async function handleBulkImport(file: File | undefined) {
@@ -76,7 +182,7 @@ function CaptionTable({
     setImportError(null);
     try {
       const text = await file.text();
-      const next: Record<string, string> = { ...captions };
+      const next: Record<string, string> = { ...typedCaptions };
       if (file.name.toLowerCase().endsWith(".json")) {
         const parsed = JSON.parse(text) as Record<string, string> | Array<{ filename: string; caption: string }>;
         if (Array.isArray(parsed)) {
@@ -91,51 +197,172 @@ function CaptionTable({
           if (commaIdx === -1) continue;
           const filename = line.slice(0, commaIdx).trim().replace(/^"|"$/g, "");
           const caption = line.slice(commaIdx + 1).trim().replace(/^"|"$/g, "");
-          if (filename.toLowerCase() === "filename") continue; // skip a header row
+          if (filename.toLowerCase() === "filename") continue;
           next[filename] = caption;
         }
       }
-      onCaptionsChange(next);
+      onTypedCaptionsChange(next);
     } catch {
-      setImportError("Couldn't parse that file — expected a CSV with \"filename,caption\" rows or a JSON object/array.");
+      setImportError('Couldn\'t parse that file — expected a CSV with "filename,caption" rows or a JSON object/array.');
     }
   }
 
-  if (files.length === 0) return null;
+  const matchedCount = audioFiles.filter((a) => pairing[a.name]).length;
 
   return (
     <div className="flex flex-col gap-2">
+      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-ink/20 px-4 py-6 text-center text-sm text-ink-muted transition-colors duration-150 hover:border-accent/50 hover:text-ink">
+        <span>Drop audio{captionMode === "files" ? " + caption" : ""} files here, or choose them</span>
+        <span className="text-xs">
+          {audioFiles.length} audio{captionMode === "files" ? ` · ${captionFiles.length} caption` : ""} file
+          {audioFiles.length === 1 && (captionMode !== "files" || captionFiles.length === 1) ? "" : "s"}
+          {minFiles > 0 && ` — at least ${minFiles} audio needed`}
+        </span>
+        <input
+          type="file"
+          multiple
+          accept={captionMode === "files" ? [...fileTypes, ...CAPTION_EXTS].join(",") : fileTypes.join(",")}
+          className="hidden"
+          onChange={(e) => {
+            handlePicked(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Captions (optional per file)</p>
-        <label className="cursor-pointer text-xs text-accent hover:underline">
-          Import CSV/JSON…
-          <input
-            type="file"
-            accept=".csv,.json"
-            className="hidden"
-            onChange={(e) => {
-              void handleBulkImport(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        <div className="inline-flex rounded-chip bg-ink/[0.06] p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => onCaptionModeChange("files")}
+            className={`rounded-chip px-2.5 py-1 transition-colors ${captionMode === "files" ? "bg-bg text-ink shadow-glass-sm" : "text-ink-muted"}`}
+          >
+            From files
+          </button>
+          <button
+            type="button"
+            onClick={() => onCaptionModeChange("text")}
+            className={`rounded-chip px-2.5 py-1 transition-colors ${captionMode === "text" ? "bg-bg text-ink shadow-glass-sm" : "text-ink-muted"}`}
+          >
+            Type manually
+          </button>
+        </div>
+        {captionMode === "files" ? (
+          <span className="text-xs text-ink-muted">
+            {matchedCount}/{audioFiles.length} matched
+          </span>
+        ) : (
+          <label className="cursor-pointer text-xs text-accent hover:underline">
+            Import CSV/JSON…
+            <input
+              type="file"
+              accept=".csv,.json"
+              className="hidden"
+              onChange={(e) => {
+                void handleBulkImport(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
       </div>
       {importError && <p className="text-xs text-red-600">{importError}</p>}
-      <div className="flex max-h-48 flex-col gap-1.5 overflow-y-auto rounded-[10px] bg-ink/[0.03] p-2">
-        {files.map((f, i) => (
-          <div key={`${f.name}-${i}`} className="flex items-center gap-2">
-            <span className="w-1/3 shrink-0 truncate text-xs text-ink-muted">{f.name}</span>
-            <input
-              value={captions[f.name] ?? ""}
-              onChange={(e) => setCaption(f.name, e.target.value)}
-              placeholder="Describe this clip (optional — falls back to the filename)"
-              className="kwesi-glass min-w-0 flex-1 rounded-[8px] px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent/40"
-            />
+
+      {audioFiles.length > 0 && (
+        <div className="flex max-h-60 flex-col overflow-y-auto rounded-[10px] bg-ink/[0.03]">
+          <div className="sticky top-0 flex items-center gap-2 border-b border-ink/[0.07] bg-ink/[0.03] px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+            <span className="w-2/5 shrink-0">Audio clip</span>
+            <span className="flex-1">Caption {captionMode === "files" ? "(matched file)" : "(optional)"}</span>
+            <span className="w-6 shrink-0" />
           </div>
-        ))}
-      </div>
+          {audioFiles.map((f, i) => {
+            const matchedName = pairing[f.name];
+            const matchedFile = matchedName ? captionFiles.find((c) => c.name === matchedName) : undefined;
+            return (
+              <div key={`${f.name}-${i}`} className="flex items-center gap-2 border-b border-ink/[0.05] px-2 py-1.5 last:border-b-0">
+                <span className="w-2/5 shrink-0 truncate text-xs" title={f.name}>
+                  {f.name}
+                </span>
+                {captionMode === "files" ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <select
+                      value={matchedName ?? ""}
+                      onChange={(e) => {
+                        const next = { ...pairing };
+                        if (e.target.value) next[f.name] = e.target.value;
+                        else delete next[f.name];
+                        onPairingChange(next);
+                      }}
+                      className="kwesi-glass min-w-0 flex-1 rounded-[8px] px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent/40"
+                    >
+                      <option value="">— no caption —</option>
+                      {captionFiles.map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    {matchedFile ? (
+                      <span className="shrink-0 text-xs text-accent" title="Matched">
+                        ✓
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-xs text-amber-600" title="No caption file — falls back to the filename">
+                        ⚠
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <input
+                    value={typedCaptions[f.name] ?? ""}
+                    onChange={(e) => onTypedCaptionsChange({ ...typedCaptions, [f.name]: e.target.value })}
+                    placeholder="Describe this clip (optional — falls back to the filename)"
+                    className="kwesi-glass min-w-0 flex-1 rounded-[8px] px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent/40"
+                  />
+                )}
+                <button
+                  type="button"
+                  className="w-6 shrink-0 text-center text-ink-muted hover:text-red-600"
+                  onClick={() => removeAudio(i)}
+                  title="Remove"
+                  aria-label={`Remove ${f.name}`}
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {captionMode === "files" && captionFiles.length > 0 && matchedCount < captionFiles.length && (
+        <p className="text-xs text-ink-muted">
+          {captionFiles.length - matchedCount} caption file{captionFiles.length - matchedCount === 1 ? "" : "s"} not matched to any clip — use the dropdowns above to pair them.
+        </p>
+      )}
     </div>
   );
+}
+
+/** Builds the audioBasename→caption map the backend wants, reading caption files as needed. */
+async function resolveCaptions(
+  captionMode: "files" | "text",
+  audioFiles: File[],
+  typedCaptions: Record<string, string>,
+  captionFiles: File[],
+  pairing: Record<string, string>,
+): Promise<Record<string, string>> {
+  if (captionMode === "text") return typedCaptions;
+  const out: Record<string, string> = {};
+  for (const audio of audioFiles) {
+    const capName = pairing[audio.name];
+    if (!capName) continue;
+    const capFile = captionFiles.find((c) => c.name === capName);
+    if (!capFile) continue;
+    const parsed = parseCaptionText(capFile.name, await capFile.text());
+    if (parsed) out[audio.name] = parsed;
+  }
+  return out;
 }
 
 /**
@@ -244,21 +471,121 @@ function DatasetDropZone({
   );
 }
 
+/**
+ * Shown when a run is attempted before the model's TRAINING environment is
+ * installed (RAVE trains in a separate `rave-train` venv; the others train in
+ * their inference venv). Reuses the same real install flow + progress stream
+ * as Settings > Environment, so this is a shortcut to that action, not a
+ * lesser one.
+ */
+function TrainingSetupDialog({
+  modelId,
+  displayName,
+  onClose,
+}: {
+  modelId: string;
+  displayName: string;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<EnvStatus | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function refresh() {
+    setStatus(await kwesiEnvironment.checkTrainingStatus(modelId));
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelId]);
+
+  useEffect(
+    () =>
+      kwesiEnvironment.onProgress((event) => {
+        if (event.modelId !== modelId) return;
+        setLog((prev) => [...prev.slice(-29), event.line]);
+      }),
+    [modelId],
+  );
+
+  async function install() {
+    setMessage(null);
+    setLog([]);
+    setInstalling(true);
+    const result = await kwesiEnvironment.installTraining(modelId);
+    setInstalling(false);
+    if (!result.ok) setMessage(result.reason ?? "Install failed.");
+    await refresh();
+  }
+
+  const ready = status?.venvExists ?? false;
+
+  return (
+    <Modal title={`Set up ${displayName} training`} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-ink-muted">
+          Training {displayName} needs its training environment installed first — this is a one-time setup (real Python
+          packages, may take several minutes).
+        </p>
+
+        <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Training environment</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {ready ? "Ready" : installing ? "Installing…" : "Not installed"}
+              </p>
+            </div>
+            {!ready && (
+              <PillButton className="!px-3 !py-1.5 text-xs" onClick={install} disabled={installing}>
+                {installing ? "Installing…" : "Set up"}
+              </PillButton>
+            )}
+          </div>
+          {log.length > 0 && (
+            <pre className="kwesi-scroll-inset mt-2 max-h-28 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
+              {log.join("\n")}
+            </pre>
+          )}
+          {message && <p className="mt-1 text-xs text-red-600">{message}</p>}
+        </div>
+
+        <div className="flex justify-end">
+          <PillButton onClick={onClose} variant={ready ? "accent" : "ghost"}>
+            {ready ? "Done — start the run" : "Close"}
+          </PillButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   const trainableModels = useMemo(() => Object.values(MANIFESTS), []);
   const [modelId, setModelId] = useState<string>("");
   const [runName, setRunName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [datasetCaptions, setDatasetCaptions] = useState<Record<string, string>>({});
+  const [captionMode, setCaptionMode] = useState<"files" | "text">("files");
+  const [captionFiles, setCaptionFiles] = useState<File[]>([]);
+  const [captionPairing, setCaptionPairing] = useState<Record<string, string>>({});
   const [datasetDirPath, setDatasetDirPath] = useState<string>("");
   const [hyperparams, setHyperparams] = useState<GenerationFormValues>({});
   const [outputDir, setOutputDir] = useState<string>("");
   const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
-  // Only the setter is read -- handleSubmit is kept (see its "Coming soon"
-  // call site below) but unreachable while its button is hardcoded
-  // disabled, so nothing renders the loading value itself right now.
-  const [, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+
+  function resetDataset() {
+    setFiles([]);
+    setDatasetCaptions({});
+    setCaptionFiles([]);
+    setCaptionPairing({});
+    setDatasetDirPath("");
+  }
 
   useEffect(() => {
     kwesiHardware.gpuVram().then(setGpu);
@@ -301,6 +628,20 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
       : files.length >= training.datasetRequirements.minFiles
     : false;
 
+  // Gate on the training environment before submitting (a model trains in a
+  // venv that may differ from its inference one -- RAVE in `rave-train`).
+  // Without this the run starts, then fails deep in the pipeline with a raw
+  // "venv not found" -- same late-failure UX the generation gate fixed.
+  async function startRun() {
+    if (!training || !manifest) return;
+    const env = await kwesiEnvironment.checkTrainingStatus(manifest.modelId);
+    if (!env.venvExists) {
+      setSetupOpen(true);
+      return;
+    }
+    await handleSubmit();
+  }
+
   async function handleSubmit() {
     if (!training || !manifest) return;
     setSubmitting(true);
@@ -317,15 +658,15 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
         allowedExtensions: training.datasetRequirements.fileTypes,
         hyperparams,
         outputDir: outputDir || (await kwesiTraining.defaultOutputDir(manifest.modelId, runName.trim())),
-        datasetCaptions: isCaptionedDataset ? datasetCaptions : undefined,
+        datasetCaptions: isCaptionedDataset
+          ? await resolveCaptions(captionMode, files, datasetCaptions, captionFiles, captionPairing)
+          : undefined,
       });
       if (!result.ok) {
         setSubmitError(result.reason ?? "Could not start this training run.");
         return;
       }
-      setFiles([]);
-      setDatasetCaptions({});
-      setDatasetDirPath("");
+      resetDataset();
       setRunName("");
       onSubmitted();
     } finally {
@@ -343,9 +684,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
           value={modelId}
           onChange={(e) => {
             setModelId(e.target.value);
-            setFiles([]);
-            setDatasetCaptions({});
-            setDatasetDirPath("");
+            resetDataset();
           }}
           className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
         >
@@ -378,9 +717,31 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
           </label>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            Dataset ({isDirectoryDataset ? "pre-processed directory" : training.datasetRequirements.requiresCaptions ? "audio + captions" : "raw audio, no captions needed"})
+            Dataset ({isDirectoryDataset ? "pre-processed directory" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
             {isDirectoryDataset ? (
               <DatasetDirPicker path={datasetDirPath} onPathChange={setDatasetDirPath} />
+            ) : isCaptionedDataset ? (
+              <>
+                <CaptionedDataset
+                  fileTypes={training.datasetRequirements.fileTypes}
+                  minFiles={training.datasetRequirements.minFiles}
+                  audioFiles={files}
+                  onAudioFilesChange={setFiles}
+                  captionMode={captionMode}
+                  onCaptionModeChange={setCaptionMode}
+                  typedCaptions={datasetCaptions}
+                  onTypedCaptionsChange={setDatasetCaptions}
+                  captionFiles={captionFiles}
+                  onCaptionFilesChange={setCaptionFiles}
+                  pairing={captionPairing}
+                  onPairingChange={setCaptionPairing}
+                />
+                {!meetsFileMinimum && files.length > 0 && (
+                  <p className="text-xs text-amber-600">
+                    Needs at least {training.datasetRequirements.minFiles} audio files (have {files.length}).
+                  </p>
+                )}
+              </>
             ) : (
               <>
                 <DatasetDropZone
@@ -393,9 +754,6 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                   <p className="text-xs text-amber-600">
                     Needs at least {training.datasetRequirements.minFiles} files (have {files.length}).
                   </p>
-                )}
-                {isCaptionedDataset && (
-                  <CaptionTable files={files} captions={datasetCaptions} onCaptionsChange={setDatasetCaptions} />
                 )}
               </>
             )}
@@ -434,18 +792,22 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
 
           {submitError && <p className="text-xs text-red-600">{submitError}</p>}
 
-          {/* Phase 2: the form above is fully real (dataset validation,
-              hyperparameters, the hardware gate) and stays that way so it's
-              ready to wire back up -- only actually starting a run is
-              paused for now, via a hardcoded `disabled` rather than
-              removing handleSubmit, so re-enabling this later is a
-              one-line change. */}
           <div className="flex items-center justify-end gap-2">
-            <span className="text-xs text-ink-muted">Training runs are coming in a future update.</span>
-            <PillButton disabled onClick={handleSubmit}>
-              Coming soon
+            <PillButton
+              onClick={startRun}
+              disabled={submitting || !runName.trim() || !meetsFileMinimum || hardwareGate.level === "block"}
+            >
+              {submitting ? "Starting…" : "Start training run"}
             </PillButton>
           </div>
+
+          {setupOpen && (
+            <TrainingSetupDialog
+              modelId={manifest.modelId}
+              displayName={manifest.displayName}
+              onClose={() => setSetupOpen(false)}
+            />
+          )}
         </>
       )}
     </div>

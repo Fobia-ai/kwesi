@@ -109,10 +109,12 @@ export async function checkGitAvailable(): Promise<{ available: boolean; version
  * torch *inside that venv's own interpreter*, not a guess from install
  * status, since a venv can exist but be broken/partial.
  */
-export async function checkEnvironmentStatus(modelId: string): Promise<EnvStatus> {
-  const python = venvPythonPath(modelId);
+// Read-only inspection of one venv at `python`. Shared by the inference-venv
+// and training-venv status checks -- a training venv is a real venv at a
+// different location (see TRAINING_VENV_BY_MODEL), inspected the exact same
+// way.
+async function inspectVenv(python: string, modelId: string, installable: boolean): Promise<EnvStatus> {
   const venvExists = fs.existsSync(python);
-  const installable = isInstallableModel(modelId);
   if (!venvExists) {
     return { modelId, venvExists: false, pythonVersion: null, torchAvailable: false, cudaAvailable: null, installable };
   }
@@ -149,6 +151,10 @@ export async function checkEnvironmentStatus(modelId: string): Promise<EnvStatus
     cudaAvailable: torchCheck?.available ? torchCheck.cuda : null,
     installable,
   };
+}
+
+export async function checkEnvironmentStatus(modelId: string): Promise<EnvStatus> {
+  return inspectVenv(venvPythonPath(modelId), modelId, isInstallableModel(modelId));
 }
 
 async function ensureGitClone(url: string, dest: string, onOutput: OnOutput, depth = 1): Promise<void> {
@@ -319,4 +325,68 @@ export async function installEnvironment(modelId: string, onOutput: OnOutput): P
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// --- Training environments -------------------------------------------------
+// Which venv each model TRAINS in. Three train in their own already-
+// installable inference venv (their training tooling is satisfied by it --
+// see trainingManager.ts's Phase 11 finding); RAVE alone needs a separate
+// `rave-train` venv (the real acids-rave package + GPU torch, a materially
+// different dependency surface -- see servers/rave/README.md). Kept here (and
+// re-exported) rather than duplicated, so trainingManager.ts and this
+// installer can't drift out of sync.
+export const TRAINING_VENV_BY_MODEL: Record<string, string> = {
+  rave: "rave-train",
+  "ace-step-1.5": "ace-step-1.5",
+  musicgen: "musicgen",
+  musecoco: "musecoco",
+};
+
+export function isTrainableModel(modelId: string): boolean {
+  return modelId in TRAINING_VENV_BY_MODEL;
+}
+
+// Status of the venv a model TRAINS in (not necessarily its inference venv).
+export async function checkTrainingEnvironmentStatus(modelId: string): Promise<EnvStatus> {
+  const venvName = TRAINING_VENV_BY_MODEL[modelId];
+  if (!venvName) {
+    return { modelId, venvExists: false, pythonVersion: null, torchAvailable: false, cudaAvailable: null, installable: false };
+  }
+  return inspectVenv(venvPythonPath(venvName), modelId, true);
+}
+
+// RAVE's separate training venv -- exact recipe from servers/rave/README.md's
+// "Training venv" section: Python 3.11 (acids-rave's pinned scipy==1.10.0 has
+// no cp312 wheel), torch/torchaudio first, then acids-rave with setuptools<81
+// (load-bearing -- pytorch_lightning still imports pkg_resources, dropped by
+// setuptools>=81).
+async function installRaveTrain(onOutput: OnOutput): Promise<void> {
+  await uvVenv("rave-train", "3.11", onOutput);
+  await uvPipInstall("rave-train", ["torch==2.4.1", "torchaudio==2.4.1"], onOutput);
+  await uvPipInstall("rave-train", ["pytorch_lightning==1.9.0", "setuptools<81", "acids-rave==2.3.1"], onOutput);
+}
+
+export async function installTrainingEnvironment(modelId: string, onOutput: OnOutput): Promise<EnvInstallResult> {
+  const venvName = TRAINING_VENV_BY_MODEL[modelId];
+  if (!venvName) return { ok: false, reason: `"${modelId}" has no training environment.` };
+
+  const uv = await checkUvAvailable();
+  if (!uv.available) {
+    return {
+      ok: false,
+      reason: "uv isn't installed. Install it from https://docs.astral.sh/uv/getting-started/installation/, then try again.",
+    };
+  }
+
+  // RAVE's training venv is its own thing; every other trainable model trains
+  // in its already-installable inference venv, so just reuse that installer.
+  if (venvName === "rave-train") {
+    try {
+      await installRaveTrain(onOutput);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  return installEnvironment(modelId, onOutput);
 }

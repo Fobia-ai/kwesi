@@ -11,6 +11,10 @@ export interface KwesiEnvironmentApi {
   checkStatus(modelId: string): Promise<EnvStatus>;
   install(modelId: string): Promise<{ ok: boolean; reason?: string }>;
   installingModelId(): Promise<string | null>;
+  // Training uses a venv that may differ from inference (RAVE trains in a
+  // separate `rave-train`), so these check/install that one specifically.
+  checkTrainingStatus(modelId: string): Promise<EnvStatus>;
+  installTraining(modelId: string): Promise<{ ok: boolean; reason?: string }>;
   onProgress(callback: (event: EnvProgress) => void): () => void;
 }
 
@@ -20,6 +24,8 @@ function realEnvironmentApi(bridge: NonNullable<Window["kwesi"]>["environment"])
     checkStatus: (modelId) => bridge.checkStatus(modelId),
     install: (modelId) => bridge.install(modelId),
     installingModelId: () => bridge.installingModelId(),
+    checkTrainingStatus: (modelId) => bridge.checkTrainingStatus(modelId),
+    installTraining: (modelId) => bridge.installTraining(modelId),
     onProgress: (callback) => bridge.onProgress(callback),
   };
 }
@@ -57,6 +63,12 @@ function createMockEnvironmentApi(): KwesiEnvironmentApi {
     },
     async installingModelId() {
       return null;
+    },
+    async checkTrainingStatus(modelId) {
+      return EMPTY_STATUS(modelId);
+    },
+    async installTraining(modelId) {
+      return { ok: false, reason: `[mock] Can't install ${modelId}'s training environment from a browser preview.` };
     },
     onProgress(callback) {
       listeners.add(callback);

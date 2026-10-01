@@ -206,6 +206,8 @@ declare global {
         checkStatus: (modelId: string) => Promise<EnvStatus>;
         install: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
         installingModelId: () => Promise<string | null>;
+        checkTrainingStatus: (modelId: string) => Promise<EnvStatus>;
+        installTraining: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
         onProgress: (callback: (event: EnvProgress) => void) => () => void;
       };
       audioRender: {
