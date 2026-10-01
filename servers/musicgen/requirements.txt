@@ -16,6 +16,13 @@ xformers==0.0.29.post3
 av==12.3.0
 transformers>=4.31.0
 flashy
+# Training-only (inference never imports dora/hydra): audiocraft's own deps,
+# skipped by the --no-deps install. Without hydra-core, dora-search (pulled
+# in by flashy) silently omits `hydra_main`, so `dora run` fails at once with
+# "cannot import name 'hydra_main' from 'dora'". hydra_colorlog backs
+# audiocraft's job-logging config. Confirmed by a real fine-tune run.
+hydra-core>=1.1
+hydra_colorlog
 librosa
 spacy
 soundfile

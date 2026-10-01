@@ -37,7 +37,7 @@ import path from "node:path";
 import * as repo from "../db/repositories.js";
 import { ensureDir, modelVariantDir, serversRootDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
 import { queryGpuVram } from "./gpuInfo.js";
-import { aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
+import { ACE_STEP_LORA_META_FILE, aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
 import { TRAINING_VENV_BY_MODEL } from "./envInstaller.js";
 
 const PROGRESS_CHANNEL = "kwesi:training:progress";
@@ -405,6 +405,18 @@ function parseAceStepTrainProgress(
   return { step, maxSteps, pct };
 }
 
+// Side-Step's --model-variant aliases -> the DiT checkpoint directory names
+// the inference server's /v1/init takes (acestep/training_v2/model_loader.py
+// _VARIANT_DIR).
+const ACE_STEP_TRAIN_BASE_DIRS: Record<string, string> = {
+  turbo: "acestep-v15-turbo",
+  base: "acestep-v15-base",
+  sft: "acestep-v15-sft",
+  xl_turbo: "acestep-v15-xl-turbo",
+  xl_base: "acestep-v15-xl-base",
+  xl_sft: "acestep-v15-xl-sft",
+};
+
 /**
  * ACE-Step 1.5 LoRA training — its own real vendored "Side-Step" CLI
  * (`train.py fixed`, see servers/ace-step-1.5/README.md's "Training (Phase
@@ -504,6 +516,17 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
         path.relative(workDir, tensorDir),
         "--max-duration",
         "240",
+        // `fixed` declares --dataset-dir/--output-dir as argparse-required
+        // even though the --preprocess path short-circuits before using them
+        // (train.py:87 returns _run_preprocess before they're read). The
+        // vendored ACE-Step repo is cloned unpinned, and its current HEAD
+        // enforces this, so the preprocess call has to pass them (ignored
+        // here) just to satisfy the parser -- same real values the train
+        // phase below uses.
+        "--dataset-dir",
+        path.relative(workDir, tensorDir),
+        "--output-dir",
+        path.relative(workDir, loraOutDir),
       ],
       workDir,
       appendLog,
@@ -571,16 +594,13 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
     const finalOutputDir = path.join(outputDir, variantName);
     copyDirRecursive(finalAdapterDir, finalOutputDir);
 
-    // Real, honest scope call (see file header): a LoRA adapter isn't a
-    // swappable base checkpoint the way RAVE's exported .ts or MusicGen's
-    // exported state_dict.bin are — it only becomes usable through ACE-
-    // Step's own real POST /v1/lora/load + /v1/lora/toggle endpoints against
-    // an already-loaded base model (verified for real in this phase — see
-    // the README), which this app's generation screen doesn't yet expose a
-    // control for. So this registers a `trained_model` row (real, visible
-    // in Model Manager's "My Trained Models") but deliberately skips
-    // upsertTrainedModelVariant — unlike RAVE/MusicGen, this checkpoint
-    // isn't selectable from the generation screen's checkpoint picker yet.
+    // A LoRA only works on top of the base DiT it was trained against, so
+    // record that next to the adapter. Generation (modelServer.ts's
+    // ensureAceStepCheckpoint) reads it back to /v1/init that base, then
+    // /v1/lora/load + /v1/lora/toggle this adapter on top of it.
+    const baseDir = ACE_STEP_TRAIN_BASE_DIRS[baseVariant] ?? `acestep-v15-${baseVariant.replace(/_/g, "-")}`;
+    fs.writeFileSync(path.join(finalOutputDir, ACE_STEP_LORA_META_FILE), JSON.stringify({ baseVariant: baseDir }, null, 2));
+    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputDir, dirSizeBytes(finalOutputDir));
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputDir);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputDir });
@@ -871,9 +891,13 @@ function parseMuseCocoTrainProgress(
 ): { step: number; maxSteps?: number; pct?: number; etaText?: string; rate?: number } | null {
   const m = line.match(/epoch\s+(\d+):\s*(\d+)\s*\/\s*(\d+)\s*loss=([\d.]+)/);
   if (!m) return null;
-  const step = Number(m[2]);
-  const totalSteps = Number(m[3]);
-  const pct = totalSteps > 0 ? Math.min(99, Math.round((step / totalSteps) * 100)) : undefined;
+  // The run stops at --max-update, usually long before the epoch's own
+  // batch count (`1 / 101` above), so progress tracks fairseq's global
+  // num_updates against that, falling back to the in-epoch position.
+  const updates = line.match(/num_updates=(\d+)/);
+  const step = updates ? Number(updates[1]) : Number(m[2]);
+  const total = maxSteps ?? Number(m[3]);
+  const pct = total > 0 ? Math.min(99, Math.round((step / total) * 100)) : undefined;
   return { step, maxSteps, pct };
 }
 
@@ -991,10 +1015,15 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
         "0",
         "--max-update",
         String(maxUpdates),
-        "--validate-interval",
-        "100000000",
-        "--save-interval-updates",
-        String(maxUpdates),
+        // Saving at --save-interval-updates triggers a full pass over the
+        // valid split regardless of --validate-interval -- on CPU that's
+        // ~100s per example, hours added to every run for a score this
+        // pipeline never uses.
+        "--disable-validation",
+        // No --save-interval-updates: fairseq already saves when it hits
+        // --max-update, and the interval flag makes it write a second,
+        // identical checkpoint_1_N.pt (another ~14.5GB) next to
+        // checkpoint_last.pt.
         "--save-dir",
         saveDir,
         "--no-epoch-checkpoints",
@@ -1012,9 +1041,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
       { maxSteps: maxUpdates, progressPhases: ["train"], parseProgress: parseMuseCocoTrainProgress, env: { MKL_THREADING_LAYER: "GNU" } },
     );
 
-    const checkpointFile = fs.existsSync(path.join(saveDir, "checkpoint_last.pt"))
-      ? path.join(saveDir, "checkpoint_last.pt")
-      : path.join(saveDir, `checkpoint_1_${maxUpdates}.pt`);
+    const checkpointFile = path.join(saveDir, "checkpoint_last.pt");
     if (!fs.existsSync(checkpointFile)) {
       throw new Error(`Training finished but no checkpoint was found under ${saveDir}`);
     }
@@ -1022,16 +1049,20 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     const variantName = deriveVariantName(runId, params.runName);
     const finalOutputPath = path.join(outputDir, `${variantName}.pt`);
     ensureDir(outputDir);
-    fs.copyFileSync(checkpointFile, finalOutputPath);
-
-    // Real, honest scope call, same posture as ACE-Step's LoRA: this
-    // fine-tuned checkpoint is a real fairseq training checkpoint (full
-    // model + optimizer state, loadable by fairseq's own checkpoint_utils),
-    // but servers/musecoco/server.py's inference path hardcodes the
-    // installed checkpoint's path/name rather than accepting a variant
-    // parameter — wiring a trained MuseCoco checkpoint back into the
-    // generation screen's checkpoint picker is real, follow-up work, not
-    // done here. Registers a `trained_model` row only.
+    // A 1B-param fairseq checkpoint (weights + Adam state) is many GB, so
+    // move it rather than leave a second copy in the run dir; copy only when
+    // the output dir is on another filesystem.
+    try {
+      fs.renameSync(checkpointFile, finalOutputPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+      fs.copyFileSync(checkpointFile, finalOutputPath);
+      fs.rmSync(checkpointFile, { force: true });
+    }
+    // servers/musecoco/server.py takes this path per request (resolved from
+    // this variant row by modelServer.ts, never from the renderer) and
+    // swaps its loaded model when it changes.
+    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputPath, fs.statSync(finalOutputPath).size);
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputPath);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputPath });

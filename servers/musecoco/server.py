@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+from typing import Optional
 
 VENDOR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", "2-attribute2music_model")
 LINEAR_MASK_DIR = os.path.join(VENDOR_ROOT, "linear_mask")
@@ -37,11 +38,25 @@ app = FastAPI()
 # on this box's RTX 3090, produced a real, numerically-verified CUDA build
 # of pytorch-fast-transformers). Detects for real now rather than hardcoding
 # either way, so this keeps working on a machine without a CUDA build too.
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-if DEVICE == "cuda":
+# A GPU alone isn't enough: pytorch-fast-transformers only compiles its CUDA
+# kernel when nvcc was available at install time, and otherwise silently
+# sets it to None -- picking "cuda" then crashes every generation with
+# "'NoneType' object is not callable" (hit for real on a fresh install on an
+# RTX 3090 box with no system CUDA toolkit). So require the kernel too.
+from fast_transformers.causal_product import causal_dot_product_cuda  # noqa: E402
+
+if torch.cuda.is_available() and causal_dot_product_cuda is not None:
+    DEVICE = "cuda"
     log.info("Running on CUDA.")
+elif torch.cuda.is_available():
+    DEVICE = "cpu"
+    log.warning(
+        "GPU found, but pytorch-fast-transformers was built without its CUDA kernel (no nvcc at install time) -- "
+        "running on CPU. See servers/musecoco/README.md to rebuild it with CUDA."
+    )
 else:
-    log.warning("Running on CPU -- the fast_transformers CUDA extension needs a system nvcc this box doesn't have.")
+    DEVICE = "cpu"
+    log.warning("No CUDA GPU -- running on CPU.")
 
 _DATA_BIN = os.path.join(VENDOR_ROOT, "data", "truncated_2560", "data-bin")
 _CHECKPOINT = os.path.join(VENDOR_ROOT, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt")
@@ -49,17 +64,27 @@ _CHECKPOINT = os.path.join(VENDOR_ROOT, "checkpoints", "linear_mask-1billion", "
 _state = {}
 
 
-def checkpoint_path() -> str:
+def default_checkpoint_path() -> str:
     override = os.environ.get("KWESI_MUSECOCO_CHECKPOINT")
     return override if override else _CHECKPOINT
 
 
-def load_state():
-    if _state:
+def load_state(requested_path=None):
+    # A fine-tuned checkpoint from the Training screen is passed per request
+    # (the app resolves it from its own DB, never from renderer input). Only
+    # one ~14.5GB model fits in memory at a time, so switching paths drops
+    # the current one before loading the next.
+    ckpt = requested_path or default_checkpoint_path()
+    if _state and _state.get("checkpoint") == ckpt:
         return _state
+    if _state:
+        log.info(f"switching checkpoint {_state.get('checkpoint')} -> {ckpt}")
+        _state.clear()
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
 
-    if not os.path.isfile(checkpoint_path()):
-        raise HTTPException(status_code=404, detail=f"No checkpoint at {checkpoint_path()}")
+    if not os.path.isfile(ckpt):
+        raise HTTPException(status_code=404, detail=f"No checkpoint at {ckpt}")
 
     torch.manual_seed(2024)
     np.random.seed(2024)
@@ -67,7 +92,7 @@ def load_state():
     argv = [
         _DATA_BIN,
         "--task", "language_modeling_control",
-        "--path", checkpoint_path(),
+        "--path", ckpt,
         "--max-len-b", "600",
         "--min-len", "1",
         "--sampling",
@@ -90,7 +115,7 @@ def load_state():
     parser.add_argument("--use_gold_labels", type=int, default=0)
     args = options.parse_args_and_arch(parser)
 
-    log.info(f"loading task/model from {checkpoint_path()} (this reads a ~14.5GB checkpoint)")
+    log.info(f"loading task/model from {ckpt} (this reads a ~14.5GB checkpoint)")
     t0 = time.time()
     task = tasks.setup_task(args)
     models, _model_args = checkpoint_utils.load_model_ensemble(
@@ -116,6 +141,7 @@ def load_state():
             model.cuda()
     log.info(f"loaded in {time.time() - t0:.1f}s")
 
+    _state["checkpoint"] = ckpt
     _state["args"] = args
     _state["task"] = task
     _state["models"] = models
@@ -245,6 +271,7 @@ class GenerateRequest(BaseModel):
     output_path: str
     min_generated_tokens: int = 250
     max_generated_tokens: int = 450
+    checkpoint_path: Optional[str] = None
 
 
 class GenerateResponse(BaseModel):
@@ -260,7 +287,7 @@ def health():
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    state = load_state()
+    state = load_state(req.checkpoint_path)
     task = state["task"]
     models = state["models"]
     generator = state["generator"]

@@ -157,13 +157,29 @@ export async function checkEnvironmentStatus(modelId: string): Promise<EnvStatus
   return inspectVenv(venvPythonPath(modelId), modelId, isInstallableModel(modelId));
 }
 
-async function ensureGitClone(url: string, dest: string, onOutput: OnOutput, depth = 1): Promise<void> {
+async function ensureGitClone(url: string, dest: string, onOutput: OnOutput, commit?: string): Promise<void> {
   if (fs.existsSync(dest)) {
     onOutput(`${dest} already exists, skipping clone`);
     return;
   }
-  await runCommand("git", ["clone", "--depth", String(depth), url, dest], { onOutput });
+  if (!commit) {
+    await runCommand("git", ["clone", "--depth", "1", url, dest], { onOutput });
+    return;
+  }
+  // Shallow fetch of one exact commit (GitHub serves any reachable SHA), so
+  // every install gets the same code this app was verified against rather
+  // than whatever upstream HEAD is that day.
+  await runCommand("git", ["init", "--quiet", dest], { onOutput });
+  await runCommand("git", ["-C", dest, "remote", "add", "origin", url], { onOutput });
+  await runCommand("git", ["-C", dest, "fetch", "--depth", "1", "origin", commit], { onOutput });
+  await runCommand("git", ["-C", dest, "checkout", "--quiet", "--detach", "FETCH_HEAD"], { onOutput });
 }
+
+// ACE-Step-1.5 is pinned: its CLI moves fast (an unpinned HEAD started
+// requiring --dataset-dir/--output-dir on `train.py fixed --preprocess`).
+// This is the commit inference, LoRA training, and LoRA generation were all
+// verified against end-to-end. Bump deliberately, after re-verifying.
+const ACE_STEP_COMMIT = "ca1e85fe9430179831e6bc6be790c332190a3866";
 
 function uvVenv(modelId: string, pythonVersion: string, onOutput: OnOutput): Promise<void> {
   return runCommand("uv", ["venv", "--python", pythonVersion, venvDir(modelId)], { onOutput });
@@ -269,7 +285,7 @@ async function installMuseformer(onOutput: OnOutput): Promise<void> {
 
 async function installAceStep(onOutput: OnOutput): Promise<void> {
   const dest = vendorDir("ace-step-1.5");
-  await ensureGitClone("https://github.com/ace-step/ACE-Step-1.5", dest, onOutput);
+  await ensureGitClone("https://github.com/ace-step/ACE-Step-1.5", dest, onOutput, ACE_STEP_COMMIT);
   // Uses the vendored repo's own uv.lock as-is (see servers/ace-step-1.5/
   // README.md) rather than a hand-built requirements.txt -- only the venv
   // location is redirected, via UV_PROJECT_ENVIRONMENT, to this app's own

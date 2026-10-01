@@ -40,15 +40,20 @@ with our architecture" note.
 
 ## Vendored code
 
-`vendor/` is a full clone of `github.com/ace-step/ACE-Step-1.5` (`git clone
---depth 1`, `.git` stripped), gitignored at the project root the same way
+`vendor/` is a clone of `github.com/ace-step/ACE-Step-1.5`, **pinned** to the
+commit this app was verified against (`ACE_STEP_COMMIT` in
+`electron/models/envInstaller.ts`) — upstream's CLI moves fast, and an
+unpinned HEAD once broke LoRA preprocessing. Gitignored at the project root the same way
 `servers/musecoco/vendor/` is — reproducible, not ours, too large to belong
 in this repo's own history (the repo itself is small; its `uv sync`-managed
 `.venv` and downloaded checkpoints, which also live under `vendor/`, are
 what's actually large).
 
 ```bash
-git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5 servers/ace-step-1.5/vendor
+git init servers/ace-step-1.5/vendor
+git -C servers/ace-step-1.5/vendor remote add origin https://github.com/ace-step/ACE-Step-1.5
+git -C servers/ace-step-1.5/vendor fetch --depth 1 origin ca1e85fe9430179831e6bc6be790c332190a3866
+git -C servers/ace-step-1.5/vendor checkout --detach FETCH_HEAD
 ```
 
 ## Python environment
@@ -384,15 +389,14 @@ POST /release_task      {"prompt": "...", "lyrics": "[Instrumental]", "audio_dur
 downloaded via the server's own `/v1/audio` endpoint. Full round-trip,
 same rigor as every prior real-inference phase's verification.
 
-### Real, honest scope call: not (yet) selectable from the generation screen
+### Using a trained LoRA for generation
 
 A LoRA adapter is not a swappable base checkpoint the way RAVE's exported
-`.ts` or MusicGen's exported `state_dict.bin` are — it only becomes usable
-through ACE-Step's own real `/v1/lora/load` + `/v1/lora/toggle` endpoints
-against an *already-loaded* base model. This app's generation screen has
-no control for that yet, so a trained ACE-Step LoRA registers as a real
-`trained_model` row (visible in Model Manager's "My Trained Models") but is
-**not** inserted as a `model_variant` the way RAVE/MusicGen trained
-checkpoints are — selecting it from a workspace's checkpoint picker isn't
-real yet. Using it for generation today means manually calling
-`/v1/lora/load` the way this verification run did.
+`.ts` or MusicGen's exported `state_dict.bin` are — it only works on top of
+the exact base DiT it was trained against. So the training pipeline writes
+`kwesi_lora.json` (`{"baseVariant": "acestep-v15-turbo"}`) next to the
+adapter and registers it as a `model_variant` (source `trained`), which puts
+it in a workspace's checkpoint picker. Selecting it makes
+`modelServer.ts`'s `ensureAceStepCheckpoint` `/v1/init` that base, then
+`/v1/lora/load` + `/v1/lora/toggle` the adapter on top; switching back to a
+stock variant calls `/v1/lora/unload` first.

@@ -220,6 +220,9 @@ const realServers = new Map<string, RealServerHandle>();
 // exactly one model per slot at a time; switching requires a real
 // POST /v1/init call (see ensureAceStepModelLoaded), not free.
 let aceStepLoadedVariant: string | null = null;
+// Install path of the trained LoRA adapter currently loaded and enabled on
+// that slot-1 model, or null when it's running the plain base DiT.
+let aceStepLoadedLora: string | null = null;
 // Coalesces concurrent submissions that race to start the same real server —
 // without this, two generations submitted back-to-back before the first
 // health check resolves would each spawn their own subprocess.
@@ -325,7 +328,10 @@ function wireRealServerProcess(modelId: string, proc: ChildProcess): void {
   proc.on("exit", (code) => {
     console.log(`[${modelId}-server] exited with code ${code}`);
     realServers.delete(modelId);
-    if (modelId === ACE_STEP_MODEL_ID) aceStepLoadedVariant = null;
+    if (modelId === ACE_STEP_MODEL_ID) {
+      aceStepLoadedVariant = null;
+      aceStepLoadedLora = null;
+    }
     serverStatus.set(modelId, "stopped");
     broadcast({ type: "server_status", modelId, status: "stopped" });
   });
@@ -381,6 +387,7 @@ async function spawnAceStepServer(python: string): Promise<RealServerHandle> {
   }
 
   aceStepLoadedVariant = DEFAULT_ACE_STEP_VARIANT;
+  aceStepLoadedLora = null;
   return { proc, port };
 }
 
@@ -566,6 +573,19 @@ export function submitGeneration(
   return { ok: true, generation };
 }
 
+/**
+ * Install path of a Training-screen checkpoint (a `model_variant` row with
+ * source "trained" -- see repo.upsertTrainedModelVariant), or null for a
+ * stock catalog variant. Resolved from the app's own DB, never trusted from
+ * the renderer, so it's safe to hand straight to a model server.
+ */
+function trainedVariantPath(modelId: string, variant: string | null): string | null {
+  if (!variant) return null;
+  const row = repo.getModelVariant(modelId, variant);
+  if (!row || row.source !== "trained" || row.install_status !== "installed" || !row.install_path) return null;
+  return fs.existsSync(row.install_path) ? row.install_path : null;
+}
+
 async function runJob(
   workspaceId: string,
   modelId: string,
@@ -709,7 +729,13 @@ async function runRealMidiJob(
       // seconds) — see servers/musecoco/README.md's measured timing — so
       // this needs a much longer budget than MusicGen's audio call.
       signal: withTimeout(controller, 30 * 60 * 1000),
-      body: JSON.stringify({ input_params: inputParams, output_path: outputPath }),
+      body: JSON.stringify({
+        input_params: inputParams,
+        output_path: outputPath,
+        // A fine-tuned checkpoint from the Training screen (server.py swaps
+        // its loaded model when this changes); omitted for the stock one.
+        checkpoint_path: trainedVariantPath(modelId, generation.checkpoint_variant) ?? undefined,
+      }),
     });
 
     if (!res.ok) {
@@ -812,6 +838,103 @@ async function ensureAceStepModelLoaded(port: number, variant: string): Promise<
   aceStepLoadedVariant = variant;
 }
 
+/**
+ * Sidecar the Training screen writes next to a trained ACE-Step LoRA
+ * adapter, recording which base DiT it was trained against -- a LoRA only
+ * works on top of the exact base it was fit to.
+ */
+export const ACE_STEP_LORA_META_FILE = "kwesi_lora.json";
+
+interface AceStepLoraTarget {
+  baseVariant: string;
+  adapterPath: string;
+}
+
+function resolveAceStepLora(variant: string): AceStepLoraTarget | null {
+  const adapterPath = trainedVariantPath(ACE_STEP_MODEL_ID, variant);
+  if (!adapterPath) return null;
+  let baseVariant = DEFAULT_ACE_STEP_VARIANT;
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(adapterPath, ACE_STEP_LORA_META_FILE), "utf8")) as {
+      baseVariant?: unknown;
+    };
+    if (typeof meta.baseVariant === "string" && meta.baseVariant) baseVariant = meta.baseVariant;
+  } catch {
+    // Adapters trained before the sidecar existed: every one of those used
+    // the default (turbo) base, so falling back to it is correct.
+  }
+  return { baseVariant, adapterPath };
+}
+
+/**
+ * ACE-Step's /v1/lora/* routes wrap failures as HTTP 200 with a non-200
+ * `code` in the body (toggle/scale) or as a real HTTP error (load/unload),
+ * so both shapes are checked.
+ */
+async function aceStepLoraCall(port: number, route: string, body?: unknown): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/v1/lora/${route}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text().catch(() => res.statusText);
+  let code = res.status;
+  let error: string | null = null;
+  try {
+    const parsed = JSON.parse(text) as { code?: number; error?: string | null };
+    if (typeof parsed.code === "number") code = parsed.code;
+    error = parsed.error ?? null;
+  } catch {
+    // non-JSON body -- fall back to the HTTP status
+  }
+  if (!res.ok || code !== 200) {
+    throw new Error(`ace-step-1.5 /v1/lora/${route} failed (${code}): ${error ?? text}`);
+  }
+}
+
+/**
+ * ACE-Step's server defers loading its DiT until the first generation, but
+ * the /v1/lora/* routes need it in memory already ("Model not initialized"
+ * otherwise -- hit for real on a freshly spawned server).
+ */
+async function aceStepModelInitialized(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(10_000) });
+    const body = (await res.json()) as { data?: { models_initialized?: boolean } };
+    return body.data?.models_initialized === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Puts slot 1 into the state a generation needs: the right base DiT, plus
+ * the trained LoRA on top of it (or no LoRA for a stock variant). Each step
+ * is skipped when already in place, so repeat generations cost nothing.
+ */
+async function ensureAceStepCheckpoint(port: number, variant: string): Promise<string> {
+  const lora = resolveAceStepLora(variant);
+  const baseVariant = lora?.baseVariant ?? variant;
+  const wantedLora = lora?.adapterPath ?? null;
+
+  if (aceStepLoadedLora && (aceStepLoadedLora !== wantedLora || aceStepLoadedVariant !== baseVariant)) {
+    await aceStepLoraCall(port, "unload");
+    aceStepLoadedLora = null;
+  }
+  await ensureAceStepModelLoaded(port, baseVariant);
+  if (wantedLora && aceStepLoadedLora !== wantedLora) {
+    if (!(await aceStepModelInitialized(port))) {
+      aceStepLoadedVariant = null;
+      await ensureAceStepModelLoaded(port, baseVariant);
+    }
+    await aceStepLoraCall(port, "load", { lora_path: wantedLora });
+    await aceStepLoraCall(port, "toggle", { use_lora: true });
+    aceStepLoadedLora = wantedLora;
+  }
+  return baseVariant;
+}
+
 interface AceStepReleaseTaskResponse {
   data?: { task_id?: string };
   error?: string | null;
@@ -835,8 +958,9 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
 
   try {
     const { port } = await ensureRealServerRunning(ACE_STEP_MODEL_ID);
-    const variant = generation.checkpoint_variant ?? DEFAULT_ACE_STEP_VARIANT;
-    await ensureAceStepModelLoaded(port, variant);
+    // A trained LoRA variant runs on its base DiT, so `variant` below is
+    // always a real base checkpoint name the server knows.
+    const variant = await ensureAceStepCheckpoint(port, generation.checkpoint_variant ?? DEFAULT_ACE_STEP_VARIANT);
 
     repo.updateGenerationStatus(generationId, "running");
     broadcast({ type: "running", generationId, projectId, progressPct: 0 });

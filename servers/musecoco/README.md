@@ -179,12 +179,15 @@ Two real, hard-won pins beyond the catalog doc's own note:
   'miditoolkit' has no attribute 'containers'` the first time a real MIDI
   gets decoded.
 
-## Why this runs on CPU, not the RTX 3090
+## CPU vs GPU
 
-Not a choice made for simplicity -- it's the direct consequence of the
-`pytorch-fast-transformers` situation above (no CUDA extension built, no
-system CUDA toolkit available to build one). `server.py` hardcodes
-`DEVICE = "cpu"` and `--cpu` on the generation args. The checkpoint is
+`pytorch-fast-transformers` builds from source and only compiles its CUDA
+kernel when a system `nvcc` is present at install time; otherwise it sets
+that kernel to `None` without failing. `server.py` therefore uses CUDA only
+when a GPU is visible **and** the kernel exists, and falls back to CPU (with
+a log line saying why) otherwise. Picking CUDA on the GPU alone crashed
+every generation with `'NoneType' object is not callable` on a fresh
+install. The checkpoint is
 ~1B parameters (`checkpoints/linear_mask-1billion/checkpoint_2_280000.pt`,
 14.5GB on disk in fp32 -- larger than `kwesi.docs/03-model-catalog.md`'s
 original "~200M params" estimate, corrected there in Phase 7), so CPU
@@ -225,14 +228,14 @@ range, fixed to the first port) on first use, health-checks `GET /health`,
 and keeps the process (and its loaded ~1B-param model) alive across
 subsequent generations in the same app session.
 
-## Training (Phase 11) — real CLI confirmed, real run started, not completed
+## Training — verified end-to-end
 
 `electron/models/trainingManager.ts`'s `runMuseCocoTrainingPipeline` wires
 up a real `fairseq-train` invocation, continuing from the installed
 checkpoint. Manifest block in `src/data/manifests.ts`'s
-`MUSECOCO.training`. This is an honest partial result — lower verification
-depth than ACE-Step/MusicGen (both fully round-tripped), higher than
-Museformer (not attempted) — documented precisely, not glossed over.
+`MUSECOCO.training`. The finished checkpoint is registered as a trained
+`model_variant`, selectable in a workspace's checkpoint picker; `server.py`
+takes its path per request (`checkpoint_path`) and swaps the loaded model.
 
 ### The real training tooling
 
@@ -271,45 +274,31 @@ phase closing this gap would extend `runMuseCocoTrainingPipeline` with a
 real `preprocess` phase calling into `2-attribute2music_dataprepare/
 extract_data.py`, then `fairseq-preprocess`.
 
-### Real run: launched, computed, did not finish in-session
+### Verified run
 
-```bash
-$KWESI_VENVS_DIR/musecoco/bin/fairseq-train data/truncated_2560/data-bin \
-  --user-dir linear_mask --task language_modeling_control \
-  --arch linear_transformer_lm_1billion --command_path data/truncated_2560 \
-  --truncated_length 2560 --command_mask_prob -1 --sample-break-mode eos \
-  --tokens-per-sample 10000000 --max-tokens 10000000 \
-  --batch-size 1 --batch-size-valid 1 --update-freq 1 \
-  --optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-9 --weight-decay 0.01 \
-  --lr 1e-6 --lr-scheduler fixed --log-format simple --log-interval 1 \
-  --num-workers 0 --max-update 3 --validate-interval 100000000 \
-  --save-interval-updates 3 --save-dir <dir> --no-epoch-checkpoints \
-  --restore-file $KWESI_MODELS_DIR/musecoco/default/attribute2music.pt \
-  --reset-optimizer --reset-dataloader --reset-lr-scheduler --reset-meters --cpu
-```
+The app's exact invocation (see `runMuseCocoTrainingPipeline`), run against
+the vendored example data-bin with `--max-update 1`, on CPU:
 
-Confirmed real: the process launched cleanly, loaded the real 14.5GB
-installed checkpoint via `--restore-file` with no errors, and then
-performed genuine sustained multi-core CPU computation (~1000% CPU,
-~29GB resident, actively growing CPU-time) for the full verification
-window. It did **not** complete a single real update (and so produced no
-checkpoint file) within an ~8-minute budget before being killed. Consistent
-with — and a real, harder-hit extension of — Phase 7's own "CPU-bound and
-slow" finding for inference (no CUDA-built `pytorch-fast-transformers`
-extension on this machine, same root cause): training is strictly more
-expensive than inference (a full forward *and* backward pass, at the same
-`truncated_length=2560` token budget as a real full-length example), so
-the CPU-boundedness that made inference merely slow (~2 minutes per
-generation, per the section above) makes a single training update
-impractically slow to verify within a normal working session.
+- loaded the installed base checkpoint via `--restore-file` (`loaded
+  checkpoint ... (epoch 2 @ 0 updates)`), first-update loss 4.43 / ppl 21.6
+  — a real fine-tune; from random init the same update reads ~10.0 / ~1040;
+- ~50s per update, then ~3 min to write the 14.5GB `checkpoint_last.pt`
+  (weights + Adam state);
+- generation from that checkpoint through `server.py`'s `checkpoint_path`
+  produced a valid MIDI file.
 
-**What a real GPU (or a much shorter `--truncated_length`/synthetic tiny
-sequence) would unblock**: this app has an idle RTX 3090, but this venv's
-`pytorch-fast-transformers` extension has no CUDA build here (the same
-"no system CUDA toolchain to build the model's compiled attention
-extension against" constraint Phase 7's README documents for inference) —
-so `--cpu` isn't an arbitrary choice for this run, it's the only mode this
-venv actually supports. A future phase either builds that CUDA extension
-for real, or accepts a much smaller `--truncated_length`/synthetic-token
-pipeline-proof run to get a real checkpoint file inside a practical time
-budget.
+Pitfalls found on the way, all fixed in the pipeline:
+
+- **A missing base checkpoint silently trains from scratch.** fairseq only
+  logs "no existing checkpoint found" and carries on from random init. The
+  pipeline checks the file exists first, and the Training screen's setup
+  gate requires the MuseCoco weights to be installed before a run starts.
+- **Saving triggered a full validation pass** over the valid split even
+  with a huge `--validate-interval` — hours on CPU. Now
+  `--disable-validation`.
+- **`--save-interval-updates` wrote a second identical 14.5GB file**
+  (`checkpoint_1_N.pt`) beside `checkpoint_last.pt`. Dropped; fairseq saves
+  at `--max-update` anyway. The pipeline moves (not copies)
+  `checkpoint_last.pt` into the output dir.
+- **Progress tracked the epoch, not the run.** Progress now follows
+  fairseq's `num_updates` against `max_updates`.

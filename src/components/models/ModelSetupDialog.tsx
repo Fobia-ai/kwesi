@@ -10,6 +10,15 @@ import { kwesiEnvironment, type EnvStatus } from "../../lib/environment";
 interface ModelSetupDialogProps {
   modelId: string;
   onClose: () => void;
+  // "train" checks/installs the TRAINING environment (RAVE trains in its own
+  // `rave-train` venv; the others reuse their inference one) instead of the
+  // inference environment.
+  purpose?: "generate" | "train";
+  // The weights that must be installed. Defaults to the manifest's first
+  // checkpoint variant; a training run passes the base it fine-tunes from,
+  // or null when it needs no local weights (RAVE trains from scratch,
+  // MusicGen fetches its base through AudioCraft's own //pretrained alias).
+  variantName?: string | null;
 }
 
 /**
@@ -21,16 +30,18 @@ interface ModelSetupDialogProps {
  * (kwesiEnvironment.install) already use -- this is a shortcut to those
  * same real actions, not a separate/lesser mechanism.
  */
-export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
+export function ModelSetupDialog({ modelId, onClose, purpose = "generate", variantName }: ModelSetupDialogProps) {
   const navigate = useNavigate();
   const manifest = getManifest(modelId);
-  const targetVariantName = manifest?.checkpointVariants[0] ?? null;
+  const targetVariantName = variantName === undefined ? (manifest?.checkpointVariants[0] ?? null) : variantName;
+  const training = purpose === "train";
 
   const [variant, setVariant] = useState<ModelVariantRow | null>(null);
   const [envStatus, setEnvStatus] = useState<EnvStatus | null>(null);
   const [installingVariant, setInstallingVariant] = useState(false);
   const [installingEnv, setInstallingEnv] = useState(false);
   const [envLog, setEnvLog] = useState<string[]>([]);
+  const [envError, setEnvError] = useState<string | null>(null);
 
   async function refreshVariant() {
     if (!targetVariantName) return;
@@ -39,14 +50,16 @@ export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
   }
 
   async function refreshEnv() {
-    setEnvStatus(await kwesiEnvironment.checkStatus(modelId));
+    setEnvStatus(
+      await (training ? kwesiEnvironment.checkTrainingStatus(modelId) : kwesiEnvironment.checkStatus(modelId)),
+    );
   }
 
   useEffect(() => {
     refreshVariant();
     refreshEnv();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId]);
+  }, [modelId, targetVariantName, training]);
 
   useEffect(
     () =>
@@ -77,29 +90,34 @@ export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
 
   async function installEnv() {
     setEnvLog([]);
+    setEnvError(null);
     setInstallingEnv(true);
-    await kwesiEnvironment.install(modelId);
+    const result = await (training ? kwesiEnvironment.installTraining(modelId) : kwesiEnvironment.install(modelId));
     setInstallingEnv(false);
+    if (!result.ok) setEnvError(result.reason ?? "Install failed.");
     refreshEnv();
   }
 
-  const checkpointReady = variant?.install_status === "installed";
+  const checkpointReady = !targetVariantName || variant?.install_status === "installed";
   const envReady = envStatus?.venvExists ?? false;
   const bothReady = checkpointReady && envReady;
 
   if (!manifest) return null;
 
   return (
-    <Modal title={`Set up ${manifest.displayName}`} onClose={onClose}>
+    <Modal title={`Set up ${manifest.displayName}${training ? " training" : ""}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <p className="text-xs text-ink-muted">
-          {manifest.displayName} needs both of these ready before it can generate.
+          {training
+            ? `Training ${manifest.displayName} needs ${targetVariantName ? "these" : "this"} ready first — a one-time setup (real downloads and Python packages, may take several minutes).`
+            : `${manifest.displayName} needs both of these ready before it can generate.`}
         </p>
 
+        {targetVariantName && (
         <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Model weights</p>
+              <p className="text-sm font-medium">{training ? `Base weights · ${targetVariantName}` : "Model weights"}</p>
               <p className="mt-0.5 text-xs text-ink-muted">
                 {checkpointReady
                   ? "Installed"
@@ -121,11 +139,12 @@ export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
             )}
           </div>
         </div>
+        )}
 
         <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Environment</p>
+              <p className="text-sm font-medium">{training ? "Training environment" : "Environment"}</p>
               <p className="mt-0.5 text-xs text-ink-muted">
                 {envReady ? "Ready" : installingEnv ? "Installing…" : "Not installed"}
               </p>
@@ -141,6 +160,7 @@ export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
               {envLog.join("\n")}
             </pre>
           )}
+          {envError && <p className="mt-1 text-xs text-red-600">{envError}</p>}
         </div>
 
         <button
@@ -153,7 +173,7 @@ export function ModelSetupDialog({ modelId, onClose }: ModelSetupDialogProps) {
 
         <div className="mt-1 flex justify-end">
           <PillButton onClick={onClose} variant={bothReady ? "accent" : "ghost"}>
-            {bothReady ? "Continue" : "Close"}
+            {bothReady ? (training ? "Done — start the run" : "Continue") : "Close"}
           </PillButton>
         </div>
       </div>

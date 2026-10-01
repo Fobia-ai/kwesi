@@ -14,9 +14,41 @@ import {
 } from "../components/generation/DynamicGenerationForm";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
-import { kwesiEnvironment, type EnvStatus } from "../lib/environment";
-import { Modal } from "../components/ui/Modal";
-import type { TrainingRunRow } from "../lib/db";
+import { kwesiEnvironment } from "../lib/environment";
+import { kwesiDb, type TrainingRunRow } from "../lib/db";
+import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
+import { InfoHint } from "../components/ui/InfoHint";
+import type { ManifestInput } from "../data/manifests";
+
+// Plain-language explanations of the training jargon, keyed by hyperparameter
+// key. Shown in the info hover-card next to each technical label (combined
+// with the manifest's model-specific helpText when present). Keeps the "what
+// does this value mean/do" answer in one editable place rather than scattered.
+const TERM_GLOSSARY: Record<string, string> = {
+  base_variant:
+    "The pretrained checkpoint your fine-tune starts from. Training nudges this existing model toward your dataset rather than learning from scratch — bigger bases capture more nuance but need more time and VRAM.",
+  config:
+    "Which model size/architecture to train. Smaller configs train faster and fit in less VRAM; larger ones can sound better but cost more to run.",
+  rank:
+    "LoRA rank — how much new, trainable capacity the adapter adds on top of the frozen base. Higher = more room to learn your dataset's character, but slower and easier to overfit on a small dataset.",
+  alpha:
+    "LoRA alpha — a scaling factor on how strongly the adapter affects the base model. Commonly around 2× the rank; raising it makes the fine-tune's influence more pronounced.",
+  epochs:
+    "How many full passes the trainer makes over your whole dataset. More epochs = more learning, but too many and the model just memorizes your clips (overfitting) instead of generalizing.",
+  max_steps:
+    "The total number of training updates (one gradient step each). The defaults here are deliberately small to prove the pipeline produces a real checkpoint — a musically finished model needs far more.",
+  max_updates:
+    "The total number of training updates (forward + backward passes). Kept small here for a quick, pipeline-proving run rather than a fully-trained model.",
+  learning_rate:
+    "How big a step the optimizer takes on each update. Too high and training becomes unstable or diverges; too low and it barely learns. The default is a safe starting point.",
+  batch_size:
+    "How many clips are processed together in one step. Larger batches train more smoothly but use more VRAM; 1 is the safest on limited memory.",
+};
+
+function hintTextFor(input: ManifestInput): string | null {
+  const parts = [TERM_GLOSSARY[input.key], input.helpText].filter((s): s is string => Boolean(s));
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "Queued",
@@ -232,6 +264,7 @@ function CaptionedDataset({
       {error && <p className="text-xs text-red-600">{error}</p>}
 
       <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
         <div className="inline-flex rounded-chip bg-ink/[0.06] p-0.5 text-xs">
           <button
             type="button"
@@ -247,6 +280,11 @@ function CaptionedDataset({
           >
             Type manually
           </button>
+        </div>
+        <InfoHint
+          label="caption source"
+          text={`From files: drop a caption or subtitle file next to each audio clip and they pair up by name (song1.wav ↔ song1.txt). Supported: ${CAPTION_EXTS.join(", ")} — subtitle timestamps (.srt/.vtt/.lrc) are stripped automatically. Use a row's dropdown to fix any mismatch.\n\nType manually: write a caption per clip, or import a whole CSV/JSON of filename → caption.`}
+        />
         </div>
         {captionMode === "files" ? (
           <span className="text-xs text-ink-muted">
@@ -472,94 +510,19 @@ function DatasetDropZone({
 }
 
 /**
- * Shown when a run is attempted before the model's TRAINING environment is
- * installed (RAVE trains in a separate `rave-train` venv; the others train in
- * their inference venv). Reuses the same real install flow + progress stream
- * as Settings > Environment, so this is a shortcut to that action, not a
- * lesser one.
+ * The installed checkpoint a training run fine-tunes from, when it needs one
+ * on disk: ACE-Step's chosen base DiT (Side-Step alias -> install variant
+ * name, same mapping as trainingManager.ts), MuseCoco's single checkpoint.
+ * RAVE trains from scratch and MusicGen fetches its base through
+ * AudioCraft's own //pretrained alias, so neither needs local weights.
  */
-function TrainingSetupDialog({
-  modelId,
-  displayName,
-  onClose,
-}: {
-  modelId: string;
-  displayName: string;
-  onClose: () => void;
-}) {
-  const [status, setStatus] = useState<EnvStatus | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function refresh() {
-    setStatus(await kwesiEnvironment.checkTrainingStatus(modelId));
+function requiredBaseVariant(modelId: string, hyperparams: GenerationFormValues): string | null {
+  if (modelId === "ace-step-1.5") {
+    const alias = typeof hyperparams.base_variant === "string" && hyperparams.base_variant ? hyperparams.base_variant : "turbo";
+    return `acestep-v15-${alias.replace(/_/g, "-")}`;
   }
-
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId]);
-
-  useEffect(
-    () =>
-      kwesiEnvironment.onProgress((event) => {
-        if (event.modelId !== modelId) return;
-        setLog((prev) => [...prev.slice(-29), event.line]);
-      }),
-    [modelId],
-  );
-
-  async function install() {
-    setMessage(null);
-    setLog([]);
-    setInstalling(true);
-    const result = await kwesiEnvironment.installTraining(modelId);
-    setInstalling(false);
-    if (!result.ok) setMessage(result.reason ?? "Install failed.");
-    await refresh();
-  }
-
-  const ready = status?.venvExists ?? false;
-
-  return (
-    <Modal title={`Set up ${displayName} training`} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <p className="text-xs text-ink-muted">
-          Training {displayName} needs its training environment installed first — this is a one-time setup (real Python
-          packages, may take several minutes).
-        </p>
-
-        <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Training environment</p>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                {ready ? "Ready" : installing ? "Installing…" : "Not installed"}
-              </p>
-            </div>
-            {!ready && (
-              <PillButton className="!px-3 !py-1.5 text-xs" onClick={install} disabled={installing}>
-                {installing ? "Installing…" : "Set up"}
-              </PillButton>
-            )}
-          </div>
-          {log.length > 0 && (
-            <pre className="kwesi-scroll-inset mt-2 max-h-28 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
-              {log.join("\n")}
-            </pre>
-          )}
-          {message && <p className="mt-1 text-xs text-red-600">{message}</p>}
-        </div>
-
-        <div className="flex justify-end">
-          <PillButton onClick={onClose} variant={ready ? "accent" : "ghost"}>
-            {ready ? "Done — start the run" : "Close"}
-          </PillButton>
-        </div>
-      </div>
-    </Modal>
-  );
+  if (modelId === "musecoco") return "default";
+  return null;
 }
 
 function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
@@ -628,14 +591,20 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
       : files.length >= training.datasetRequirements.minFiles
     : false;
 
-  // Gate on the training environment before submitting (a model trains in a
-  // venv that may differ from its inference one -- RAVE in `rave-train`).
-  // Without this the run starts, then fails deep in the pipeline with a raw
-  // "venv not found" -- same late-failure UX the generation gate fixed.
+  // Gate on the training environment (a model trains in a venv that may
+  // differ from its inference one -- RAVE in `rave-train`) and on the base
+  // weights the run fine-tunes from. Without this the run starts, then fails
+  // deep in the pipeline with a raw "venv/checkpoint not found" -- same
+  // late-failure UX the generation gate fixed.
+  const baseVariant = manifest ? requiredBaseVariant(manifest.modelId, hyperparams) : null;
   async function startRun() {
     if (!training || !manifest) return;
-    const env = await kwesiEnvironment.checkTrainingStatus(manifest.modelId);
-    if (!env.venvExists) {
+    const [env, variants] = await Promise.all([
+      kwesiEnvironment.checkTrainingStatus(manifest.modelId),
+      baseVariant ? kwesiDb.listModelVariants(manifest.modelId) : Promise.resolve([]),
+    ]);
+    const baseReady = !baseVariant || variants.some((v) => v.variant_name === baseVariant && v.install_status === "installed");
+    if (!env.venvExists || !baseReady) {
       setSetupOpen(true);
       return;
     }
@@ -717,7 +686,19 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
           </label>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            Dataset ({isDirectoryDataset ? "pre-processed directory" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
+            <span className="flex items-center gap-1.5">
+              Dataset ({isDirectoryDataset ? "pre-processed directory" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
+              <InfoHint
+                label="dataset"
+                text={
+                  isDirectoryDataset
+                    ? "This model trains on a pre-binarized fairseq dataset folder (dict.txt plus .bin/.idx files), not raw files. Point it at an already-prepared data-bin directory."
+                    : isCaptionedDataset
+                      ? "The audio clips the model learns from, each paired with a short text caption describing it. Captions teach the model what words map to which sounds, so it can follow your prompts afterward. Captions are optional — a blank one falls back to the filename."
+                      : "The audio clips the model learns its sound from. This model only needs raw audio — no captions or labels. More (and longer) clips give a better-sounding result."
+                }
+              />
+            </span>
             {isDirectoryDataset ? (
               <DatasetDirPicker path={datasetDirPath} onPathChange={setDatasetDirPath} />
             ) : isCaptionedDataset ? (
@@ -760,24 +741,46 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-ink/10 pt-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Hyperparameters</p>
-            {training.hyperparameters.map((input) => (
-              <label key={input.key} className="flex flex-col gap-1.5 text-sm">
-                {input.label}
-                <FieldControl
-                  input={input}
-                  value={hyperparams[input.key]}
-                  onChange={(v) => setHyperparams((prev) => ({ ...prev, [input.key]: v }))}
-                />
-                {input.helpText && <span className="text-xs text-ink-muted">{input.helpText}</span>}
-              </label>
-            ))}
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">
+              Hyperparameters
+              <InfoHint
+                label="hyperparameters"
+                text="The knobs that control how training runs. They don't change your dataset — they shape how long it trains, how fast it learns, and how much the result adapts to your clips. Hover the ⓘ next to each for details."
+              />
+            </p>
+            {training.hyperparameters.map((input) => {
+              const hint = hintTextFor(input);
+              return (
+                <label key={input.key} className="flex flex-col gap-1.5 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    {input.label}
+                    {hint && <InfoHint label={input.label} text={hint} />}
+                  </span>
+                  <FieldControl
+                    input={input}
+                    value={hyperparams[input.key]}
+                    onChange={(v) => setHyperparams((prev) => ({ ...prev, [input.key]: v }))}
+                  />
+                </label>
+              );
+            })}
           </div>
 
           <HardwareGateBanner status={hardwareGate} />
 
           <label className="flex flex-col gap-1.5 text-sm">
-            Save trained checkpoint to
+            <span className="flex items-center gap-1.5">
+              Save trained checkpoint to
+              <InfoHint
+                label="trained checkpoint location"
+                text={
+                  "Where the finished model file is written. When the run completes it's registered in the app automatically — it shows under Model Manager → My Trained Models and becomes selectable as a checkpoint in workspaces that use this model." +
+                  (manifest.modelId === "ace-step-1.5"
+                    ? "\n\nThis saves a LoRA adapter, not a full model: selecting it loads the base checkpoint it was trained on and applies the adapter on top."
+                    : "")
+                }
+              />
+            </span>
             <div className="flex gap-2">
               <input
                 readOnly
@@ -802,9 +805,10 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
           </div>
 
           {setupOpen && (
-            <TrainingSetupDialog
+            <ModelSetupDialog
               modelId={manifest.modelId}
-              displayName={manifest.displayName}
+              purpose="train"
+              variantName={baseVariant}
               onClose={() => setSetupOpen(false)}
             />
           )}
