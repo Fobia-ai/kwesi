@@ -200,6 +200,10 @@ interface RunPhaseOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+// CSI sequences (colors, cursor moves) plus the rarer OSC form.
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
+
 function runPhase(
   runId: string,
   phase: TrainingPhase,
@@ -230,7 +234,11 @@ function runPhase(
     const parseProgress = opts.parseProgress ?? parseTrainProgress;
 
     function handleChunk(chunk: Buffer) {
-      const text = chunk.toString();
+      // Training CLIs colorize their logs (dora/flashy wrap every field in
+      // ANSI codes even when piped), which leaked into parsed values -- e.g.
+      // MusicGen's XP dir came out as `b0a9a52d\x1b[0m`, so the finished
+      // checkpoint was never found. Strip once here, before logging/parsing.
+      const text = chunk.toString().replace(ANSI_ESCAPE_RE, "");
       tail = (tail + text).slice(-8000);
       appendLog(text);
       if (!progressPhases.includes(phase)) return;
@@ -382,6 +390,28 @@ function cleanupTrainingRun(runId: string, close: () => void): void {
   if (interval) clearInterval(interval);
   heartbeatIntervals.delete(runId);
   activeProcesses.delete(runId);
+  pruneTrainingWorkDir(runId);
+}
+
+/**
+ * Once a run has ended (completed, failed, cancelled, interrupted), its work
+ * dir is only needed for log.txt, which the run's log view reads. Everything
+ * else is intermediates that were never cleaned up and add up fast: a
+ * MusicGen dora XP dir is ~9.5GB, and a MuseCoco checkpoint (or a truncated
+ * one from an interrupted save) is ~14GB. Final outputs are always copied or
+ * moved to the run's output dir first, so nothing here is referenced later.
+ */
+function pruneTrainingWorkDir(runId: string): void {
+  const workDir = trainingRunDir(runId);
+  if (!fs.existsSync(workDir)) return;
+  for (const entry of fs.readdirSync(workDir)) {
+    if (entry === "log.txt") continue;
+    try {
+      fs.rmSync(path.join(workDir, entry), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[training] couldn't prune ${entry} from run ${runId}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 }
 
 /**
@@ -1410,4 +1440,7 @@ export function reconcileTrainingRunsOnStartup(): void {
     });
     console.log(`[training] run ${run.id} (${run.run_name}) was left "${run.status}" at startup -> marked interrupted`);
   }
+  // Nothing is active at startup, so every run's intermediates can go --
+  // including ones left behind by runs from before pruning existed.
+  for (const run of repo.listTrainingRuns()) pruneTrainingWorkDir(run.id);
 }
