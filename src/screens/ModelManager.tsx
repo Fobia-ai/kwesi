@@ -121,18 +121,18 @@ function ModelAccordionRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold">{model.display_name}</span>
-            <span className="rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+            <Badge tone="neutral" caps>
               {licenseLabel(model.license_tier)}
-            </span>
+            </Badge>
             {model.trainable === 1 && (
-              <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+              <Badge tone="accent" caps>
                 Trainable
-              </span>
+              </Badge>
             )}
             {manifest?.inputs.some((input) => input.isModelLanguageField) && (
-              <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+              <Badge tone="accent" caps>
                 Multilingual
-              </span>
+              </Badge>
             )}
             {installedCount > 0 && (
               <span className="text-[11px] text-ink-muted">
@@ -200,22 +200,22 @@ function ModelAccordionRow({
                           </button>
                         ) : variant.install_status === "installed" ? (
                           <PillButton
+                            size="sm"
                             variant="ghost"
-                            className="!px-3 !py-1.5 text-xs"
                             onClick={() => onRequestRemove(model.id, model.display_name, variant)}
                           >
                             Remove
                           </PillButton>
                         ) : variant.install_status === "downloading" || variant.install_status === "queued" ? (
                           <PillButton
+                            size="sm"
                             variant="ghost"
-                            className="!px-3 !py-1.5 text-xs"
                             onClick={() => onCancel(variant)}
                           >
                             Cancel
                           </PillButton>
                         ) : variant.install_status === "failed" ? (
-                          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => onRetry(model.id, variant)}>
+                          <PillButton size="sm" onClick={() => onRetry(model.id, variant)}>
                             Retry
                           </PillButton>
                         ) : (
@@ -445,14 +445,14 @@ export function ModelManagerScreen() {
                     <StatusBadge status={row.install_status} />
                     {row.install_status === "failed" ? (
                       <PillButton
+                        size="sm"
                         variant="ghost"
-                        className="!px-3 !py-1 text-xs"
                         onClick={() => handleRetry(row.model_id, row)}
                       >
                         Retry
                       </PillButton>
                     ) : (
-                      <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => handleCancel(row)}>
+                      <PillButton size="sm" variant="ghost" onClick={() => handleCancel(row)}>
                         Cancel
                       </PillButton>
                     )}

@@ -58,7 +58,7 @@ export function ModelsDriftBanner() {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <PillButton disabled={resolving} onClick={handleResolve} className="!px-3 !py-1.5 text-xs">
+        <PillButton size="sm" disabled={resolving} onClick={handleResolve}>
           {resolving ? "Resolving…" : "Resolve"}
         </PillButton>
         <button

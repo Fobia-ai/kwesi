@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type Ref } from "react";
+import { Badge } from "../ui/Badge";
 import { MANIFESTS, type ModelHardware, type KwesiPlatform } from "../../data/manifests";
 import { kwesiEnvironment, type EnvStatus } from "../../lib/environment";
 import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
 import { openExternal } from "../../lib/kwesiBridge";
 import { PillButton } from "../ui/PillButton";
+import { LogPanel } from "../ui/LogPanel";
+import { Callout } from "../ui/Callout";
 
 const PLATFORM_LABEL: Record<string, string> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
 
@@ -89,27 +92,27 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu, highli
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{displayName}</span>
             {!platformOk && (
-              <span className="rounded-chip bg-danger/12 px-2 py-0.5 text-[10px] font-medium text-danger">
+              <Badge tone="bad">
                 Not supported on {PLATFORM_LABEL[currentPlatform] ?? currentPlatform}
-              </span>
+              </Badge>
             )}
             {platformOk && !gpuOk && (
-              <span className="rounded-chip bg-warning/12 px-2 py-0.5 text-[10px] font-medium text-warning">
+              <Badge tone="warning">
                 Needs {hardware.minVramGb}GB+ VRAM
-              </span>
+              </Badge>
             )}
           </div>
           <p className="mt-0.5 text-xs text-ink-muted">{statusLine}</p>
-          {installMessage && <p className="mt-1 text-xs text-danger">{installMessage}</p>}
+          {installMessage && <Callout tone="error" className="mt-1.5">{installMessage}</Callout>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={refresh} disabled={checking || installing}>
+          <PillButton size="sm" variant="ghost" onClick={refresh} disabled={checking || installing}>
             Check
           </PillButton>
           {status?.venvExists ? (
-            <span className="text-xs text-accent">Installed</span>
+            <Badge tone="success">Installed</Badge>
           ) : status?.installable ? (
-            <PillButton className="!px-3 !py-1.5 text-xs" onClick={handleInstall} disabled={installing || !platformOk}>
+            <PillButton size="sm" onClick={handleInstall} disabled={installing || !platformOk}>
               {installing ? "Installing…" : "Install"}
             </PillButton>
           ) : (
@@ -119,11 +122,7 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu, highli
           )}
         </div>
       </div>
-      {log.length > 0 && (
-        <pre className="kwesi-scroll-inset mt-2 max-h-32 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
-          {log.join("\n")}
-        </pre>
-      )}
+      <LogPanel lines={log} className="mt-2" />
     </div>
   );
 }

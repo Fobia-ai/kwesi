@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Badge } from "../components/ui/Badge";
 import { useLocation } from "react-router-dom";
 import pkg from "../../package.json";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
@@ -25,6 +26,7 @@ import { GENRES } from "../data/genres";
 import { LANGUAGES } from "../data/languages";
 import { useAppLock } from "../components/security/AppLock";
 import { PillButton } from "../components/ui/PillButton";
+import { Callout } from "../components/ui/Callout";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Modal } from "../components/ui/Modal";
 import { GlassPanel } from "../components/ui/GlassPanel";
@@ -97,7 +99,7 @@ function ProfileTab() {
         />
       </label>
       <div className="flex items-center gap-3">
-        <PillButton className="!px-4 !py-1.5 text-xs" onClick={handleSave}>
+        <PillButton size="sm" onClick={handleSave}>
           Save
         </PillButton>
         {status && <span className="text-xs text-ink-muted">{status}</span>}
@@ -225,7 +227,7 @@ function ArtistProfileFormModal({
                   </button>
                 )}
               </div>
-              {avatarError && <p className="text-xs text-danger">{avatarError}</p>}
+              {avatarError && <Callout tone="error">{avatarError}</Callout>}
             </div>
           </div>
         )}
@@ -315,7 +317,7 @@ function ArtistsTab() {
         <p className="text-xs text-ink-muted">
           Personas generations can be attributed to — pick one when creating a generation.
         </p>
-        <PillButton className="!px-3 !py-1.5 shrink-0 text-xs" onClick={() => setShowForm("new")}>
+        <PillButton size="sm" className="shrink-0" onClick={() => setShowForm("new")}>
           + New Profile
         </PillButton>
       </div>
@@ -357,7 +359,7 @@ function ArtistsTab() {
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={() => setShowForm(profile)}>
+                <PillButton size="sm" variant="ghost" onClick={() => setShowForm(profile)}>
                   Edit
                 </PillButton>
                 <button
@@ -438,7 +440,7 @@ function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () =
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
         </label>
-        {error && <p className="text-xs text-danger">{error}</p>}
+        {error && <Callout tone="error">{error}</Callout>}
         <div className="mt-2 flex justify-end gap-2">
           <PillButton variant="ghost" onClick={onClose}>
             Cancel
@@ -711,15 +713,15 @@ function SecurityTab() {
         </div>
         {hasPasscode ? (
           <div className="flex gap-2">
-            <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => setShowSetModal(true)}>
+            <PillButton size="sm" variant="ghost" onClick={() => setShowSetModal(true)}>
               Change
             </PillButton>
-            <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => setConfirmingRemove(true)}>
+            <PillButton size="sm" variant="ghost" onClick={() => setConfirmingRemove(true)}>
               Remove
             </PillButton>
           </div>
         ) : (
-          <PillButton className="!px-3 !py-1.5 text-xs" onClick={() => setShowSetModal(true)}>
+          <PillButton size="sm" onClick={() => setShowSetModal(true)}>
             Set passcode
           </PillButton>
         )}
@@ -830,7 +832,7 @@ function ConfirmPasscodeModal({ onClose, onConfirmed }: { onClose: () => void; o
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
         </label>
-        {error && <p className="text-xs text-danger">{error}</p>}
+        {error && <Callout tone="error">{error}</Callout>}
         <div className="mt-2 flex justify-end gap-2">
           <PillButton variant="ghost" onClick={onClose}>
             Cancel
@@ -1006,9 +1008,9 @@ export function SettingsScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium">{entry.displayName}</span>
-                        <span className="shrink-0 rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+                        <Badge tone="neutral" caps>
                           {LICENSE_LABEL[entry.licenseTier]}
-                        </span>
+                        </Badge>
                       </div>
                       <p className="truncate text-xs text-ink-muted">{entry.org}</p>
                     </div>

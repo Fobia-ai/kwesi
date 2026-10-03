@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Badge } from "../components/ui/Badge";
 import { useNavigate } from "react-router-dom";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
 import { PillButton } from "../components/ui/PillButton";
@@ -61,9 +62,9 @@ export function AcknowledgmentsScreen() {
                 <div className="flex items-center justify-center gap-1.5">
                   <span className="truncate text-sm font-medium text-ink">{entry.displayName}</span>
                 </div>
-                <span className="mt-1 inline-block rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+                <Badge tone="neutral" caps className="mt-1">
                   {LICENSE_LABEL[entry.licenseTier]}
-                </span>
+                </Badge>
                 <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">{entry.description}</p>
               </div>
             </div>

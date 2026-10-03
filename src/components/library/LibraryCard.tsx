@@ -472,7 +472,7 @@ export function LibraryCard(props: LibraryCardProps) {
               </div>
             )}
             {project && (
-              <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={project.onNew}>
+              <PillButton size="sm" onClick={project.onNew}>
                 + New track
               </PillButton>
             )}
@@ -484,7 +484,7 @@ export function LibraryCard(props: LibraryCardProps) {
             <li className="flex flex-1 flex-col items-center justify-center gap-3 px-3 py-10 text-center">
               <p className="text-xs text-ink-muted">Nothing generated in this project yet.</p>
               {project && (
-                <PillButton className="!px-3.5 !py-1.5 text-xs" onClick={project.onNew}>
+                <PillButton size="sm" onClick={project.onNew}>
                   Create your first track
                 </PillButton>
               )}
