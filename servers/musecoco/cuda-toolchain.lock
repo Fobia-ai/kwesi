@@ -1,0 +1,43 @@
+# Build toolchain for MuseCoco's optional GPU attention kernel
+# (pytorch-fast-transformers' causal_product_cuda). Used only while building,
+# by the Training screen's "GPU acceleration" action, then deleted.
+#
+# Explicit lock: every package by exact URL + md5, so the toolchain is
+# identical on every machine. Regenerate (pinned micromamba 2.9.0) with:
+#   micromamba create -p <env> -c nvidia/label/cuda-11.3.1 -c conda-forge --override-channels \
+#     cuda-nvcc=11.3.122 cuda-cudart=11.3.109 cuda-thrust=11.3.109 libcurand=10.2.4.109 \
+#     gxx_linux-64=10.4.0 sysroot_linux-64=2.17 libxcrypt=4.4.36
+#   micromamba env export --explicit --md5 -p <env>
+#
+# Why each top-level pin (each one was a real build failure without it):
+#   cuda-nvcc 11.3       must match the CUDA version torch==1.11.0+cu113 was built with
+#   cuda-thrust          torch's c10 headers include thrust/complex.h under nvcc
+#   libcurand            fast-transformers' hamming-clustering kernel includes curand.h
+#   gxx_linux-64 10      CUDA 11.3 rejects host compilers newer than GCC 10
+#   sysroot_linux-64 2.17  newer kernel headers declare __s128, which nvcc 11.3 can't parse
+#   libxcrypt            Python 3.8's headers include crypt.h, absent from that sysroot
+@EXPLICIT
+https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda#d904c7ddd95e026254b4b80808ee9e12
+https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda#a9f577daf3de00bca7c3c76c0ecbd1de
+https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.39-hcc3a1bd_1.conda#737be0d34c22d24432049ab7a3214de4
+https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-3.10.0-he073ed8_18.conda#ad8527bf134a90e1c9ed35fa0b64318c
+https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda#fcb489df604d100968b737f2cb6076c6
+https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.17-h0157908_18.conda#460eba7851277ec1fd80a1a24080787a
+https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.39-he00db2b_1.conda#3d726e8b51a1f5bfd66892a2b7d9db2d
+https://conda.anaconda.org/conda-forge/linux-64/binutils_linux-64-2.39-h5fc0e48_13.conda#7f25a524665e4e2f8a5f86522f8d0e31
+https://conda.anaconda.org/nvidia/label/cuda-11.3.1/linux-64/cuda-cudart-11.3.109-hfb95d0c_0.tar.bz2#7519fbdd3b297b428a9fbb4d0eb2fedd
+https://conda.anaconda.org/nvidia/label/cuda-11.3.1/linux-64/cuda-nvcc-11.3.122-h4814707_0.tar.bz2#c2dc7cdcf190da7a84681a66db6be11b
+https://conda.anaconda.org/nvidia/label/cuda-11.3.1/linux-64/cuda-thrust-11.3.109-he8b717c_0.tar.bz2#d6127c3ce36feef60f392a1cdba00887
+https://conda.anaconda.org/conda-forge/linux-64/libgcc-devel_linux-64-10.4.0-hd38fd1e_19.tar.bz2#b41d6540a78ba2518655eebcb0e41e20
+https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda#735629b400b70eeab21a2ba8f5b1c2ce
+https://conda.anaconda.org/conda-forge/linux-64/libgcc-ng-16.2.0-h69a702a_7.conda#2005515ac9340f816fb2ac7e83afe553
+https://conda.anaconda.org/conda-forge/linux-64/libsanitizer-10.4.0-h5246dfb_19.tar.bz2#b068ad132a509367bc9e5a200a639429
+https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda#9b6707e0caca917fa6ea9ee473f37a5d
+https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-ng-16.2.0-hdf11a46_7.conda#25a23bde5e26d548374f3e02b4669670
+https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-10.4.0-h5231bdf_19.tar.bz2#a086547de4cee874e72d5a43230372ec
+https://conda.anaconda.org/conda-forge/linux-64/gcc_linux-64-10.4.0-h9215b83_13.conda#a38a8d1059689117691fb736215a196a
+https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-devel_linux-64-10.4.0-hd38fd1e_19.tar.bz2#9367571bf3218f968a47c010618a9715
+https://conda.anaconda.org/conda-forge/linux-64/gxx_impl_linux-64-10.4.0-h5231bdf_19.tar.bz2#de8c00c5162b819c3e8a7f64ed32baf1
+https://conda.anaconda.org/conda-forge/linux-64/gxx_linux-64-10.4.0-h6e491c6_13.conda#a27d76f39bbd17dbc0fbc57cfc82644e
+https://conda.anaconda.org/nvidia/label/cuda-11.3.1/linux-64/libcurand-10.2.4.109-h0189693_0.tar.bz2#bdc965602e3b46a67f6bd4ca3ee293f1
+https://conda.anaconda.org/conda-forge/linux-64/libxcrypt-4.4.36-h280c20c_2.conda#0e1db62e471972f2bc775d21471a33fa

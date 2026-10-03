@@ -37,6 +37,10 @@ import path from "node:path";
 import * as repo from "../db/repositories.js";
 import { ensureDir, modelVariantDir, serversRootDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
 import { queryGpuVram } from "./gpuInfo.js";
+import { musecocoCudaKernelBuilt } from "./musecocoGpu.js";
+
+// Measured peak for a MuseCoco GPU fine-tune is ~14.6GB; leave headroom.
+const MUSECOCO_GPU_TRAIN_MIN_FREE_GB = 16;
 import { ACE_STEP_LORA_META_FILE, aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
 import { TRAINING_VENV_BY_MODEL } from "./envInstaller.js";
 
@@ -991,6 +995,30 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     broadcast({ type: "status", runId, status: "running" });
 
     const maxUpdates = clampInt(hyperparams.max_updates, 1, 2000, 10);
+
+    // GPU when the optional CUDA kernel has been built (Training screen ->
+    // GPU acceleration) and there's room for it. fp32 Adam can't fit even a
+    // free 24GB card (weights + grads + activations hit ~17GB before Adam's
+    // ~8GB of state), so the GPU path uses Adafactor, whose factored state
+    // is negligible: measured peak ~14.6GB, ~1s per update vs ~50s on CPU,
+    // with the same loss trajectory as CPU Adam. Otherwise CPU + Adam.
+    const gpu = await queryGpuVram();
+    const kernelBuilt = musecocoCudaKernelBuilt();
+    const useGpu = kernelBuilt && gpu.available && gpu.freeVramGb >= MUSECOCO_GPU_TRAIN_MIN_FREE_GB;
+    appendLog(
+      useGpu
+        ? `[kwesi] Training on the GPU (${gpu.freeVramGb.toFixed(1)}GB free) with the Adafactor optimizer.\n`
+        : `[kwesi] Training on the CPU with Adam (slow, ~50s per update): ${
+            !kernelBuilt
+              ? "the GPU kernel isn't built -- see Training -> MuseCoco -> GPU acceleration"
+              : !gpu.available
+                ? "no NVIDIA GPU detected"
+                : `only ${gpu.freeVramGb.toFixed(1)}GB of VRAM free, ${MUSECOCO_GPU_TRAIN_MIN_FREE_GB}GB needed`
+          }.\n`,
+    );
+    const optimizerArgs = useGpu
+      ? ["--optimizer", "adafactor"]
+      : ["--optimizer", "adam", "--adam-betas", "(0.9, 0.98)", "--adam-eps", "1e-9"];
     const learningRateRaw = Number(hyperparams.learning_rate);
     const learningRate = Number.isFinite(learningRateRaw) && learningRateRaw > 0 ? learningRateRaw : 1e-6;
     const saveDir = path.join(workDir, "checkpoints");
@@ -1025,12 +1053,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
         "1",
         "--update-freq",
         "1",
-        "--optimizer",
-        "adam",
-        "--adam-betas",
-        "(0.9, 0.98)",
-        "--adam-eps",
-        "1e-9",
+        ...optimizerArgs,
         "--weight-decay",
         "0.01",
         "--lr",
@@ -1063,7 +1086,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
         "--reset-dataloader",
         "--reset-lr-scheduler",
         "--reset-meters",
-        "--cpu",
+        ...(useGpu ? [] : ["--cpu"]),
       ],
       vendorModelDir,
       appendLog,

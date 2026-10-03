@@ -182,17 +182,48 @@ Two real, hard-won pins beyond the catalog doc's own note:
 ## CPU vs GPU
 
 `pytorch-fast-transformers` builds from source and only compiles its CUDA
-kernel when a system `nvcc` is present at install time; otherwise it sets
-that kernel to `None` without failing. `server.py` therefore uses CUDA only
-when a GPU is visible **and** the kernel exists, and falls back to CPU (with
-a log line saying why) otherwise. Picking CUDA on the GPU alone crashed
-every generation with `'NoneType' object is not callable` on a fresh
-install. The checkpoint is
-~1B parameters (`checkpoints/linear_mask-1billion/checkpoint_2_280000.pt`,
-14.5GB on disk in fp32 -- larger than `kwesi.docs/03-model-catalog.md`'s
-original "~200M params" estimate, corrected there in Phase 7), so CPU
-inference is slow (minutes, not seconds) but genuinely functional --
-verified end-to-end, see below.
+kernel when a matching `nvcc` is present at install time; otherwise it sets
+that kernel to `None` without failing. So a normal install is CPU-only, and
+`server.py` uses CUDA only when a GPU is visible **and** the kernel exists
+(picking CUDA on the GPU alone crashed every generation with `'NoneType'
+object is not callable`). The checkpoint is ~1B parameters
+(`checkpoints/linear_mask-1billion/checkpoint_2_280000.pt`, 14.5GB with its
+optimizer state).
+
+### GPU acceleration (Training screen)
+
+The Training screen's MuseCoco form has a **GPU acceleration** card that
+builds the CUDA kernel (`electron/models/musecocoGpu.ts`). It's offered there,
+not during install or generation setup, because it's an opt-in ~5 minute
+build; once it exists, generation uses it too.
+
+The build is deterministic:
+
+1. Download micromamba 2.9.0-0 (pinned, sha256-checked).
+2. Create the toolchain from `cuda-toolchain.lock`, an explicit lock of every
+   package by URL + md5: CUDA 11.3 `nvcc` (matching `torch==1.11.0+cu113`),
+   GCC 10, a glibc 2.17 sysroot, Thrust/curand/crypt headers. The lock's
+   header says why each pin exists — each was a real build failure without it.
+3. Compile `pytorch-fast-transformers==0.4.0` into a staging dir
+   (`--no-cache`: uv's cache holds the CPU-only wheel) for every arch CUDA
+   11.3 targets, `6.0;6.1;7.0;7.5;8.0;8.6+PTX`.
+4. Check the staged CUDA kernel against the CPU kernel on the GPU.
+5. Only then swap it into the venv, and delete the ~1GB toolchain.
+
+Linux x86-64 with an NVIDIA GPU only. Measured on an RTX 3090:
+
+| | CPU | GPU |
+|---|---|---|
+| Generation (450 tokens) | ~18 min | ~23 s |
+| Training, per update | ~50 s | ~1 s |
+
+Training on the GPU uses **Adafactor**, not Adam: fp32 Adam can't fit a
+24GB card (weights + grads + activations reach ~17GB before Adam's ~8GB of
+state). Adafactor's state is negligible — peak ~14.6GB, the same loss
+trajectory as CPU Adam over the first updates, and a 4.9GB checkpoint instead
+of 14.5GB. `runMuseCocoTrainingPipeline` uses the GPU when the kernel is
+built and 16GB of VRAM is free, otherwise CPU + Adam, and says which (and
+why) at the top of the run log.
 
 ## Manual smoke test (no Electron needed)
 

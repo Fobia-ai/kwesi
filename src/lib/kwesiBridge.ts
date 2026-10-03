@@ -208,6 +208,8 @@ declare global {
         installingModelId: () => Promise<string | null>;
         checkTrainingStatus: (modelId: string) => Promise<EnvStatus>;
         installTraining: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
+        musecocoGpuStatus: () => Promise<MusecocoGpuStatus>;
+        buildMusecocoGpu: () => Promise<{ ok: boolean; reason?: string }>;
         onProgress: (callback: (event: EnvProgress) => void) => () => void;
       };
       audioRender: {
@@ -219,6 +221,13 @@ declare global {
 }
 
 // Mirrors electron/models/envInstaller.ts's own types.
+/** MuseCoco's optional GPU kernel (electron/models/musecocoGpu.ts). */
+export interface MusecocoGpuStatus {
+  supported: boolean;
+  built: boolean;
+  reason?: string;
+}
+
 export interface EnvStatus {
   modelId: string;
   venvExists: boolean;

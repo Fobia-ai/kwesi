@@ -8,6 +8,7 @@ import {
   installTrainingEnvironment,
   type EnvProgress,
 } from "../models/envInstaller.js";
+import { buildMusecocoGpuKernel, checkMusecocoGpuStatus } from "../models/musecocoGpu.js";
 
 const PROGRESS_CHANNEL = "kwesi:environment:progress";
 
@@ -70,6 +71,25 @@ export function registerEnvironmentIpcHandlers() {
     broadcast({ modelId, line: "Starting training-environment install…" });
     try {
       const result = await installTrainingEnvironment(modelId, (line) => broadcast({ modelId, line }));
+      broadcast({ modelId, line: result.ok ? "Done." : `Failed: ${result.reason}` });
+      return result;
+    } finally {
+      installingModelId = null;
+    }
+  });
+
+  // MuseCoco's optional GPU kernel build (Training screen). Rewrites a
+  // package inside the musecoco venv, so it takes the same install lock.
+  ipcMain.handle("kwesi:environment:musecocoGpuStatus", () => checkMusecocoGpuStatus());
+  ipcMain.handle("kwesi:environment:buildMusecocoGpu", async () => {
+    const modelId = "musecoco";
+    if (installingModelId) {
+      return { ok: false, reason: `Already installing ${installingModelId} -- wait for it to finish first.` };
+    }
+    installingModelId = modelId;
+    broadcast({ modelId, line: "Starting GPU kernel build…" });
+    try {
+      const result = await buildMusecocoGpuKernel((line) => broadcast({ modelId, line }));
       broadcast({ modelId, line: result.ok ? "Done." : `Failed: ${result.reason}` });
       return result;
     } finally {

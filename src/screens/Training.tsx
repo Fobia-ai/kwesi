@@ -14,7 +14,7 @@ import {
 } from "../components/generation/DynamicGenerationForm";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
-import { kwesiEnvironment } from "../lib/environment";
+import { kwesiEnvironment, type MusecocoGpuStatus } from "../lib/environment";
 import { kwesiDb, type TrainingRunRow } from "../lib/db";
 import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 import { InfoHint } from "../components/ui/InfoHint";
@@ -525,6 +525,79 @@ function requiredBaseVariant(modelId: string, hyperparams: GenerationFormValues)
   return null;
 }
 
+/**
+ * MuseCoco-only: builds the optional CUDA attention kernel (see
+ * electron/models/musecocoGpu.ts). Lives here rather than in install/setup
+ * because it's an opt-in, one-time ~5 minute build mainly worth it for
+ * training; generation picks the kernel up on its own once it exists.
+ */
+function MusecocoGpuCard() {
+  const [status, setStatus] = useState<MusecocoGpuStatus | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    kwesiEnvironment.musecocoGpuStatus().then(setStatus);
+  }, []);
+
+  useEffect(
+    () =>
+      kwesiEnvironment.onProgress((event) => {
+        if (event.modelId !== "musecoco") return;
+        setLog((prev) => [...prev.slice(-29), event.line]);
+      }),
+    [],
+  );
+
+  async function build() {
+    setError(null);
+    setLog([]);
+    setBuilding(true);
+    const result = await kwesiEnvironment.buildMusecocoGpu();
+    setBuilding(false);
+    if (!result.ok) setError(result.reason ?? "Build failed.");
+    setStatus(await kwesiEnvironment.musecocoGpuStatus());
+  }
+
+  if (!status) return null;
+  const description = status.built
+    ? "Built. Training runs on your GPU (~1s per update) whenever 16GB of VRAM is free, otherwise on the CPU. Generation uses it too."
+    : status.supported
+      ? "Not built — training runs on the CPU (~50s per update). Build it once to train about 50× faster."
+      : (status.reason ?? "Not available on this system.");
+
+  return (
+    <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            GPU acceleration
+            <InfoHint
+              label="GPU acceleration"
+              text={
+                "MuseCoco's attention layer runs through a compiled kernel that a normal install builds for the CPU only — compiling the GPU version needs a CUDA 11.3 compiler almost no machine has.\n\nThis downloads a pinned, one-time build toolchain (~1GB, deleted afterwards), compiles the GPU kernel (about 5 minutes), checks it against the CPU kernel on your GPU, and only then installs it.\n\nOn the GPU, training uses the Adafactor optimizer instead of Adam so the 1B-parameter model fits in memory. Linux with an NVIDIA GPU only."
+              }
+            />
+          </p>
+          <p className="mt-0.5 text-xs text-ink-muted">{building ? "Building… this takes several minutes." : description}</p>
+        </div>
+        {status.supported && (
+          <PillButton className="!px-3 !py-1.5 text-xs" variant={status.built ? "ghost" : undefined} onClick={build} disabled={building}>
+            {building ? "Building…" : status.built ? "Rebuild" : "Build GPU kernel"}
+          </PillButton>
+        )}
+      </div>
+      {log.length > 0 && (
+        <pre className="kwesi-scroll-inset mt-2 max-h-28 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
+          {log.join("\n")}
+        </pre>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   const trainableModels = useMemo(() => Object.values(MANIFESTS), []);
   const [modelId, setModelId] = useState<string>("");
@@ -739,6 +812,8 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
               </>
             )}
           </div>
+
+          {manifest.modelId === "musecoco" && <MusecocoGpuCard />}
 
           <div className="flex flex-col gap-3 border-t border-ink/10 pt-3">
             <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">

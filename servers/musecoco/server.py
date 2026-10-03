@@ -115,7 +115,7 @@ def load_state(requested_path=None):
     parser.add_argument("--use_gold_labels", type=int, default=0)
     args = options.parse_args_and_arch(parser)
 
-    log.info(f"loading task/model from {ckpt} (this reads a ~14.5GB checkpoint)")
+    log.info(f"loading task/model from {ckpt} (multi-GB checkpoint, takes a while)")
     t0 = time.time()
     task = tasks.setup_task(args)
     models, _model_args = checkpoint_utils.load_model_ensemble(

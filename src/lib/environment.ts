@@ -1,6 +1,6 @@
-import type { EnvStatus, EnvProgress } from "./kwesiBridge";
+import type { EnvStatus, EnvProgress, MusecocoGpuStatus } from "./kwesiBridge";
 
-export type { EnvStatus, EnvProgress } from "./kwesiBridge";
+export type { EnvStatus, EnvProgress, MusecocoGpuStatus } from "./kwesiBridge";
 
 export interface KwesiEnvironmentApi {
   checkPrerequisites(): Promise<{
@@ -15,6 +15,9 @@ export interface KwesiEnvironmentApi {
   // separate `rave-train`), so these check/install that one specifically.
   checkTrainingStatus(modelId: string): Promise<EnvStatus>;
   installTraining(modelId: string): Promise<{ ok: boolean; reason?: string }>;
+  // MuseCoco's optional GPU kernel build, offered from the Training screen.
+  musecocoGpuStatus(): Promise<MusecocoGpuStatus>;
+  buildMusecocoGpu(): Promise<{ ok: boolean; reason?: string }>;
   onProgress(callback: (event: EnvProgress) => void): () => void;
 }
 
@@ -26,6 +29,8 @@ function realEnvironmentApi(bridge: NonNullable<Window["kwesi"]>["environment"])
     installingModelId: () => bridge.installingModelId(),
     checkTrainingStatus: (modelId) => bridge.checkTrainingStatus(modelId),
     installTraining: (modelId) => bridge.installTraining(modelId),
+    musecocoGpuStatus: () => bridge.musecocoGpuStatus(),
+    buildMusecocoGpu: () => bridge.buildMusecocoGpu(),
     onProgress: (callback) => bridge.onProgress(callback),
   };
 }
@@ -69,6 +74,12 @@ function createMockEnvironmentApi(): KwesiEnvironmentApi {
     },
     async installTraining(modelId) {
       return { ok: false, reason: `[mock] Can't install ${modelId}'s training environment from a browser preview.` };
+    },
+    async musecocoGpuStatus() {
+      return { supported: false, built: false, reason: "[mock] GPU builds need the desktop app." };
+    },
+    async buildMusecocoGpu() {
+      return { ok: false, reason: "[mock] GPU builds need the desktop app." };
     },
     onProgress(callback) {
       listeners.add(callback);

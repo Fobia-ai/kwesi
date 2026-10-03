@@ -47,10 +47,10 @@ function vendorDir(modelId: string): string {
   return path.join(serverDir(modelId), "vendor");
 }
 
-type OnOutput = (line: string) => void;
+export type OnOutput = (line: string) => void;
 
 /** Runs one command to completion, streaming combined stdout/stderr line-by-line. Rejects with a real, readable error on a non-zero exit. */
-function runCommand(
+export function runCommand(
   command: string,
   args: string[],
   options: { cwd?: string; env?: NodeJS.ProcessEnv; onOutput?: OnOutput } = {},
