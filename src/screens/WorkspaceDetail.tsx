@@ -19,7 +19,7 @@ import { kwesiGeneration, type GenerationProgressEvent } from "../lib/generation
 import { kwesiEnvironment } from "../lib/environment";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
 import { getManifest, outputKindOf } from "../data/manifests";
-import { DynamicGenerationForm } from "../components/generation/DynamicGenerationForm";
+import { DynamicGenerationForm, type TrainedVariantOption } from "../components/generation/DynamicGenerationForm";
 import { LibraryCard, type LibraryItem } from "../components/library/LibraryCard";
 import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 
@@ -170,6 +170,22 @@ function ProjectSwitcher({
 }
 
 /**
+ * Picker options for trained variants: the training run's name, with a short
+ * id suffix only when two runs share a name. Variants trained before names
+ * were stored fall back to their variant name.
+ */
+function trainedVariantOptions(variants: ModelVariantRow[]): TrainedVariantOption[] {
+  const trained = variants.filter((v) => v.install_status === "installed" && v.source === "trained");
+  const counts = new Map<string, number>();
+  for (const v of trained) if (v.display_name) counts.set(v.display_name, (counts.get(v.display_name) ?? 0) + 1);
+  return trained.map((v) => {
+    if (!v.display_name) return { name: v.variant_name, label: v.variant_name };
+    const duplicate = (counts.get(v.display_name) ?? 0) > 1;
+    return { name: v.variant_name, label: duplicate ? `${v.display_name} · ${v.variant_name.slice(-8)}` : v.display_name };
+  });
+}
+
+/**
  * Takes over the whole card while a new track is being set up — the player
  * and the track list are both about tracks that already exist, so neither
  * has anything to say until this is submitted or cancelled.
@@ -177,14 +193,14 @@ function ProjectSwitcher({
 function NewTrackForm({
   modelId,
   installedVariantNames,
-  extraVariantNames,
+  trainedVariants,
   artistProfiles,
   onCancel,
   onSubmit,
 }: {
   modelId: string;
   installedVariantNames: string[];
-  extraVariantNames: string[];
+  trainedVariants: TrainedVariantOption[];
   artistProfiles: ArtistProfile[];
   onCancel: () => void;
   onSubmit: (checkpointVariant: string | null, values: Record<string, unknown>) => void;
@@ -209,7 +225,7 @@ function NewTrackForm({
           <DynamicGenerationForm
             manifest={manifest}
             installedVariantNames={installedVariantNames}
-            extraVariantNames={extraVariantNames}
+            trainedVariants={trainedVariants}
             artistProfiles={artistProfiles}
             onSubmit={onSubmit}
           />
@@ -251,14 +267,11 @@ function ProjectPane({
   );
   // Trained-model variants (model_variant rows created by trainingManager.ts
   // on a completed run) aren't in the manifest's static checkpointVariants
-  // list — merged in separately, since DynamicGenerationForm treats them as
-  // always-usable regardless of the catalog list.
-  const trainedVariantNames = useMemo(
-    () =>
-      variants
-        .filter((v) => v.install_status === "installed" && v.source === "trained")
-        .map((v) => v.variant_name),
-    [variants],
+  // list, so they're passed separately and shown by their run's name.
+  const trainedVariants = useMemo(() => trainedVariantOptions(variants), [variants]);
+  const checkpointLabels = useMemo(
+    () => new Map(trainedVariants.map((t) => [t.name, t.label])),
+    [trainedVariants],
   );
 
   async function refresh() {
@@ -330,8 +343,9 @@ function ProjectPane({
         generation,
         modelId,
         modelDisplayName: workspace?.model_display_name ?? modelId,
+        checkpointLabel: generation.checkpoint_variant ? checkpointLabels.get(generation.checkpoint_variant) : undefined,
       })),
-    [generations, modelId, workspace?.model_display_name],
+    [generations, modelId, workspace?.model_display_name, checkpointLabels],
   );
 
   return (
@@ -361,7 +375,7 @@ function ProjectPane({
           <NewTrackForm
             modelId={modelId}
             installedVariantNames={installedVariantNames}
-            extraVariantNames={trainedVariantNames}
+            trainedVariants={trainedVariants}
             artistProfiles={artistProfiles}
             onCancel={() => setIsCreating(false)}
             onSubmit={submitGeneration}

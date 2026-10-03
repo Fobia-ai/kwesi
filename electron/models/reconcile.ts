@@ -14,13 +14,16 @@
 // the Home resolver needs to know whether there's anything to show
 // *before* committing to changing DB state.
 import { modelVariantDir } from "../db/paths.js";
-import { dirHasContent, dirSizeBytes } from "../lib/fsSize.js";
+import { pathContentBytes } from "../lib/fsSize.js";
 import * as repo from "../db/repositories.js";
 
 export interface ModelDriftEntry {
   variantId: string;
   modelId: string;
   variantName: string;
+  // Where the variant's files are: KWESI_MODELS_DIR/<model>/<variant> for
+  // catalog variants, wherever the run saved it for trained ones.
+  path: string;
 }
 
 export interface ModelDrift {
@@ -39,13 +42,35 @@ type DriftCheck =
   | { kind: "toNotInstalled"; entry: ModelDriftEntry }
   | { kind: "none" };
 
+/**
+ * Trained variants don't necessarily live under KWESI_MODELS_DIR/<model>/
+ * <variant>: RAVE/MusicGen are bridged there, but an ACE-Step LoRA (a
+ * directory) or a MuseCoco checkpoint (a single .pt file) stays wherever the
+ * run saved it. Checking only the models-root folder reset those to
+ * not_installed on every startup, dropping them from the workspace picker.
+ * A row that was already reset that way lost its install_path, so fall back
+ * to the models-root folder if it exists, else the trained_model record.
+ */
+function variantPath(variant: repo.ModelVariantRow): string {
+  const rootDir = modelVariantDir(variant.model_id, variant.variant_name);
+  if (variant.source !== "trained") return rootDir;
+  if (variant.install_path) return variant.install_path;
+  return repo.trainedModelPathForVariant(variant.model_id, variant.variant_name) ?? rootDir;
+}
+
 async function checkVariant(variant: repo.ModelVariantRow): Promise<DriftCheck> {
-  const dir = modelVariantDir(variant.model_id, variant.variant_name);
-  const present = await dirHasContent(dir);
-  const entry = { variantId: variant.id, modelId: variant.model_id, variantName: variant.variant_name };
+  const target = variantPath(variant);
+  let size = await pathContentBytes(target);
+  let found = target;
+  if (size === null && variant.source === "trained" && target !== modelVariantDir(variant.model_id, variant.variant_name)) {
+    found = modelVariantDir(variant.model_id, variant.variant_name);
+    size = await pathContentBytes(found);
+  }
+  const present = size !== null;
+  const entry = { variantId: variant.id, modelId: variant.model_id, variantName: variant.variant_name, path: found };
 
   if (present && variant.install_status !== "installed") {
-    return { kind: "toInstalled", entry: { ...entry, diskSizeBytes: await dirSizeBytes(dir) } };
+    return { kind: "toInstalled", entry: { ...entry, diskSizeBytes: size ?? 0 } };
   }
   if (!present && variant.install_status === "installed") {
     return { kind: "toNotInstalled", entry };
@@ -82,8 +107,7 @@ export async function reconcileInstalledModelsFromDisk(): Promise<ModelDrift> {
   const drift = await computeDrift();
 
   for (const entry of drift.toInstalled) {
-    const dir = modelVariantDir(entry.modelId, entry.variantName);
-    repo.setVariantInstalled(entry.variantId, dir, entry.diskSizeBytes);
+    repo.setVariantInstalled(entry.variantId, entry.path, entry.diskSizeBytes);
     console.log(
       `[reconcile] found ${entry.modelId}/${entry.variantName} on disk -> marked installed (${entry.diskSizeBytes} bytes)`,
     );
@@ -91,7 +115,7 @@ export async function reconcileInstalledModelsFromDisk(): Promise<ModelDrift> {
   for (const entry of drift.toNotInstalled) {
     repo.resetVariantToNotInstalled(entry.variantId);
     console.log(
-      `[reconcile] ${entry.modelId}/${entry.variantName} was installed but its folder is gone -> reset to not_installed`,
+      `[reconcile] ${entry.modelId}/${entry.variantName} was installed but ${entry.path} is gone -> reset to not_installed`,
     );
   }
 

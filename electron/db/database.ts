@@ -26,12 +26,29 @@ function migrateModelVariantColumns(database: Database.Database) {
     ["bytes_total", "INTEGER"],
     ["current_file", "TEXT"],
     ["error", "TEXT"],
+    ["display_name", "TEXT"],
   ];
   for (const [name, ddl] of wanted) {
     if (!existing.has(name)) {
       database.exec(`ALTER TABLE model_variant ADD COLUMN ${name} ${ddl}`);
     }
   }
+}
+
+// Trained variants registered before display_name existed: take the name
+// from their trained_model row. deriveVariantName (trainingManager.ts) ends
+// every trained variant name with the first 8 chars of its training run id,
+// which is how the two rows are matched.
+function backfillTrainedVariantDisplayNames(database: Database.Database) {
+  database.exec(`
+    UPDATE model_variant SET display_name = (
+      SELECT tm.display_name FROM trained_model tm
+      WHERE tm.base_model_id = model_variant.model_id
+        AND model_variant.variant_name LIKE '%-' || substr(tm.training_run_id, 1, 8)
+      ORDER BY tm.created_at DESC LIMIT 1
+    )
+    WHERE source = 'trained' AND display_name IS NULL
+  `);
 }
 
 // One-time, narrowly-targeted cleanup for MusicGen's discontinued "style"
@@ -147,6 +164,7 @@ export function openDatabase(dbPath: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
   migrateModelVariantColumns(db);
+  backfillTrainedVariantDisplayNames(db);
   migrateArtistProfileColumns(db);
   removeDiscontinuedMusicGenStyleVariant(db);
   syncSeedModels(db, SEED_MODELS);

@@ -28,6 +28,7 @@ export interface ModelVariantRow {
   bytes_total: number | null;
   current_file: string | null;
   error: string | null;
+  display_name: string | null;
 }
 
 export interface QueueRow extends ModelVariantRow {
@@ -579,17 +580,35 @@ export function upsertTrainedModelVariant(
   variantName: string,
   installPath: string,
   diskSizeBytes: number,
+  displayName: string,
 ): void {
   const db = getDatabase();
   const existing = getModelVariant(modelId, variantName);
   if (existing) {
     setVariantInstalled(existing.id, installPath, diskSizeBytes);
+    db.prepare("UPDATE model_variant SET display_name = ? WHERE id = ?").run(displayName, existing.id);
     return;
   }
   db.prepare(
-    `INSERT INTO model_variant (id, model_id, variant_name, install_status, install_path, disk_size_bytes, source)
-     VALUES (?, ?, ?, 'installed', ?, ?, 'trained')`,
-  ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes);
+    `INSERT INTO model_variant (id, model_id, variant_name, install_status, install_path, disk_size_bytes, source, display_name)
+     VALUES (?, ?, ?, 'installed', ?, ?, 'trained', ?)`,
+  ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes, displayName);
+}
+
+/**
+ * Where a trained variant's checkpoint lives according to its trained_model
+ * row, matched the same way as the display-name backfill: deriveVariantName
+ * ends every trained variant name with the first 8 chars of its run id.
+ */
+export function trainedModelPathForVariant(modelId: string, variantName: string): string | null {
+  const row = getDatabase()
+    .prepare(
+      `SELECT checkpoint_path FROM trained_model
+       WHERE base_model_id = ? AND ? LIKE '%-' || substr(training_run_id, 1, 8)
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(modelId, variantName) as { checkpoint_path: string } | undefined;
+  return row?.checkpoint_path ?? null;
 }
 
 /**

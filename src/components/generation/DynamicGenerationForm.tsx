@@ -16,18 +16,22 @@ export type GenerationFormValues = Record<string, unknown>;
 interface DynamicGenerationFormProps {
   manifest: ModelManifest;
   installedVariantNames: string[];
-  // Phase 10: trained-model variant names for this model family (already
-  // guaranteed installed — see trainingManager.ts) that aren't part of the
-  // manifest's static `checkpointVariants` list. Merged in separately
-  // rather than folded into that static array, since it's runtime data
-  // (WorkspaceDetail.tsx derives it from `model_variant` rows where
-  // `source === "trained"`), not catalog data.
-  extraVariantNames?: string[];
+  // Trained-model variants for this model family (already guaranteed
+  // installed -- see trainingManager.ts), shown in their own group by their
+  // training run's name. Runtime data from `model_variant` rows where
+  // `source === "trained"`, not part of the manifest's static
+  // `checkpointVariants` list.
+  trainedVariants?: TrainedVariantOption[];
   // Every generation is required to be attributed to one of these — see
   // Settings.tsx's Artists tab for where they're managed.
   artistProfiles: ArtistProfile[];
   disabled?: boolean;
   onSubmit: (checkpointVariant: string | null, values: GenerationFormValues) => void;
+}
+
+export interface TrainedVariantOption {
+  name: string; // variant_name, what generation actually uses
+  label: string; // shown in the picker
 }
 
 export function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null): ManifestInput[] {
@@ -280,18 +284,25 @@ export function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
 export function DynamicGenerationForm({
   manifest,
   installedVariantNames,
-  extraVariantNames,
+  trainedVariants,
   artistProfiles,
   disabled,
   onSubmit,
 }: DynamicGenerationFormProps) {
   const navigate = useNavigate();
 
-  const usableVariants = useMemo(() => {
-    const fromManifest = manifest.checkpointVariants.filter((v) => installedVariantNames.includes(v));
-    const extra = (extraVariantNames ?? []).filter((v) => !fromManifest.includes(v));
-    return [...fromManifest, ...extra];
-  }, [manifest.checkpointVariants, installedVariantNames, extraVariantNames]);
+  const stockVariants = useMemo(
+    () => manifest.checkpointVariants.filter((v) => installedVariantNames.includes(v)),
+    [manifest.checkpointVariants, installedVariantNames],
+  );
+  const trainedOptions = useMemo(
+    () => (trainedVariants ?? []).filter((t) => !stockVariants.includes(t.name)),
+    [trainedVariants, stockVariants],
+  );
+  const usableVariants = useMemo(
+    () => [...stockVariants, ...trainedOptions.map((t) => t.name)],
+    [stockVariants, trainedOptions],
+  );
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
   const [values, setValues] = useState<GenerationFormValues>(() => {
@@ -507,11 +518,32 @@ export function DynamicGenerationForm({
             onChange={(e) => setSelectedVariant(e.target.value)}
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           >
-            {usableVariants.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
+            {trainedOptions.length === 0 ? (
+              stockVariants.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))
+            ) : (
+              <>
+                {stockVariants.length > 0 && (
+                  <optgroup label="Stock checkpoints">
+                    {stockVariants.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Your trained models">
+                  {trainedOptions.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </>
+            )}
           </select>
         </label>
       )}

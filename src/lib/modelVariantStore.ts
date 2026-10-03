@@ -28,6 +28,7 @@ function seedRow(modelId: string, v: SeedVariant): ModelVariantRow {
     bytes_total: null,
     current_file: null,
     error: null,
+    display_name: null,
   };
 }
 

@@ -16,6 +16,7 @@ export interface ModelDriftEntry {
   variantId: string;
   modelId: string;
   variantName: string;
+  path: string;
 }
 export interface ModelDrift {
   toInstalled: (ModelDriftEntry & { diskSizeBytes: number })[];

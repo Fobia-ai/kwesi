@@ -634,7 +634,7 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
     // /v1/lora/load + /v1/lora/toggle this adapter on top of it.
     const baseDir = ACE_STEP_TRAIN_BASE_DIRS[baseVariant] ?? `acestep-v15-${baseVariant.replace(/_/g, "-")}`;
     fs.writeFileSync(path.join(finalOutputDir, ACE_STEP_LORA_META_FILE), JSON.stringify({ baseVariant: baseDir }, null, 2));
-    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputDir, dirSizeBytes(finalOutputDir));
+    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputDir, dirSizeBytes(finalOutputDir), params.runName);
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputDir);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputDir });
@@ -901,7 +901,7 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
 
     const variantDir = bridgeFilesIntoModelsRoot(modelId, variantName, finalOutputDir, ["state_dict.bin", "compression_state_dict.bin"]);
     const diskSizeBytes = dirSizeBytes(finalOutputDir);
-    repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes);
+    repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes, params.runName);
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputDir);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputDir });
@@ -1115,7 +1115,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     // servers/musecoco/server.py takes this path per request (resolved from
     // this variant row by modelServer.ts, never from the renderer) and
     // swaps its loaded model when it changes.
-    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputPath, fs.statSync(finalOutputPath).size);
+    repo.upsertTrainedModelVariant(modelId, variantName, finalOutputPath, fs.statSync(finalOutputPath).size, params.runName);
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputPath);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputPath });
@@ -1324,7 +1324,7 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
     }
 
     const diskSizeBytes = fs.statSync(finalCheckpointPath).size;
-    repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes);
+    repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes, params.runName);
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalCheckpointPath);
 
     repo.updateTrainingRunStatus(runId, "completed", {

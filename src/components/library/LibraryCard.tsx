@@ -47,6 +47,9 @@ export interface LibraryItem {
   generation: GenerationRow;
   modelId: string;
   modelDisplayName: string;
+  // Friendly name for the checkpoint used, when it's a trained model (shown
+  // instead of its internal variant name).
+  checkpointLabel?: string;
   // Where the track lives, for the cross-project library view:
   // "Workspace › Project". Unset inside a single project, where it'd be the
   // same string on every row.
@@ -549,7 +552,7 @@ export function LibraryCard(props: LibraryCardProps) {
                     <Chip>
                       {props.mode === "library"
                         ? item.modelDisplayName
-                        : (generation.checkpoint_variant ?? item.modelDisplayName)}
+                        : (item.checkpointLabel ?? generation.checkpoint_variant ?? item.modelDisplayName)}
                     </Chip>
                   </div>
                   <div className="w-20 shrink-0">

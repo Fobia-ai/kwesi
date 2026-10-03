@@ -22,3 +22,15 @@ export async function dirHasContent(dir: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Size of a file, or of everything under a directory; null if the path is missing or empty. */
+export async function pathContentBytes(target: string): Promise<number | null> {
+  try {
+    const stat = await fs.promises.stat(target);
+    if (stat.isFile()) return stat.size > 0 ? stat.size : null;
+    if (!(await dirHasContent(target))) return null;
+    return await dirSizeBytes(target);
+  } catch {
+    return null;
+  }
+}

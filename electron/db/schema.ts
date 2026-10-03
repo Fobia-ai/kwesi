@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS model_variant (
   bytes_downloaded INTEGER,
   bytes_total INTEGER,
   current_file TEXT,
-  error TEXT
+  error TEXT,
+  -- Friendly name for a trained variant (the training run's name); NULL for
+  -- stock catalog variants, which show variant_name as-is.
+  display_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS workspace (

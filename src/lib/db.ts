@@ -26,6 +26,8 @@ export interface ModelVariantRow {
   bytes_total: number | null;
   current_file: string | null;
   error: string | null;
+  // A trained variant's friendly name (its training run's name); null for stock ones.
+  display_name: string | null;
 }
 
 export interface WorkspaceRow {

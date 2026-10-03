@@ -170,7 +170,7 @@ function ModelAccordionRow({
                       }`}
                     >
                       <div className="min-w-0">
-                        <span className="block truncate text-sm">{variant.variant_name}</span>
+                        <span className="block truncate text-sm">{variant.display_name ?? variant.variant_name}</span>
                         {variant.source === "manual" && variant.manual_note && (
                           <p className="truncate text-xs text-ink-muted">{variant.manual_note}</p>
                         )}

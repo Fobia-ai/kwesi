@@ -224,7 +224,7 @@ export interface ModelManifest {
   // (Phase 10+) isn't added to this static list at all — it lands as its
   // own `model_variant` row (source: "trained") instead, and
   // WorkspaceDetail.tsx/DynamicGenerationForm.tsx merge those in
-  // separately (see `extraVariantNames`) so this array only ever needs to
+  // separately (see `trainedVariants`) so this array only ever needs to
   // list the model family's stock catalog checkpoints.
   checkpointVariants: string[];
   hardware: ModelHardware;
