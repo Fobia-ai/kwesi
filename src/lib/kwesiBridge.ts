@@ -116,6 +116,9 @@ declare global {
         get: (runId: string) => Promise<TrainingRunRow | null>;
         cancel: (runId: string) => Promise<boolean>;
         listTrainedModels: (modelId?: string) => Promise<TrainedModelRow[]>;
+        deleteTrainedModel: (id: string) => Promise<{ ok: boolean; reason?: string; freedBytes?: number }>;
+        diskCheck: (params: TrainingDiskParams) => Promise<TrainingDiskCheck>;
+        revealTrainedModel: (id: string) => Promise<{ ok: boolean }>;
         pickOutputDir: (modelId: string, runName: string) => Promise<{ ok: boolean; path?: string }>;
         defaultOutputDir: (modelId: string, runName: string) => Promise<string>;
         pickDatasetDir: () => Promise<{ ok: boolean; path?: string }>;
@@ -222,6 +225,22 @@ declare global {
 }
 
 // Mirrors electron/models/envInstaller.ts's own types.
+/** Pre-run disk-space check (electron/models/trainingDiskCheck.ts). */
+export interface TrainingDiskParams {
+  modelId: string;
+  outputDir: string;
+  hyperparams: Record<string, unknown>;
+  datasetBytes: number;
+}
+
+export interface TrainingDiskCheck {
+  ok: boolean;
+  sameDisk: boolean;
+  work: { path: string; freeBytes: number | null; neededBytes: number };
+  output: { path: string; freeBytes: number | null; neededBytes: number };
+  message: string;
+}
+
 /** MuseCoco's optional GPU kernel (electron/models/musecocoGpu.ts). */
 export interface MusecocoGpuStatus {
   supported: boolean;

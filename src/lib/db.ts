@@ -97,6 +97,10 @@ export interface TrainedModelRow {
   display_name: string;
   checkpoint_path: string;
   created_at: number;
+  // From its model_variant row; null for runs from before trained variants
+  // were registered.
+  variant_name: string | null;
+  disk_size_bytes: number | null;
 }
 
 export interface KwesiDbApi {

@@ -219,20 +219,20 @@ function ArtistProfileFormModal({
                     type="button"
                     disabled={avatarBusy}
                     onClick={handleRemoveAvatar}
-                    className="text-xs text-ink-muted hover:text-red-600"
+                    className="text-xs text-ink-muted hover:text-danger"
                   >
                     Remove
                   </button>
                 )}
               </div>
-              {avatarError && <p className="text-xs text-red-600">{avatarError}</p>}
+              {avatarError && <p className="text-xs text-danger">{avatarError}</p>}
             </div>
           </div>
         )}
 
         <label className="flex flex-col gap-1.5 text-sm">
           Name
-          <span className="text-red-500"> *</span>
+          <span className="text-danger"> *</span>
           <input
             autoFocus
             value={name}
@@ -254,7 +254,7 @@ function ArtistProfileFormModal({
         <div className="flex flex-col gap-1.5 text-sm">
           <span>
             Genres
-            <span className="text-red-500"> *</span>
+            <span className="text-danger"> *</span>
           </span>
           <p className="text-xs text-ink-muted">
             What this artist makes — offered back as choices whenever you generate as them.
@@ -362,7 +362,7 @@ function ArtistsTab() {
                 </PillButton>
                 <button
                   onClick={() => setPendingDelete(profile)}
-                  className="rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600"
+                  className="rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-danger/10 hover:text-danger"
                 >
                   Delete
                 </button>
@@ -438,7 +438,7 @@ function SetPasscodeModal({ onClose, onSet }: { onClose: () => void; onSet: () =
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
         </label>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
         <div className="mt-2 flex justify-end gap-2">
           <PillButton variant="ghost" onClick={onClose}>
             Cancel
@@ -830,7 +830,7 @@ function ConfirmPasscodeModal({ onClose, onConfirmed }: { onClose: () => void; o
             className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
         </label>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
         <div className="mt-2 flex justify-end gap-2">
           <PillButton variant="ghost" onClick={onClose}>
             Cancel

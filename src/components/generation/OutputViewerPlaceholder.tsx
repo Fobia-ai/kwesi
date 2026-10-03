@@ -46,7 +46,7 @@ export function OutputViewerPlaceholder({ outputKind, status, progressPct, error
               <button
                 type="button"
                 onClick={onCancel}
-                className="shrink-0 rounded-chip px-2.5 py-1 text-[11px] font-medium text-ink-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600"
+                className="shrink-0 rounded-chip px-2.5 py-1 text-[11px] font-medium text-ink-muted transition-colors duration-150 hover:bg-danger/10 hover:text-danger"
               >
                 Stop
               </button>
@@ -66,7 +66,7 @@ export function OutputViewerPlaceholder({ outputKind, status, progressPct, error
   if (status === "failed") {
     return (
       <GlassPanel className="p-4">
-        <p className="text-xs text-red-600">{error ?? "Generation failed."}</p>
+        <p className="text-xs text-danger">{error ?? "Generation failed."}</p>
       </GlassPanel>
     );
   }

@@ -11,7 +11,10 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { PillButton } from "../components/ui/PillButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { ModelsIcon, ExternalLinkIcon, TrainingIcon, ChevronDownIcon, DownloadIcon } from "../components/ui/icons";
+import { ModelsIcon, ExternalLinkIcon, TrainingIcon, ChevronDownIcon, DownloadIcon, FolderIcon, TrashIcon } from "../components/ui/icons";
+import { InsetCard } from "../components/ui/InsetCard";
+import { Badge } from "../components/ui/Badge";
+import { Callout } from "../components/ui/Callout";
 
 const OUTPUT_KIND_LABEL: Record<string, string> = {
   audio: "Audio",
@@ -36,7 +39,7 @@ function StatusBadge({ status }: { status: string }) {
     status === "installed"
       ? "bg-accent/10 text-accent"
       : status === "failed"
-        ? "bg-red-500/10 text-red-600"
+        ? "bg-danger/10 text-danger"
         : status === "downloading" || status === "queued"
           ? "bg-ink/[0.08] text-ink"
           : "bg-ink/[0.06] text-ink-muted";
@@ -175,7 +178,7 @@ function ModelAccordionRow({
                           <p className="truncate text-xs text-ink-muted">{variant.manual_note}</p>
                         )}
                         {variant.error && variant.install_status === "failed" && (
-                          <p className="truncate text-xs text-red-600">{variant.error}</p>
+                          <p className="truncate text-xs text-danger">{variant.error}</p>
                         )}
                       </div>
                       <StatusBadge status={variant.install_status} />
@@ -258,10 +261,26 @@ export function ModelManagerScreen() {
   const [diskFree, setDiskFree] = useState<number | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
   const [trainedModels, setTrainedModels] = useState<TrainedModelRow[]>([]);
+  const [deleteTrained, setDeleteTrained] = useState<TrainedModelRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const refreshTrainedModels = useCallback(() => {
     kwesiTraining.listTrainedModels().then(setTrainedModels);
   }, []);
+
+  async function confirmDeleteTrained() {
+    if (!deleteTrained) return;
+    const result = await kwesiTraining.deleteTrainedModel(deleteTrained.id);
+    if (!result.ok) {
+      setDeleteError(result.reason ?? "Couldn't delete it.");
+      return;
+    }
+    setDeleteTrained(null);
+    setDeleteError(null);
+    refreshTrainedModels();
+    refreshVariants(deleteTrained.base_model_id);
+    kwesiModels.diskFreeBytes().then(setDiskFree);
+  }
 
   const refreshQueue = useCallback(() => {
     kwesiModels.listQueue().then(setQueue);
@@ -419,7 +438,7 @@ export function ModelManagerScreen() {
                       {row.model_display_name} · {row.variant_name}
                     </div>
                     {row.install_status === "failed" && row.error && (
-                      <p className="truncate text-xs text-red-600">{row.error}</p>
+                      <p className="truncate text-xs text-danger">{row.error}</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -481,15 +500,29 @@ export function ModelManagerScreen() {
             {trainedModels.map((tm) => {
               const model = models?.find((m) => m.id === tm.base_model_id);
               return (
-                <div key={tm.id} className="rounded-[10px] bg-ink/[0.03] px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm">{tm.display_name}</span>
-                    <span className="rounded-chip bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
-                      {model?.display_name ?? tm.base_model_id}
-                    </span>
+                <InsetCard key={tm.id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium">{tm.display_name}</span>
+                      <Badge tone="accent">{model?.display_name ?? tm.base_model_id}</Badge>
+                      {tm.disk_size_bytes !== null && <span className="text-xs text-ink-muted">{formatBytes(tm.disk_size_bytes)}</span>}
+                      <span className="text-xs text-ink-muted">· {new Date(tm.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-ink-muted" title={tm.checkpoint_path}>
+                      {tm.checkpoint_path}
+                    </p>
                   </div>
-                  <p className="mt-1 truncate text-xs text-ink-muted">{tm.checkpoint_path}</p>
-                </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <PillButton variant="ghost" size="sm" onClick={() => kwesiTraining.revealTrainedModel(tm.id)} aria-label={`Show ${tm.display_name} in folder`}>
+                      <FolderIcon width={13} height={13} />
+                      Open folder
+                    </PillButton>
+                    <PillButton variant="ghost" size="sm" onClick={() => setDeleteTrained(tm)} aria-label={`Delete ${tm.display_name}`}>
+                      <TrashIcon width={13} height={13} />
+                      Delete
+                    </PillButton>
+                  </div>
+                </InsetCard>
               );
             })}
           </div>
@@ -497,6 +530,28 @@ export function ModelManagerScreen() {
       </div>
       </div>
       </GlassPanel>
+
+      {deleteTrained && (
+        <ConfirmDialog
+          title={`Delete ${deleteTrained.display_name}?`}
+          description={
+            <div className="flex flex-col gap-2">
+              <p>
+                This permanently deletes the trained model's files
+                {deleteTrained.disk_size_bytes ? ` (${formatBytes(deleteTrained.disk_size_bytes)})` : ""} and removes it
+                from every workspace's checkpoint list. Tracks you already generated with it are kept.
+              </p>
+              {deleteError && <Callout tone="error">{deleteError}</Callout>}
+            </div>
+          }
+          confirmLabel="Delete"
+          onCancel={() => {
+            setDeleteTrained(null);
+            setDeleteError(null);
+          }}
+          onConfirm={confirmDeleteTrained}
+        />
+      )}
 
       {removeTarget && (
         <ConfirmDialog

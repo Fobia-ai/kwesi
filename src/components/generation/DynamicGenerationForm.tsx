@@ -271,8 +271,8 @@ export function HardwareGateBanner({ status }: { status: HardwareGateStatus }) {
       role="alert"
       className={`rounded-[10px] border px-3 py-2 text-xs ${
         isBlock
-          ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
-          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          ? "border-danger/40 bg-danger/10 text-danger"
+          : "border-warning/40 bg-warning/10 text-warning"
       }`}
     >
       {isBlock ? "Hardware requirement not met: " : "Hardware warning: "}
@@ -466,7 +466,7 @@ export function DynamicGenerationForm({
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm">
         Track name
-        <span className="text-red-500"> *</span>
+        <span className="text-danger"> *</span>
         <input
           value={(values.music_name as string) ?? ""}
           onChange={(e) => setValue("music_name", e.target.value)}
@@ -477,7 +477,7 @@ export function DynamicGenerationForm({
 
       <label className="flex flex-col gap-1.5 text-sm">
         Artist profile
-        <span className="text-red-500"> *</span>
+        <span className="text-danger"> *</span>
         <div className="flex items-center gap-2">
           {selectedArtistProfile && (
             <AvatarImage avatarPath={selectedArtistProfile.avatarPath} name={selectedArtistProfile.name} size={28} />
@@ -553,7 +553,7 @@ export function DynamicGenerationForm({
           <FieldControl input={input} value={values[input.key]} onChange={(v) => setValue(input.key, v)} />
         );
         const help = input.helpText && <span className="text-xs text-ink-muted">{input.helpText}</span>;
-        const requiredMark = input.required && <span className="text-red-500"> *</span>;
+        const requiredMark = input.required && <span className="text-danger"> *</span>;
         // A multiselect renders several independent buttons, not one form
         // control — wrapping that in <label> (fine for a single input/
         // select) makes each button's own accessible name ambiguous, since

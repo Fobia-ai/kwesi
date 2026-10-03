@@ -13,11 +13,18 @@ import {
   type GenerationFormValues,
 } from "../components/generation/DynamicGenerationForm";
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
-import { kwesiTraining, type TrainingProgressEvent } from "../lib/training";
+import { kwesiTraining, type TrainingDiskCheck, type TrainingProgressEvent } from "../lib/training";
 import { kwesiEnvironment, type MusecocoGpuStatus } from "../lib/environment";
 import { kwesiDb, type TrainingRunRow } from "../lib/db";
 import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 import { InfoHint } from "../components/ui/InfoHint";
+import { Badge, type BadgeTone } from "../components/ui/Badge";
+import { Callout } from "../components/ui/Callout";
+import { InsetCard } from "../components/ui/InsetCard";
+import { LogPanel } from "../components/ui/LogPanel";
+import { AlertIcon, CheckCircleIcon, CloseIcon } from "../components/ui/icons";
+import { useDatasetCheck, type ClipProbe } from "../lib/datasetCheck";
+import { formatDuration } from "../lib/format";
 import type { ManifestInput } from "../data/manifests";
 
 // Plain-language explanations of the training jargon, keyed by hyperparameter
@@ -60,19 +67,22 @@ const STATUS_LABEL: Record<string, string> = {
   interrupted: "Interrupted",
 };
 
+const NO_FILES: File[] = [];
+
 function StatusBadge({ status }: { status: string }) {
-  const tone =
+  const tone: BadgeTone =
     status === "completed"
-      ? "bg-accent/10 text-accent"
+      ? "success"
       : status === "failed" || status === "interrupted"
-        ? "bg-red-500/10 text-red-600"
+        ? "bad"
         : status === "cancelled"
-          ? "bg-ink/[0.06] text-ink-muted"
-          : "bg-ink/[0.08] text-ink";
+          ? "neutral"
+          : "live";
+  const active = status === "running" || status === "preparing" || status === "queued";
   return (
-    <span className={`shrink-0 rounded-chip px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tone}`}>
+    <Badge tone={tone} pulse={active}>
       {STATUS_LABEL[status] ?? status}
-    </span>
+    </Badge>
   );
 }
 
@@ -159,7 +169,9 @@ function CaptionedDataset({
   onCaptionFilesChange,
   pairing,
   onPairingChange,
+  durationOf,
 }: {
+  durationOf: (file: File) => ClipProbe | undefined;
   fileTypes: string[];
   minFiles: number;
   audioFiles: File[];
@@ -261,7 +273,7 @@ function CaptionedDataset({
           }}
         />
       </label>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <Callout tone="error">{error}</Callout>}
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -305,7 +317,7 @@ function CaptionedDataset({
           </label>
         )}
       </div>
-      {importError && <p className="text-xs text-red-600">{importError}</p>}
+      {importError && <Callout tone="error">{importError}</Callout>}
 
       {audioFiles.length > 0 && (
         <div className="flex max-h-60 flex-col overflow-y-auto rounded-[10px] bg-ink/[0.03]">
@@ -319,8 +331,9 @@ function CaptionedDataset({
             const matchedFile = matchedName ? captionFiles.find((c) => c.name === matchedName) : undefined;
             return (
               <div key={`${f.name}-${i}`} className="flex items-center gap-2 border-b border-ink/[0.05] px-2 py-1.5 last:border-b-0">
-                <span className="w-2/5 shrink-0 truncate text-xs" title={f.name}>
-                  {f.name}
+                <span className="flex w-2/5 shrink-0 items-center gap-1.5 text-xs" title={f.name}>
+                  <span className="truncate">{f.name}</span>
+                  <ClipLength probe={durationOf(f)} />
                 </span>
                 {captionMode === "files" ? (
                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -342,12 +355,10 @@ function CaptionedDataset({
                       ))}
                     </select>
                     {matchedFile ? (
-                      <span className="shrink-0 text-xs text-accent" title="Matched">
-                        ✓
-                      </span>
+                      <CheckCircleIcon width={14} height={14} className="shrink-0 text-accent" aria-label="Matched" />
                     ) : (
-                      <span className="shrink-0 text-xs text-amber-600" title="No caption file — falls back to the filename">
-                        ⚠
+                      <span title="No caption file — falls back to the filename" className="shrink-0">
+                        <AlertIcon width={14} height={14} className="text-warning" aria-label="No caption" />
                       </span>
                     )}
                   </div>
@@ -361,12 +372,12 @@ function CaptionedDataset({
                 )}
                 <button
                   type="button"
-                  className="w-6 shrink-0 text-center text-ink-muted hover:text-red-600"
+                  className="flex w-6 shrink-0 justify-center text-ink-muted transition-colors hover:text-danger"
                   onClick={() => removeAudio(i)}
                   title="Remove"
                   aria-label={`Remove ${f.name}`}
                 >
-                  ✕
+                  <CloseIcon width={13} height={13} />
                 </button>
               </div>
             );
@@ -403,6 +414,34 @@ async function resolveCaptions(
   return out;
 }
 
+/** A clip's length in a file list, or why it's unknown. */
+function ClipLength({ probe }: { probe: ClipProbe | undefined }) {
+  if (!probe) return <span className="shrink-0 text-[10px] text-ink-muted/60">…</span>;
+  if (probe.status === "ok") return <span className="shrink-0 tabular-nums text-[10px] text-ink-muted">{formatDuration(probe.durationSec)}</span>;
+  if (probe.status === "unknown") return <span className="shrink-0 text-[10px] text-ink-muted/60">?:??</span>;
+  return <span className="shrink-0 text-[10px] text-danger">{probe.status === "empty" ? "empty" : "unreadable"}</span>;
+}
+
+/** "3 clips · 1:30 total" plus whatever the dataset check found. */
+function DatasetSummary({ count, check }: { count: number; check: ReturnType<typeof useDatasetCheck> }) {
+  if (count === 0 || !check.result) return null;
+  const { result, checking } = check;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs text-ink-muted">
+        {count} clip{count === 1 ? "" : "s"} · {formatDuration(result.totalSec)} total{checking ? " · checking…" : ""}
+      </p>
+      {!checking &&
+        result.issues.map((issue) => (
+          <Callout key={issue.message} tone={issue.tone}>
+            {issue.message}
+          </Callout>
+        ))}
+      {!checking && result.issues.length === 0 && <Callout tone="success">Dataset looks good.</Callout>}
+    </div>
+  );
+}
+
 /**
  * Phase 11: directory-input dataset picker, used only by models whose
  * `training.datasetRequirements.fileTypes` is empty — signals a directory
@@ -425,7 +464,7 @@ function DatasetDirPicker({ path, onPathChange }: { path: string; onPathChange: 
           placeholder="No dataset directory chosen"
           className="kwesi-glass min-w-0 flex-1 rounded-[10px] px-3 py-2 text-xs outline-none"
         />
-        <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={choose}>
+        <PillButton variant="ghost" size="sm" onClick={choose}>
           Choose…
         </PillButton>
       </div>
@@ -442,11 +481,13 @@ function DatasetDropZone({
   minFiles,
   files,
   onFilesChange,
+  durationOf,
 }: {
   fileTypes: string[];
   minFiles: number;
   files: File[];
   onFilesChange: (files: File[]) => void;
+  durationOf: (file: File) => ClipProbe | undefined;
 }) {
   const [error, setError] = useState<string | null>(null);
 
@@ -488,18 +529,23 @@ function DatasetDropZone({
           }}
         />
       </label>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <Callout tone="error">{error}</Callout>}
       {files.length > 0 && (
-        <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-[10px] bg-ink/[0.03] p-2 text-xs">
+        <ul className="flex max-h-40 flex-col overflow-y-auto rounded-[10px] bg-ink/[0.03] text-xs">
           {files.map((f, i) => (
-            <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2">
-              <span className="truncate">{f.name}</span>
+            <li key={`${f.name}-${i}`} className="flex items-center gap-2 border-b border-ink/[0.05] px-2 py-1.5 last:border-b-0">
+              <span className="min-w-0 flex-1 truncate" title={f.name}>
+                {f.name}
+              </span>
+              <ClipLength probe={durationOf(f)} />
               <button
                 type="button"
-                className="shrink-0 text-ink-muted hover:text-red-600"
+                className="flex w-6 shrink-0 justify-center text-ink-muted transition-colors hover:text-danger"
                 onClick={() => onFilesChange(files.filter((_, idx) => idx !== i))}
+                title="Remove"
+                aria-label={`Remove ${f.name}`}
               >
-                Remove
+                <CloseIcon width={13} height={13} />
               </button>
             </li>
           ))}
@@ -568,7 +614,7 @@ function MusecocoGpuCard() {
       : (status.reason ?? "Not available on this system.");
 
   return (
-    <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
+    <InsetCard>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -583,18 +629,14 @@ function MusecocoGpuCard() {
           <p className="mt-0.5 text-xs text-ink-muted">{building ? "Building… this takes several minutes." : description}</p>
         </div>
         {status.supported && (
-          <PillButton className="!px-3 !py-1.5 text-xs" variant={status.built ? "ghost" : undefined} onClick={build} disabled={building}>
+          <PillButton size="sm" variant={status.built ? "ghost" : "accent"} onClick={build} disabled={building}>
             {building ? "Building…" : status.built ? "Rebuild" : "Build GPU kernel"}
           </PillButton>
         )}
       </div>
-      {log.length > 0 && (
-        <pre className="kwesi-scroll-inset mt-2 max-h-28 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
-          {log.join("\n")}
-        </pre>
-      )}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-    </div>
+      <LogPanel lines={log} className="mt-2" />
+      {error && <Callout tone="error" className="mt-2">{error}</Callout>}
+    </InsetCard>
   );
 }
 
@@ -658,10 +700,31 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   }
 
   const hardwareGate = training ? evaluateHardwareGate(manifest!, training.hardware.minVramGb, gpu) : { level: "ok" as const };
+
+  // Re-checked (debounced) whenever anything that changes the estimate does.
+  const [disk, setDisk] = useState<TrainingDiskCheck | null>(null);
+  const datasetBytes = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files]);
+  useEffect(() => {
+    if (!modelId || !outputDir) {
+      setDisk(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      kwesiTraining.diskCheck({ modelId, outputDir, hyperparams, datasetBytes }).then((r) => {
+        if (!cancelled) setDisk(r);
+      });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [modelId, outputDir, hyperparams, datasetBytes]);
+  const datasetCheck = useDatasetCheck(isDirectoryDataset ? NO_FILES : files, training?.datasetRequirements);
   const meetsFileMinimum = training
     ? isDirectoryDataset
       ? datasetDirPath.length > 0
-      : files.length >= training.datasetRequirements.minFiles
+      : files.length > 0 && !datasetCheck.checking && !datasetCheck.result?.blocking
     : false;
 
   // Gate on the training environment (a model trains in a venv that may
@@ -777,6 +840,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
             ) : isCaptionedDataset ? (
               <>
                 <CaptionedDataset
+                  durationOf={(f) => datasetCheck.probes.get(f)}
                   fileTypes={training.datasetRequirements.fileTypes}
                   minFiles={training.datasetRequirements.minFiles}
                   audioFiles={files}
@@ -790,25 +854,18 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                   pairing={captionPairing}
                   onPairingChange={setCaptionPairing}
                 />
-                {!meetsFileMinimum && files.length > 0 && (
-                  <p className="text-xs text-amber-600">
-                    Needs at least {training.datasetRequirements.minFiles} audio files (have {files.length}).
-                  </p>
-                )}
+                <DatasetSummary count={files.length} check={datasetCheck} />
               </>
             ) : (
               <>
                 <DatasetDropZone
+                  durationOf={(f) => datasetCheck.probes.get(f)}
                   fileTypes={training.datasetRequirements.fileTypes}
                   minFiles={training.datasetRequirements.minFiles}
                   files={files}
                   onFilesChange={setFiles}
                 />
-                {!meetsFileMinimum && files.length > 0 && (
-                  <p className="text-xs text-amber-600">
-                    Needs at least {training.datasetRequirements.minFiles} files (have {files.length}).
-                  </p>
-                )}
+                <DatasetSummary count={files.length} check={datasetCheck} />
               </>
             )}
           </div>
@@ -862,18 +919,19 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                 value={outputDir}
                 className="kwesi-glass min-w-0 flex-1 rounded-[10px] px-3 py-2 text-xs outline-none"
               />
-              <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={choosePickOutputDir}>
+              <PillButton variant="ghost" size="sm" onClick={choosePickOutputDir}>
                 Choose…
               </PillButton>
             </div>
+            {disk && <Callout tone={disk.ok ? "info" : "error"}>{disk.message}</Callout>}
           </label>
 
-          {submitError && <p className="text-xs text-red-600">{submitError}</p>}
+          {submitError && <Callout tone="error">{submitError}</Callout>}
 
           <div className="flex items-center justify-end gap-2">
             <PillButton
               onClick={startRun}
-              disabled={submitting || !runName.trim() || !meetsFileMinimum || hardwareGate.level === "block"}
+              disabled={submitting || !runName.trim() || !meetsFileMinimum || hardwareGate.level === "block" || disk?.ok === false}
             >
               {submitting ? "Starting…" : "Start training run"}
             </PillButton>
@@ -928,7 +986,7 @@ function RunRow({ run, live, onCancel }: { run: TrainingRunRow; live: TrainingPr
   }, [run.hyperparams]);
 
   return (
-    <div className="rounded-[10px] bg-ink/[0.03] px-3 py-2.5">
+    <InsetCard>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -943,20 +1001,23 @@ function RunRow({ run, live, onCancel }: { run: TrainingRunRow; live: TrainingPr
             </p>
           )}
           {(run.status === "failed" || run.status === "interrupted") && run.error && (
-            <p className="mt-1 text-xs text-red-600">{run.error}</p>
+            <p className="mt-1 text-xs text-danger">{run.error}</p>
           )}
-          {run.status === "completed" && run.output_dir && (
-            <p className="mt-1 truncate text-xs text-ink-muted">Saved to {run.output_dir}</p>
-          )}
+          {run.status === "completed" &&
+            (run.output_checkpoint_id ? (
+              run.output_dir && <p className="mt-1 truncate text-xs text-ink-muted">Saved to {run.output_dir}</p>
+            ) : (
+              <p className="mt-1 text-xs text-ink-muted">Trained model deleted</p>
+            ))}
         </div>
         {(run.status === "running" || run.status === "preparing" || run.status === "queued") && (
-          <PillButton variant="ghost" className="!px-3 !py-1 text-xs" onClick={onCancel}>
+          <PillButton variant="ghost" size="sm" onClick={onCancel}>
             Cancel
           </PillButton>
         )}
       </div>
       <RunProgress run={run} live={live} />
-    </div>
+    </InsetCard>
   );
 }
 

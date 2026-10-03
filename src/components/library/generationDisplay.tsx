@@ -2,19 +2,11 @@ import type { ReactNode } from "react";
 import type { GenerationRow } from "../../lib/db";
 import { getManifest, type ManifestSelectOption, type ModelManifest } from "../../data/manifests";
 import { LICENSE_LABEL } from "../../data/catalog";
+import { Badge } from "../ui/Badge";
 
+// Kept as the library's name for the shared Badge.
 export function Chip({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "live" | "bad" }) {
-  const toneClass =
-    tone === "bad"
-      ? "bg-red-500/12 text-red-600 dark:text-red-400"
-      : tone === "live"
-        ? "bg-accent/12 text-ink"
-        : "bg-ink/[0.07] text-ink-muted";
-  return (
-    <span className={`shrink-0 rounded-chip px-2 py-0.5 text-[10px] font-medium tracking-wide ${toneClass}`}>
-      {children}
-    </span>
-  );
+  return <Badge tone={tone}>{children}</Badge>;
 }
 
 export function StatusChip({ status }: { status: string }) {
@@ -22,10 +14,9 @@ export function StatusChip({ status }: { status: string }) {
   if (status === "failed") return <Chip tone="bad">Failed</Chip>;
   if (status === "cancelled") return <Chip>Cancelled</Chip>;
   return (
-    <Chip tone="live">
-      <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle" />
+    <Badge tone="live" pulse>
       {status === "running" ? "Generating" : "Queued"}
-    </Chip>
+    </Badge>
   );
 }
 
@@ -42,7 +33,7 @@ export function LicenseBadge({ modelId }: { modelId: string }) {
       : "non-commercial use only.";
   return (
     <span
-      className="shrink-0 rounded-chip bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
+      className="shrink-0 rounded-chip bg-warning/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
       title={`${manifest.displayName} output is licensed ${LICENSE_LABEL[manifest.licenseTier]} — ${terms}`}
     >
       {LICENSE_LABEL[manifest.licenseTier]}

@@ -11,7 +11,7 @@ function PrereqRow({ label, info }: { label: string; info: { available: boolean;
   return (
     <div className="flex items-center justify-between gap-3 border-b border-ink/[0.07] py-2 last:border-b-0">
       <span className="text-xs text-ink-muted">{label}</span>
-      <span className={`text-xs ${info.available ? "text-ink" : "text-red-600"}`}>
+      <span className={`text-xs ${info.available ? "text-ink" : "text-danger"}`}>
         {info.available ? (info.version ?? "Found") : "Not found"}
       </span>
     </div>
@@ -89,18 +89,18 @@ function ModelRow({ modelId, displayName, hardware, currentPlatform, gpu, highli
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{displayName}</span>
             {!platformOk && (
-              <span className="rounded-chip bg-red-500/12 px-2 py-0.5 text-[10px] font-medium text-red-600">
+              <span className="rounded-chip bg-danger/12 px-2 py-0.5 text-[10px] font-medium text-danger">
                 Not supported on {PLATFORM_LABEL[currentPlatform] ?? currentPlatform}
               </span>
             )}
             {platformOk && !gpuOk && (
-              <span className="rounded-chip bg-amber-500/12 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+              <span className="rounded-chip bg-warning/12 px-2 py-0.5 text-[10px] font-medium text-warning">
                 Needs {hardware.minVramGb}GB+ VRAM
               </span>
             )}
           </div>
           <p className="mt-0.5 text-xs text-ink-muted">{statusLine}</p>
-          {installMessage && <p className="mt-1 text-xs text-red-600">{installMessage}</p>}
+          {installMessage && <p className="mt-1 text-xs text-danger">{installMessage}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <PillButton variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={refresh} disabled={checking || installing}>
@@ -171,7 +171,7 @@ export function EnvironmentTab({ highlightModelId }: { highlightModelId?: string
             <PrereqRow label="uv (Python & package manager)" info={prereqs.uv} />
             <PrereqRow label="git" info={prereqs.git} />
             {!prereqs.uv.available && (
-              <p className="mt-2 text-xs text-amber-600">
+              <p className="mt-2 text-xs text-warning">
                 uv isn't installed, so nothing below can install automatically yet — get it from{" "}
                 <button
                   type="button"

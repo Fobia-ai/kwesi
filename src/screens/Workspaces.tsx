@@ -152,7 +152,7 @@ export function WorkspacesScreen() {
                     setDeleteFilesToo(false);
                     setPendingDelete(w);
                   }}
-                  className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-red-500/10 hover:text-red-600 group-hover:opacity-100"
+                  className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-danger/10 hover:text-danger group-hover:opacity-100"
                 >
                   Delete
                 </button>

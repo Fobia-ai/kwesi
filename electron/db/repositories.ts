@@ -595,6 +595,34 @@ export function upsertTrainedModelVariant(
   ).run(randomUUID(), modelId, variantName, installPath, diskSizeBytes, displayName);
 }
 
+export function getTrainedModelById(id: string): TrainedModelRow | undefined {
+  return getDatabase().prepare("SELECT * FROM trained_model WHERE id = ?").get(id) as TrainedModelRow | undefined;
+}
+
+/**
+ * The model_variant row a trained_model registered, matched by the run-id
+ * suffix deriveVariantName (trainingManager.ts) puts on every trained
+ * variant name. Undefined for runs from before trained variants existed.
+ */
+export function getVariantForTrainedModel(tm: TrainedModelRow): ModelVariantRow | undefined {
+  return getDatabase()
+    .prepare(
+      `SELECT * FROM model_variant WHERE model_id = ? AND source = 'trained'
+       AND variant_name LIKE '%-' || ?`,
+    )
+    .get(tm.base_model_id, tm.training_run_id.slice(0, 8)) as ModelVariantRow | undefined;
+}
+
+/** Removes one trained model's rows: its variant, its trained_model row, and the run's link to it. */
+export function deleteTrainedModelRows(tm: TrainedModelRow, variantId: string | null): void {
+  const db = getDatabase();
+  db.transaction(() => {
+    if (variantId) db.prepare("DELETE FROM model_variant WHERE id = ?").run(variantId);
+    db.prepare("UPDATE training_run SET output_checkpoint_id = NULL WHERE output_checkpoint_id = ?").run(tm.id);
+    db.prepare("DELETE FROM trained_model WHERE id = ?").run(tm.id);
+  })();
+}
+
 /**
  * Where a trained variant's checkpoint lives according to its trained_model
  * row, matched the same way as the display-name backfill: deriveVariantName

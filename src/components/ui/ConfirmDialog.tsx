@@ -35,10 +35,7 @@ export function ConfirmDialog({
           <PillButton variant="ghost" onClick={onCancel}>
             Cancel
           </PillButton>
-          <PillButton
-            onClick={onConfirm}
-            className={danger ? "!bg-red-600 !text-white hover:!brightness-110" : ""}
-          >
+          <PillButton onClick={onConfirm} variant={danger ? "danger" : "accent"}>
             {confirmLabel}
           </PillButton>
         </div>

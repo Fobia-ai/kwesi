@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal } from "../ui/Modal";
 import { PillButton } from "../ui/PillButton";
+import { InsetCard } from "../ui/InsetCard";
+import { LogPanel } from "../ui/LogPanel";
+import { Callout } from "../ui/Callout";
 import { getManifest } from "../../data/manifests";
 import { kwesiDb, type ModelVariantRow } from "../../lib/db";
 import { kwesiModels, type ModelsProgressEvent } from "../../lib/models";
@@ -114,7 +117,7 @@ export function ModelSetupDialog({ modelId, onClose, purpose = "generate", varia
         </p>
 
         {targetVariantName && (
-        <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
+        <InsetCard>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-medium">{training ? `Base weights · ${targetVariantName}` : "Model weights"}</p>
@@ -130,7 +133,7 @@ export function ModelSetupDialog({ modelId, onClose, purpose = "generate", varia
             </div>
             {!checkpointReady && (
               <PillButton
-                className="!px-3 !py-1.5 text-xs"
+                size="sm"
                 onClick={installVariant}
                 disabled={installingVariant || variant?.install_status === "downloading" || variant?.install_status === "queued"}
               >
@@ -138,10 +141,10 @@ export function ModelSetupDialog({ modelId, onClose, purpose = "generate", varia
               </PillButton>
             )}
           </div>
-        </div>
+        </InsetCard>
         )}
 
-        <div className="rounded-[12px] bg-ink/[0.03] px-3 py-2.5">
+        <InsetCard>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-medium">{training ? "Training environment" : "Environment"}</p>
@@ -150,18 +153,14 @@ export function ModelSetupDialog({ modelId, onClose, purpose = "generate", varia
               </p>
             </div>
             {!envReady && (
-              <PillButton className="!px-3 !py-1.5 text-xs" onClick={installEnv} disabled={installingEnv}>
+              <PillButton size="sm" onClick={installEnv} disabled={installingEnv}>
                 Set up
               </PillButton>
             )}
           </div>
-          {envLog.length > 0 && (
-            <pre className="kwesi-scroll-inset mt-2 max-h-24 overflow-y-auto rounded-[8px] bg-ink/[0.05] p-2 font-mono text-[10px] leading-relaxed text-ink-muted">
-              {envLog.join("\n")}
-            </pre>
-          )}
-          {envError && <p className="mt-1 text-xs text-red-600">{envError}</p>}
-        </div>
+          <LogPanel lines={envLog} className="mt-2" />
+          {envError && <Callout tone="error" className="mt-2">{envError}</Callout>}
+        </InsetCard>
 
         <button
           type="button"

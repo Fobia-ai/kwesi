@@ -11,6 +11,9 @@ export default {
         "ink-muted": "rgb(var(--kwesi-ink-muted) / <alpha-value>)",
         accent: "rgb(var(--kwesi-accent) / <alpha-value>)",
         "accent-ink": "rgb(var(--kwesi-accent-ink) / <alpha-value>)",
+        danger: "rgb(var(--kwesi-danger) / <alpha-value>)",
+        warning: "rgb(var(--kwesi-warning) / <alpha-value>)",
+        success: "rgb(var(--kwesi-success) / <alpha-value>)",
       },
       borderRadius: {
         card: "20px",

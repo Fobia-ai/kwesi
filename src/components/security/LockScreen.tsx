@@ -51,7 +51,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
             className="kwesi-glass w-full rounded-[10px] px-3 py-2 text-center text-sm outline-none focus:ring-2 focus:ring-accent/40"
           />
           {error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {error}
             </p>
           )}

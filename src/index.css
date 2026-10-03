@@ -28,6 +28,12 @@
      starts level with each screen's main glass panel instead of the header
      text above it. Update both together if PageHeader's typography changes. */
   --kwesi-header-h: 90px;
+  /* Status colors, flipped per theme like ink/accent. Tailwind's dark:
+     variants never apply here (dark mode comes from prefers-color-scheme,
+     not a .dark class), so these must be tokens, not dark: overrides. */
+  --kwesi-danger: 220 38 38;
+  --kwesi-warning: 180 83 9;
+  --kwesi-success: 4 120 87;
 }
 
 .dark {
@@ -58,6 +64,9 @@
   --kwesi-glass-border: 255 255 255;
   --kwesi-glass-border-alpha: 0.14;
   --kwesi-glass-sheen: 0.1;
+  --kwesi-danger: 252 165 165;
+  --kwesi-warning: 252 211 77;
+  --kwesi-success: 110 231 183;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -73,6 +82,9 @@
     --kwesi-glass-border: 255 255 255;
     --kwesi-glass-border-alpha: 0.14;
     --kwesi-glass-sheen: 0.1;
+    --kwesi-danger: 252 165 165;
+    --kwesi-warning: 252 211 77;
+    --kwesi-success: 110 231 183;
   }
 }
 

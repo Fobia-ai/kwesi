@@ -166,8 +166,15 @@ export type TrainingInputKind = "audio_raw" | "audio_captioned" | "midi";
 export interface TrainingDatasetRequirements {
   fileTypes: string[];
   minFiles: number;
+  // Blocking: the run won't start below this much audio in total.
   minTotalDurationMin: number;
   requiresCaptions: boolean;
+  // Warnings only (the run still works): clips shorter/longer than what the
+  // model's training actually uses, and why -- shown verbatim in the form.
+  recommendedMinClipSec?: number;
+  shortClipReason?: string;
+  maxClipSec?: number;
+  longClipReason?: string;
 }
 
 export interface TrainingHardware {
@@ -308,6 +315,10 @@ const MUSICGEN: ModelManifest = {
       minFiles: 2,
       minTotalDurationMin: 0.5,
       requiresCaptions: true,
+      // audiocraft's musicgen solver trains on 30s segments (dataset.
+      // segment_duration) and zero-pads anything shorter (dataset.pad).
+      recommendedMinClipSec: 30,
+      shortClipReason: "MusicGen trains on 30-second segments and pads shorter clips with silence, which teaches it silence.",
     },
     hyperparameters: [
       {
@@ -761,6 +772,9 @@ const ACE_STEP: ModelManifest = {
       minFiles: 2,
       minTotalDurationMin: 0.5,
       requiresCaptions: true,
+      // trainingManager.ts preprocesses with Side-Step's --max-duration 240.
+      maxClipSec: 240,
+      longClipReason: "ACE-Step only trains on the first 4 minutes of each clip.",
     },
     hyperparameters: [
       {

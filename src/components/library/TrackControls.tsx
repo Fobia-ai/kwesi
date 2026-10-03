@@ -79,7 +79,7 @@ export function TrackControls({ track, queue, lyricsActive, onToggleLyrics }: Tr
       </button>
 
       {problem ? (
-        <p className="min-w-0 flex-1 truncate px-2 text-[11px] text-red-500">{problem}</p>
+        <p className="min-w-0 flex-1 truncate px-2 text-[11px] text-danger">{problem}</p>
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
           <span className="w-9 shrink-0 text-[11px] tabular-nums text-ink-muted">{formatDuration(shownTime)}</span>

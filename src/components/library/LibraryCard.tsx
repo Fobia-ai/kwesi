@@ -760,7 +760,7 @@ function RowDetails({ item }: { item: LibraryItem }) {
           </ul>
         </div>
       )}
-      {item.generation.error && <p className="text-xs text-red-600">{item.generation.error}</p>}
+      {item.generation.error && <p className="text-xs text-danger">{item.generation.error}</p>}
     </div>
   );
 }
@@ -831,7 +831,7 @@ function RowMenu({
           <button
             type="button"
             role="menuitem"
-            className={`${itemClass} text-red-600 hover:!bg-red-500/10`}
+            className={`${itemClass} text-danger hover:!bg-danger/10`}
             onClick={() => { setOpen(false); onDelete(); }}
           >
             Delete

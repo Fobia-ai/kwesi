@@ -1,4 +1,7 @@
 import type { TrainingRunRow, TrainedModelRow } from "./db";
+import type { TrainingDiskCheck, TrainingDiskParams } from "./kwesiBridge";
+
+export type { TrainingDiskCheck, TrainingDiskParams } from "./kwesiBridge";
 
 export type TrainingPhase = "preprocess" | "train" | "export";
 
@@ -39,6 +42,11 @@ export interface KwesiTrainingApi {
   get(runId: string): Promise<TrainingRunRow | null>;
   cancel(runId: string): Promise<boolean>;
   listTrainedModels(modelId?: string): Promise<TrainedModelRow[]>;
+  // Deletes one trained model's files and registration (see electron/models/trainedModels.ts).
+  deleteTrainedModel(id: string): Promise<{ ok: boolean; reason?: string; freedBytes?: number }>;
+  revealTrainedModel(id: string): Promise<{ ok: boolean }>;
+  // How much disk a run needs vs. what's free (see electron/models/trainingDiskCheck.ts).
+  diskCheck(params: TrainingDiskParams): Promise<TrainingDiskCheck>;
   pickOutputDir(modelId: string, runName: string): Promise<{ ok: boolean; path?: string }>;
   defaultOutputDir(modelId: string, runName: string): Promise<string>;
   // Phase 11: directory picker for models whose dataset input is a
@@ -55,6 +63,9 @@ function realTrainingApi(bridge: NonNullable<Window["kwesi"]>["training"]): Kwes
     get: (runId) => bridge.get(runId),
     cancel: (runId) => bridge.cancel(runId),
     listTrainedModels: (modelId) => bridge.listTrainedModels(modelId),
+    deleteTrainedModel: (id) => bridge.deleteTrainedModel(id),
+    revealTrainedModel: (id) => bridge.revealTrainedModel(id),
+    diskCheck: (params) => bridge.diskCheck(params),
     pickOutputDir: (modelId, runName) => bridge.pickOutputDir(modelId, runName),
     defaultOutputDir: (modelId, runName) => bridge.defaultOutputDir(modelId, runName),
     pickDatasetDir: () => bridge.pickDatasetDir(),
@@ -168,6 +179,16 @@ function createMockTrainingApi(): KwesiTrainingApi {
     },
     async listTrainedModels() {
       return [];
+    },
+    async deleteTrainedModel() {
+      return { ok: false, reason: "[mock] Nothing to delete in the browser preview." };
+    },
+    async revealTrainedModel() {
+      return { ok: false };
+    },
+    async diskCheck(params) {
+      const loc = { path: params.outputDir, freeBytes: null, neededBytes: 0 };
+      return { ok: true, sameDisk: true, work: loc, output: loc, message: "[mock] Disk space isn't checked in the browser preview." };
     },
     async pickOutputDir(modelId, runName) {
       return { ok: true, path: `/mock/trained-models/${modelId}/${runName}` };

@@ -935,6 +935,25 @@ async function ensureAceStepCheckpoint(port: number, variant: string): Promise<s
   return baseVariant;
 }
 
+/**
+ * Called before a trained model's files are deleted: if it's the LoRA the
+ * ACE-Step server currently has applied, unload it so the next generation
+ * doesn't skip loading because it thinks the right adapter is in place.
+ * (MusicGen/MuseCoco just stop being offered once their variant is gone.)
+ */
+export async function forgetTrainedCheckpoint(modelId: string, installPath: string): Promise<void> {
+  if (modelId !== ACE_STEP_MODEL_ID || aceStepLoadedLora !== installPath) return;
+  const handle = realServers.get(ACE_STEP_MODEL_ID);
+  if (handle) {
+    try {
+      await aceStepLoraCall(handle.port, "unload");
+    } catch (err) {
+      console.warn(`[ace-step-1.5] couldn't unload a deleted LoRA: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  aceStepLoadedLora = null;
+}
+
 interface AceStepReleaseTaskResponse {
   data?: { task_id?: string };
   error?: string | null;

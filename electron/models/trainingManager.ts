@@ -38,6 +38,7 @@ import * as repo from "../db/repositories.js";
 import { ensureDir, modelVariantDir, serversRootDir, trainingRunDir, trainingVenvDir } from "../db/paths.js";
 import { queryGpuVram } from "./gpuInfo.js";
 import { musecocoCudaKernelBuilt } from "./musecocoGpu.js";
+import { checkTrainingDisk } from "./trainingDiskCheck.js";
 
 // Measured peak for a MuseCoco GPU fine-tune is ~14.6GB; leave headroom.
 const MUSECOCO_GPU_TRAIN_MIN_FREE_GB = 16;
@@ -1347,7 +1348,21 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
   }
 }
 
-export function submitTrainingRun(params: SubmitTrainingRunParams): SubmitTrainingResult {
+/** Total size of the dataset's files (a directory dataset counts as 0 -- it's tiny next to the run). */
+export function datasetSizeBytes(files: string[]): number {
+  let total = 0;
+  for (const f of files) {
+    try {
+      const stat = fs.statSync(f);
+      if (stat.isFile()) total += stat.size;
+    } catch {
+      // missing files are reported by the pipeline itself
+    }
+  }
+  return total;
+}
+
+export async function submitTrainingRun(params: SubmitTrainingRunParams): Promise<SubmitTrainingResult> {
   if (!TRAINING_VENV_BY_MODEL[params.modelId]) {
     return { ok: false, reason: `Training isn't supported for "${params.modelId}" yet.` };
   }
@@ -1357,6 +1372,13 @@ export function submitTrainingRun(params: SubmitTrainingRunParams): SubmitTraini
   if (!params.runName.trim()) {
     return { ok: false, reason: "A run name is required." };
   }
+  const disk = await checkTrainingDisk({
+    modelId: params.modelId,
+    outputDir: params.outputDir,
+    hyperparams: params.hyperparams,
+    datasetBytes: datasetSizeBytes(params.datasetFiles),
+  });
+  if (!disk.ok) return { ok: false, reason: disk.message };
 
   const trainingRun = repo.createTrainingRun(
     params.modelId,

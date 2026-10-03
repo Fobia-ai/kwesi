@@ -155,7 +155,7 @@ function ProjectSwitcher({
                       onRequestDelete(project);
                     }}
                     aria-label={`Delete ${project.name}`}
-                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded-[6px] px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-red-500/10 hover:text-red-600 group-hover:block"
+                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded-[6px] px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-danger/10 hover:text-danger group-hover:block"
                   >
                     ✕
                   </button>
@@ -215,7 +215,7 @@ function NewTrackForm({
         </div>
         <button
           onClick={onCancel}
-          className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600"
+          className="shrink-0 rounded-[8px] px-2 py-1 text-xs text-ink-muted transition-colors duration-150 hover:bg-danger/10 hover:text-danger"
         >
           Cancel
         </button>

@@ -85,6 +85,10 @@ contextBridge.exposeInMainWorld("kwesi", {
     get: (runId: string) => ipcRenderer.invoke("kwesi:training:get", runId),
     cancel: (runId: string) => ipcRenderer.invoke("kwesi:training:cancel", runId),
     listTrainedModels: (modelId?: string) => ipcRenderer.invoke("kwesi:training:listTrainedModels", modelId),
+    deleteTrainedModel: (id: string) => ipcRenderer.invoke("kwesi:training:deleteTrainedModel", id),
+    diskCheck: (params: { modelId: string; outputDir: string; hyperparams: Record<string, unknown>; datasetBytes: number }) =>
+      ipcRenderer.invoke("kwesi:training:diskCheck", params),
+    revealTrainedModel: (id: string) => ipcRenderer.invoke("kwesi:training:revealTrainedModel", id),
     pickOutputDir: (modelId: string, runName: string) =>
       ipcRenderer.invoke("kwesi:training:pickOutputDir", modelId, runName),
     pickDatasetDir: () => ipcRenderer.invoke("kwesi:training:pickDatasetDir"),

@@ -2,6 +2,8 @@ import { ipcMain, dialog, BrowserWindow } from "electron";
 import * as repo from "../db/repositories.js";
 import { submitTrainingRun, cancelTrainingRun, type SubmitTrainingRunParams } from "../models/trainingManager.js";
 import { kwesiTrainedModelsDir } from "../db/paths.js";
+import { deleteTrainedModel, listTrainedModelsWithSize, revealTrainedModel } from "../models/trainedModels.js";
+import { checkTrainingDisk, type TrainingDiskParams } from "../models/trainingDiskCheck.js";
 
 /**
  * Real native folder-picker for the training output-directory field, same
@@ -43,7 +45,10 @@ export function registerTrainingIpcHandlers() {
   ipcMain.handle("kwesi:training:list", (_e, modelId?: string) => repo.listTrainingRuns(modelId));
   ipcMain.handle("kwesi:training:get", (_e, runId: string) => repo.getTrainingRunById(runId) ?? null);
   ipcMain.handle("kwesi:training:cancel", (_e, runId: string) => cancelTrainingRun(runId));
-  ipcMain.handle("kwesi:training:listTrainedModels", (_e, modelId?: string) => repo.listTrainedModels(modelId));
+  ipcMain.handle("kwesi:training:listTrainedModels", (_e, modelId?: string) => listTrainedModelsWithSize(modelId));
+  ipcMain.handle("kwesi:training:deleteTrainedModel", (_e, id: string) => deleteTrainedModel(id));
+  ipcMain.handle("kwesi:training:diskCheck", (_e, params: TrainingDiskParams) => checkTrainingDisk(params));
+  ipcMain.handle("kwesi:training:revealTrainedModel", (_e, id: string) => revealTrainedModel(id));
   ipcMain.handle("kwesi:training:pickOutputDir", (_e, modelId: string, runName: string) => pickOutputDir(modelId, runName));
   ipcMain.handle("kwesi:training:defaultOutputDir", (_e, modelId: string, runName: string) =>
     kwesiTrainedModelsDir(modelId, runName),
