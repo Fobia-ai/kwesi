@@ -289,26 +289,31 @@ the same tiny illustrative dataset the real `microsoft/muzic` repo itself
 ships) were all confirmed present and usable with **zero additional
 dependency work** beyond what Phase 7's inference venv already built.
 
-### Real, honest scope cut: raw-MIDI dataset prep isn't wired up
+### Dataset: your own MIDI files
 
-The real MIDI → attribute-sequence extraction pipeline exists in the
-vendored repo (`servers/musecoco/vendor/2-attribute2music_dataprepare/`,
-confirmed by reading `extract_data.py`/`midi_data_extractor/`), but wiring
-it end-to-end (raw MIDI upload → attribute extraction → `fairseq-preprocess`
-→ binarized data-bin) was judged out of this phase's time budget, given the
-roadmap's own explicit lower priority for MuseCoco relative to ACE-Step/
-MusicGen. So `Training.tsx`'s dataset input for this model is a **directory
-picker** (`DatasetDirPicker`), pointed at an already-binarized fairseq
-data-bin directory (dict.txt + .bin/.idx files — the same shape the
-vendored example dataset already has), not a raw-MIDI drop-zone. A future
-phase closing this gap would extend `runMuseCocoTrainingPipeline` with a
-real `preprocess` phase calling into `2-attribute2music_dataprepare/
-extract_data.py`, then `fairseq-preprocess`.
+The Training screen takes `.mid`/`.midi` files. The pipeline's first phase
+runs `prepare_dataset.py` (in the musecoco venv), which:
+
+1. extracts each file with the vendored `2-attribute2music_dataprepare`
+   extractor: REMI tokens plus the objective attributes (instruments, tempo,
+   key, time signature, bar count, pitch range, rhythm…), cut into segments;
+2. keeps segments within the 2560-token training length;
+3. writes `train`/`valid` text + `{split}_command.npy`, and binarizes them
+   with `fairseq-preprocess` against the model's own `dict.txt`, so the
+   vocabulary always matches (0.0% `<unk>` on real files).
+
+Unreadable files are skipped and named in the run log. The upstream
+`extract_data.py` / `split_data.py` don't work as shipped, which is why this
+script exists instead: they extract a 12-attribute list while training reads
+all 15 `v3` keys, store `ST1` as a raw field dict, hard-code 1000 input
+files, and save `[values]` lists where `CommandDataset` reads
+`command["values"]` from the whole piece dict. Each of those was a real
+`KeyError`/crash when tried.
 
 ### Verified run
 
-The app's exact invocation (see `runMuseCocoTrainingPipeline`), run against
-the vendored example data-bin with `--max-update 1`, on CPU:
+First verified against the vendored example data-bin with `--max-update 1`,
+on CPU:
 
 - loaded the installed base checkpoint via `--restore-file` (`loaded
   checkpoint ... (epoch 2 @ 0 updates)`), first-update loss 4.43 / ppl 21.6
@@ -317,6 +322,12 @@ the vendored example data-bin with `--max-update 1`, on CPU:
   (weights + Adam state);
 - generation from that checkpoint through `server.py`'s `checkpoint_path`
   produced a valid MIDI file.
+
+Then end to end from the Training screen with six multi-track MIDI files
+(one fake `.mid` was flagged unreadable in the form and blocked the run until
+removed): 18 segments, 10 GPU updates in 13s (most of the ~2.5 min run is
+loading the 14.5GB base checkpoint), and a workspace generation from the
+trained model produced MIDI plus its rendered WAV.
 
 Pitfalls found on the way, all fixed in the pipeline:
 

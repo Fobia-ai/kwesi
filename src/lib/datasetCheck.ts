@@ -30,6 +30,17 @@ export interface DatasetCheckResult {
 // Chromium can't decode these, so their length can't be checked here --
 // they're still valid for the training backends, which read them natively.
 const UNPROBEABLE_EXTS = [".aiff", ".aif"];
+const MIDI_EXTS = [".mid", ".midi"];
+
+/** A MIDI file is checked by its "MThd" header; it has no audio length to measure. */
+async function probeMidi(file: File): Promise<ClipProbe> {
+  try {
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    return { status: String.fromCharCode(...head) === "MThd" ? "ok" : "unreadable", durationSec: null };
+  } catch {
+    return { status: "unreadable", durationSec: null }; // moved, deleted or not permitted since it was picked
+  }
+}
 
 function ext(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -52,9 +63,10 @@ export function validateDataset(
 ): DatasetCheckResult {
   const issues: DatasetIssue[] = [];
   const at = (status: ClipStatus) => files.filter((_, i) => probes[i]?.status === status);
+  const midi = req.fileTypes.length > 0 && req.fileTypes.every((t) => MIDI_EXTS.includes(t));
 
   if (files.length < req.minFiles) {
-    issues.push({ tone: "error", message: `Needs at least ${plural(req.minFiles, "audio clip")} (have ${files.length}).` });
+    issues.push({ tone: "error", message: `Needs at least ${plural(req.minFiles, midi ? "MIDI file" : "audio clip")} (have ${files.length}).` });
   }
 
   const empty = at("empty");
@@ -64,7 +76,7 @@ export function validateDataset(
   if (unreadable.length > 0) {
     issues.push({
       tone: "error",
-      message: `Couldn't read ${names(unreadable)} — ${unreadable.length === 1 ? "it may be" : "they may be"} corrupt or not really audio. Remove or re-export ${unreadable.length === 1 ? "it" : "them"}.`,
+      message: `Couldn't read ${names(unreadable)} — ${unreadable.length === 1 ? "it may be" : "they may be"} corrupt or not really ${midi ? "MIDI" : "audio"}. Remove or re-export ${unreadable.length === 1 ? "it" : "them"}.`,
     });
   }
 
@@ -111,7 +123,7 @@ export function validateDataset(
   if (dupes.size > 0) {
     issues.push({
       tone: "warning",
-      message: `More than one file is named ${[...dupes].join(", ")}. Captions pair up by file name, so rename the duplicates.`,
+      message: `More than one file is named ${[...dupes].join(", ")}. ${req.requiresCaptions ? "Captions pair up by file name, so rename the duplicates." : "Rename the duplicates so each one is used."}`,
     });
   }
 
@@ -127,7 +139,9 @@ export function probeClip(file: File): Promise<ClipProbe> {
   const probe: Promise<ClipProbe> =
     file.size === 0
       ? Promise.resolve({ status: "empty", durationSec: 0 })
-      : UNPROBEABLE_EXTS.includes(ext(file.name))
+      : MIDI_EXTS.includes(ext(file.name))
+        ? probeMidi(file)
+        : UNPROBEABLE_EXTS.includes(ext(file.name))
         ? Promise.resolve({ status: "unknown", durationSec: null })
         : new Promise((resolve) => {
             const url = URL.createObjectURL(file);
@@ -155,7 +169,11 @@ export function useDatasetCheck(files: File[], req: TrainingDatasetRequirements 
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all(files.map(async (f) => [f, await probeClip(f)] as const)).then((entries) => {
+    // A probe that throws counts as unreadable -- one bad file must never
+    // leave the whole check stuck on "checking…".
+    const safeProbe = (f: File) =>
+      probeClip(f).catch((): ClipProbe => ({ status: "unreadable", durationSec: null }));
+    Promise.all(files.map(async (f) => [f, await safeProbe(f)] as const)).then((entries) => {
       if (!cancelled) setProbes(new Map(entries));
     });
     return () => {

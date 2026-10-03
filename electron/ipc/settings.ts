@@ -12,7 +12,7 @@ const MODELS_DIR_SETTING_KEY = "modelsDir";
 const ACKNOWLEDGED_KEY = "acknowledgedFirstLaunch";
 
 // Same native folder-picker pattern electron/ipc/training.ts's
-// pickOutputDir/pickDatasetDir already use.
+// pickOutputDir already uses.
 async function pickExportsDir(): Promise<{ ok: boolean; path?: string }> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
   const opts = {

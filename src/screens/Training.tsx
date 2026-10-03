@@ -67,8 +67,6 @@ const STATUS_LABEL: Record<string, string> = {
   interrupted: "Interrupted",
 };
 
-const NO_FILES: File[] = [];
-
 function StatusBadge({ status }: { status: string }) {
   const tone: BadgeTone =
     status === "completed"
@@ -417,19 +415,23 @@ async function resolveCaptions(
 /** A clip's length in a file list, or why it's unknown. */
 function ClipLength({ probe }: { probe: ClipProbe | undefined }) {
   if (!probe) return <span className="shrink-0 text-[10px] text-ink-muted/60">…</span>;
-  if (probe.status === "ok") return <span className="shrink-0 tabular-nums text-[10px] text-ink-muted">{formatDuration(probe.durationSec)}</span>;
+  if (probe.status === "ok")
+    return probe.durationSec === null ? null : <span className="shrink-0 tabular-nums text-[10px] text-ink-muted">{formatDuration(probe.durationSec)}</span>;
   if (probe.status === "unknown") return <span className="shrink-0 text-[10px] text-ink-muted/60">?:??</span>;
   return <span className="shrink-0 text-[10px] text-danger">{probe.status === "empty" ? "empty" : "unreadable"}</span>;
 }
 
-/** "3 clips · 1:30 total" plus whatever the dataset check found. */
-function DatasetSummary({ count, check }: { count: number; check: ReturnType<typeof useDatasetCheck> }) {
+/** "3 clips · 1:30 total" (or "6 MIDI files") plus whatever the dataset check found. */
+function DatasetSummary({ count, check, midi = false }: { count: number; check: ReturnType<typeof useDatasetCheck>; midi?: boolean }) {
   if (count === 0 || !check.result) return null;
   const { result, checking } = check;
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-xs text-ink-muted">
-        {count} clip{count === 1 ? "" : "s"} · {formatDuration(result.totalSec)} total{checking ? " · checking…" : ""}
+        {midi
+          ? `${count} MIDI file${count === 1 ? "" : "s"}`
+          : `${count} clip${count === 1 ? "" : "s"} · ${formatDuration(result.totalSec)} total`}
+        {checking ? " · checking…" : ""}
       </p>
       {!checking &&
         result.issues.map((issue) => (
@@ -438,40 +440,6 @@ function DatasetSummary({ count, check }: { count: number; check: ReturnType<typ
           </Callout>
         ))}
       {!checking && result.issues.length === 0 && <Callout tone="success">Dataset looks good.</Callout>}
-    </div>
-  );
-}
-
-/**
- * Phase 11: directory-input dataset picker, used only by models whose
- * `training.datasetRequirements.fileTypes` is empty — signals a directory
- * input rather than individual files (currently only MuseCoco's real
- * fairseq data-bin directory — see trainingManager.ts's
- * runMuseCocoTrainingPipeline's honest scope-cut comment for why raw MIDI
- * upload isn't wired yet).
- */
-function DatasetDirPicker({ path, onPathChange }: { path: string; onPathChange: (path: string) => void }) {
-  async function choose() {
-    const result = await kwesiTraining.pickDatasetDir();
-    if (result.ok && result.path) onPathChange(result.path);
-  }
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        <input
-          readOnly
-          value={path}
-          placeholder="No dataset directory chosen"
-          className="kwesi-glass min-w-0 flex-1 rounded-[10px] px-3 py-2 text-xs outline-none"
-        />
-        <PillButton variant="ghost" size="sm" onClick={choose}>
-          Choose…
-        </PillButton>
-      </div>
-      <p className="text-xs text-ink-muted">
-        A pre-binarized fairseq data-bin directory (dict.txt + .bin/.idx files) — raw-MIDI dataset prep isn't wired
-        up yet, see kwesi.docs/04-roadmap.md Phase 11.
-      </p>
     </div>
   );
 }
@@ -513,7 +481,9 @@ function DatasetDropZone({
   return (
     <div className="flex flex-col gap-2">
       <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-ink/20 px-4 py-8 text-center text-sm text-ink-muted transition-colors duration-150 hover:border-accent/50 hover:text-ink">
-        <span>Drop or choose audio files ({fileTypes.join(", ")})</span>
+        <span>
+          Drop or choose {fileTypes.every((t) => t === ".mid" || t === ".midi") ? "MIDI" : "audio"} files ({fileTypes.join(", ")})
+        </span>
         <span className="text-xs">
           {files.length} file{files.length === 1 ? "" : "s"} selected
           {minFiles > 0 && ` — at least ${minFiles} needed`}
@@ -649,7 +619,6 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [captionMode, setCaptionMode] = useState<"files" | "text">("files");
   const [captionFiles, setCaptionFiles] = useState<File[]>([]);
   const [captionPairing, setCaptionPairing] = useState<Record<string, string>>({});
-  const [datasetDirPath, setDatasetDirPath] = useState<string>("");
   const [hyperparams, setHyperparams] = useState<GenerationFormValues>({});
   const [outputDir, setOutputDir] = useState<string>("");
   const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
@@ -662,7 +631,6 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
     setDatasetCaptions({});
     setCaptionFiles([]);
     setCaptionPairing({});
-    setDatasetDirPath("");
   }
 
   useEffect(() => {
@@ -672,10 +640,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   const manifest = modelId ? MANIFESTS[modelId] : undefined;
   const training =
     manifest && manifest.training.supported ? (manifest.training as TrainingSupportedConfig) : undefined;
-  // Phase 11: a model whose dataset input is a whole directory (currently
-  // only MuseCoco's fairseq data-bin) rather than individual files signals
-  // that with an empty fileTypes list — see DatasetDirPicker's own comment.
-  const isDirectoryDataset = training ? training.datasetRequirements.fileTypes.length === 0 : false;
+  const isMidiDataset = training ? training.inputKind === "midi" : false;
   const isCaptionedDataset = training ? training.inputKind === "audio_captioned" : false;
 
   useEffect(() => {
@@ -720,12 +685,8 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
       clearTimeout(timer);
     };
   }, [modelId, outputDir, hyperparams, datasetBytes]);
-  const datasetCheck = useDatasetCheck(isDirectoryDataset ? NO_FILES : files, training?.datasetRequirements);
-  const meetsFileMinimum = training
-    ? isDirectoryDataset
-      ? datasetDirPath.length > 0
-      : files.length > 0 && !datasetCheck.checking && !datasetCheck.result?.blocking
-    : false;
+  const datasetCheck = useDatasetCheck(files, training?.datasetRequirements);
+  const meetsFileMinimum = files.length > 0 && !datasetCheck.checking && !datasetCheck.result?.blocking;
 
   // Gate on the training environment (a model trains in a venv that may
   // differ from its inference one -- RAVE in `rave-train`) and on the base
@@ -752,9 +713,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const datasetFiles = isDirectoryDataset
-        ? [datasetDirPath]
-        : files.map(resolveUploadedFilePath).filter((p) => p.length > 0);
+      const datasetFiles = files.map(resolveUploadedFilePath).filter((p) => p.length > 0);
       const result = await kwesiTraining.submit({
         modelId: manifest.modelId,
         baseCheckpointVariant: null,
@@ -823,21 +782,19 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
 
           <div className="flex flex-col gap-1.5 text-sm">
             <span className="flex items-center gap-1.5">
-              Dataset ({isDirectoryDataset ? "pre-processed directory" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
+              Dataset ({isMidiDataset ? "MIDI files" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
               <InfoHint
                 label="dataset"
                 text={
-                  isDirectoryDataset
-                    ? "This model trains on a pre-binarized fairseq dataset folder (dict.txt plus .bin/.idx files), not raw files. Point it at an already-prepared data-bin directory."
+                  isMidiDataset
+                    ? "The MIDI songs the model learns from. Each file is split into segments and its musical attributes (instruments, tempo, key, time signature, length and more) are read automatically, so no labels are needed. Unreadable files are skipped and listed in the run log."
                     : isCaptionedDataset
                       ? "The audio clips the model learns from, each paired with a short text caption describing it. Captions teach the model what words map to which sounds, so it can follow your prompts afterward. Captions are optional — a blank one falls back to the filename."
                       : "The audio clips the model learns its sound from. This model only needs raw audio — no captions or labels. More (and longer) clips give a better-sounding result."
                 }
               />
             </span>
-            {isDirectoryDataset ? (
-              <DatasetDirPicker path={datasetDirPath} onPathChange={setDatasetDirPath} />
-            ) : isCaptionedDataset ? (
+            {isCaptionedDataset ? (
               <>
                 <CaptionedDataset
                   durationOf={(f) => datasetCheck.probes.get(f)}
@@ -865,7 +822,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                   files={files}
                   onFilesChange={setFiles}
                 />
-                <DatasetSummary count={files.length} check={datasetCheck} />
+                <DatasetSummary count={files.length} check={datasetCheck} midi={isMidiDataset} />
               </>
             )}
           </div>

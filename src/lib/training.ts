@@ -49,10 +49,6 @@ export interface KwesiTrainingApi {
   diskCheck(params: TrainingDiskParams): Promise<TrainingDiskCheck>;
   pickOutputDir(modelId: string, runName: string): Promise<{ ok: boolean; path?: string }>;
   defaultOutputDir(modelId: string, runName: string): Promise<string>;
-  // Phase 11: directory picker for models whose dataset input is a
-  // directory rather than individual files (MuseCoco's fairseq data-bin —
-  // see trainingManager.ts's runMuseCocoTrainingPipeline).
-  pickDatasetDir(): Promise<{ ok: boolean; path?: string }>;
   onProgress(callback: (event: TrainingProgressEvent) => void): () => void;
 }
 
@@ -68,7 +64,6 @@ function realTrainingApi(bridge: NonNullable<Window["kwesi"]>["training"]): Kwes
     diskCheck: (params) => bridge.diskCheck(params),
     pickOutputDir: (modelId, runName) => bridge.pickOutputDir(modelId, runName),
     defaultOutputDir: (modelId, runName) => bridge.defaultOutputDir(modelId, runName),
-    pickDatasetDir: () => bridge.pickDatasetDir(),
     onProgress: (callback) => bridge.onProgress(callback as (event: unknown) => void),
   };
 }
@@ -195,9 +190,6 @@ function createMockTrainingApi(): KwesiTrainingApi {
     },
     async defaultOutputDir(modelId, runName) {
       return `/mock/trained-models/${modelId}/${runName}`;
-    },
-    async pickDatasetDir() {
-      return { ok: true, path: "/mock/dataset-dir" };
     },
     onProgress(callback) {
       listeners.add(callback);

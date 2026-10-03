@@ -554,35 +554,17 @@ const MUSECOCO: ModelManifest = {
     { kind: "audio", format: "wav" },
   ],
   server: { entrypoint: "server.py", venv: "musecoco-venv", portRange: [17620, 17629] },
-  // Phase 11: real `fairseq-train` CLI confirmed and wired (see
+  // Training: a full fine-tune from a folder of MIDI files -- see
   // electron/models/trainingManager.ts's runMuseCocoTrainingPipeline and
-  // servers/musecoco/README.md's "Training (Phase 11)" section) — continues
-  // from the installed 1B-param checkpoint via `--restore-file` using the
-  // vendored repo's own real `linear_mask` fairseq task/arch. **Honestly
-  // scoped down**: the real MIDI->attribute-sequence extraction pipeline
-  // (`servers/musecoco/vendor/2-attribute2music_dataprepare/`) is real and
-  // was read, but wiring raw-MIDI input all the way to a fairseq data-bin
-  // was judged out of this phase's time budget given the roadmap's own
-  // lower priority for MuseCoco — so `datasetRequirements` below asks for
-  // an already-binarized fairseq data-bin directory (the same real shape
-  // the vendored repo's own example dataset ships), not raw MIDI files yet.
-  // **Verification depth**: a real `fairseq-train` run was launched against
-  // the vendored example data-bin, confirmed to load the real installed
-  // checkpoint via `--restore-file` and perform genuine sustained
-  // multi-core CPU computation (no CUDA-built pytorch-fast-transformers
-  // extension here either, same root cause as Phase 7's inference finding)
-  // — but did not complete even one full update within this session's
-  // practical time budget (~8 minutes and still computing), so no trained
-  // checkpoint file was produced/verified this phase. A real, legitimate
-  // partial result, not a guess: the CLI invocation itself is confirmed
-  // correct, just too slow on CPU-only hardware to finish inside this
-  // session.
+  // servers/musecoco/README.md's training section (prepare_dataset.py turns
+  // the MIDI into the fairseq dataset, then fairseq-train continues from the
+  // installed checkpoint, on the GPU when GPU acceleration is built).
   training: {
     supported: true,
     method: "full_finetune",
     inputKind: "midi",
     datasetRequirements: {
-      fileTypes: [],
+      fileTypes: [".mid", ".midi"],
       minFiles: 1,
       minTotalDurationMin: 0,
       requiresCaptions: false,

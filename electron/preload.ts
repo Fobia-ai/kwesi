@@ -91,7 +91,6 @@ contextBridge.exposeInMainWorld("kwesi", {
     revealTrainedModel: (id: string) => ipcRenderer.invoke("kwesi:training:revealTrainedModel", id),
     pickOutputDir: (modelId: string, runName: string) =>
       ipcRenderer.invoke("kwesi:training:pickOutputDir", modelId, runName),
-    pickDatasetDir: () => ipcRenderer.invoke("kwesi:training:pickDatasetDir"),
     defaultOutputDir: (modelId: string, runName: string) =>
       ipcRenderer.invoke("kwesi:training:defaultOutputDir", modelId, runName),
     onProgress: (callback: (event: unknown) => void) => {

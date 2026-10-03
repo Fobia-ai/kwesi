@@ -121,7 +121,6 @@ declare global {
         revealTrainedModel: (id: string) => Promise<{ ok: boolean }>;
         pickOutputDir: (modelId: string, runName: string) => Promise<{ ok: boolean; path?: string }>;
         defaultOutputDir: (modelId: string, runName: string) => Promise<string>;
-        pickDatasetDir: () => Promise<{ ok: boolean; path?: string }>;
         onProgress: (callback: (event: unknown) => void) => () => void;
       };
       security: {

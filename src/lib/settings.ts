@@ -86,7 +86,7 @@ function createMockSettingsApi(): KwesiSettingsApi {
     async pickExportsDir() {
       // No real native folder picker in a plain browser preview -- picks a
       // fixed fake path, same convention src/lib/training.ts's mock
-      // pickOutputDir/pickDatasetDir already use.
+      // pickOutputDir already uses.
       const path = "/mock/exports/chosen-folder";
       try {
         localStorage.setItem(MOCK_EXPORTS_DIR_KEY, path);

@@ -937,29 +937,22 @@ function parseMuseCocoTrainProgress(
 }
 
 /**
- * MuseCoco full fine-tune — the real vendored `fairseq-train` console
- * script (`servers/musecoco/vendor/2-attribute2music_model`'s own real
- * `linear_mask` fairseq user-dir task/arch, the same code Phase 7's
- * inference already loads), continuing from the installed checkpoint via
- * `--restore-file` + `--reset-optimizer --reset-dataloader
- * --reset-lr-scheduler --reset-meters` (a real fine-tune, not resuming the
- * original XP's own optimizer state/step count). One real phase — unlike
- * RAVE/ACE-Step/MusicGen, fairseq's own checkpoint format needs no preprocess
- * or export step: it's already what the vendored inference server loads.
+ * MuseCoco full fine-tune from a folder of MIDI files, in two phases:
  *
- * Real, honestly-documented limitation: the vendored `2-attribute2music_
- * dataprepare/` MIDI->attribute-sequence extraction pipeline is real and
- * exists (confirmed by reading it), but is not wired into this pipeline —
- * this phase's `--dataset-dir` input is a pre-binarized fairseq `data-bin`
- * directory (dict.txt + .bin/.idx files, the same real shape the vendored
- * repo's own example dataset already ships), not raw MIDI files, since
- * building the full extraction pipeline's own dependency surface was judged
- * out of this phase's time budget given MuseCoco's own explicit lower
- * priority in the roadmap. See servers/musecoco/README.md for the exact gap
- * and what a future phase would need to close it.
+ * 1. preprocess -- servers/musecoco/prepare_dataset.py reads each MIDI with
+ *    the vendored extractor (REMI tokens + attribute values), then writes a
+ *    fairseq data-bin and the {split}_command.npy attribute files the task
+ *    reads. It uses the model's own dict.txt, so the vocabulary always
+ *    matches. (The upstream split/binarize scripts don't work as shipped --
+ *    see that script's docstring.)
+ * 2. train -- the vendored `fairseq-train` with the repo's own `linear_mask`
+ *    task/arch, continuing from the installed checkpoint via --restore-file
+ *    plus --reset-optimizer/dataloader/lr-scheduler/meters (a fine-tune, not
+ *    a resume of the original run). fairseq's checkpoint is already what the
+ *    inference server loads, so there's no export step.
  */
 async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runId: string): Promise<void> {
-  const { modelId, datasetFiles, hyperparams, outputDir } = params;
+  const { modelId, datasetFiles, allowedExtensions, hyperparams, outputDir } = params;
   const workDir = trainingRunDir(runId);
   ensureDir(workDir);
   const heartbeatPath = path.join(workDir, "heartbeat.json");
@@ -969,17 +962,6 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
   broadcast({ type: "status", runId, status: "preparing" });
 
   try {
-    // The dataset "files" here are a single fairseq data-bin directory
-    // picked via the same native folder dialog Training.tsx's dataset
-    // drop-zone already has for files (see that screen's MuseCoco-specific
-    // branch) — datasetFiles[0] is that directory's path, not an audio/MIDI
-    // file, per this pipeline's documented scope cut above.
-    const dataBinDir = datasetFiles[0];
-    if (!dataBinDir || !fs.existsSync(path.join(dataBinDir, "dict.txt"))) {
-      throw new Error(`Expected a fairseq data-bin directory (with dict.txt) at ${dataBinDir}`);
-    }
-    const commandPath = path.dirname(dataBinDir);
-
     const venvName = TRAINING_VENV_BY_MODEL[modelId];
     const venvDir = trainingVenvDir(venvName);
     const fairseqTrain = path.join(venvDir, "bin", "fairseq-train");
@@ -990,6 +972,48 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     const restoreFrom = path.join(vendorModelDir, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt");
     if (!fs.existsSync(restoreFrom)) {
       throw new Error(`MuseCoco base checkpoint not found at ${restoreFrom}. See servers/musecoco/README.md.`);
+    }
+
+    // Phase 1: MIDI files -> fairseq dataset.
+    const midiDir = path.join(workDir, "midi");
+    ensureDir(midiDir);
+    const staged = stageDatasetFiles(datasetFiles, allowedExtensions, midiDir);
+    if (staged.length === 0) throw new Error("No MIDI files to train on.");
+    const datasetDir = path.join(workDir, "dataset");
+    let summary: { files: number; failed: string[]; segments: number; too_long: number } | null = null;
+    await runPhase(
+      runId,
+      "preprocess",
+      path.join(venvDir, "bin", "python"),
+      [
+        path.join(serversRootDir(), "musecoco", "prepare_dataset.py"),
+        midiDir,
+        datasetDir,
+        "--dict",
+        path.join(vendorModelDir, "data", "truncated_2560", "dict.txt"),
+        "--truncated-length",
+        "2560",
+      ],
+      vendorModelDir,
+      (text) => {
+        appendLog(text);
+        const m = text.match(/KWESI_DATASET (\{.*\})/);
+        if (m) summary = JSON.parse(m[1]);
+      },
+      heartbeatPath,
+    );
+    const dataBinDir = path.join(datasetDir, "data-bin");
+    const commandPath = datasetDir;
+    if (!fs.existsSync(path.join(dataBinDir, "train.bin"))) {
+      throw new Error("Preparing the dataset produced no training data — check that the MIDI files are valid.");
+    }
+    if (summary) {
+      const s = summary as { files: number; failed: string[]; segments: number };
+      appendLog(
+        `[kwesi] Dataset: ${s.segments} training segment(s) from ${s.files - s.failed.length} of ${s.files} MIDI file(s)` +
+          (s.failed.length > 0 ? `; skipped unreadable: ${s.failed.join(", ")}` : "") +
+          ".\n",
+      );
     }
 
     repo.updateTrainingRunStatus(runId, "running");

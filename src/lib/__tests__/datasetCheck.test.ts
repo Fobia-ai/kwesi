@@ -67,4 +67,15 @@ describe("validateDataset", () => {
     const r = validateDataset(files("a.wav", "a.wav"), [ok(40), ok(40)], ACE);
     expect(r.issues[0].message).toContain("More than one file is named a.wav");
   });
+
+  it("words MIDI datasets as MIDI", () => {
+    const MIDI: TrainingDatasetRequirements = { fileTypes: [".mid", ".midi"], minFiles: 2, minTotalDurationMin: 0, requiresCaptions: false };
+    const r = validateDataset(files("a.mid", "b.mid"), [{ status: "ok", durationSec: null }, { status: "unreadable", durationSec: null }], MIDI);
+    expect(r.issues.map((i) => i.message)).toEqual([
+      "Couldn't read b.mid — it may be corrupt or not really MIDI. Remove or re-export it.",
+    ]);
+    expect(validateDataset(files("a.mid"), [{ status: "ok", durationSec: null }], MIDI).issues[0].message).toBe(
+      "Needs at least 2 MIDI files (have 1).",
+    );
+  });
 });
