@@ -206,11 +206,24 @@ export interface TrainingCheckpointOutput {
   format: string;
 }
 
+/**
+ * A named set of hyperparameter values the Training form offers as a
+ * one-click starting point (quick test vs. a real run). Only the keys it
+ * lists are set; anything else keeps its current value.
+ */
+export interface TrainingPreset {
+  id: "quick" | "standard" | "thorough";
+  label: string;
+  description: string;
+  values: Record<string, number | string>;
+}
+
 export interface TrainingSupportedConfig {
   supported: true;
   method: TrainingMethod;
   inputKind: TrainingInputKind;
   datasetRequirements: TrainingDatasetRequirements;
+  presets: TrainingPreset[];
   hyperparameters: ManifestInput[];
   hardware: TrainingHardware;
   server: TrainingServerConfig;
@@ -313,6 +326,11 @@ const MUSICGEN: ModelManifest = {
   training: {
     supported: true,
     method: "full_finetune",
+    presets: [
+      { id: "quick", label: "Quick test", description: "Checks that everything works. Too short to change the model's sound much.", values: { epochs: 1 } },
+      { id: "standard", label: "Standard", description: "A first real fine-tune toward your clips.", values: { epochs: 10 } },
+      { id: "thorough", label: "Thorough", description: "Fits your style closely. Best with a few dozen clips or more.", values: { epochs: 40 } },
+    ],
     inputKind: "audio_captioned",
     datasetRequirements: {
       fileTypes: [".wav", ".mp3", ".flac", ".ogg"],
@@ -343,8 +361,8 @@ const MUSICGEN: ModelManifest = {
         label: "Epochs",
         default: 1,
         min: 1,
-        max: 20,
-        helpText: "Kept small for a pipeline-proof run — audiocraft counts training in epochs over your dataset, not raw steps.",
+        max: 200,
+        helpText: "One epoch is one pass over all your clips. More epochs fit your style more closely; too many on a small dataset starts copying it.",
       },
       {
         key: "learning_rate",
@@ -566,6 +584,11 @@ const MUSECOCO: ModelManifest = {
   training: {
     supported: true,
     method: "full_finetune",
+    presets: [
+      { id: "quick", label: "Quick test", description: "Checks that everything works. Barely changes the model.", values: { max_updates: 10 } },
+      { id: "standard", label: "Standard", description: "A real fine-tune toward your MIDI.", values: { max_updates: 300 } },
+      { id: "thorough", label: "Thorough", description: "The longest run this app allows. Best with many MIDI files.", values: { max_updates: 2000 } },
+    ],
     inputKind: "midi",
     datasetRequirements: {
       fileTypes: [".mid", ".midi"],
@@ -764,6 +787,11 @@ const ACE_STEP: ModelManifest = {
   training: {
     supported: true,
     method: "lora",
+    presets: [
+      { id: "quick", label: "Quick test", description: "Checks that everything works. Too short to change the sound much.", values: { epochs: 3, rank: 8, alpha: 16 } },
+      { id: "standard", label: "Standard", description: "A usable LoRA for a small set of clips.", values: { epochs: 30, rank: 32, alpha: 64 } },
+      { id: "thorough", label: "Thorough", description: "Side-Step's own rank, trained longer. Best with more clips.", values: { epochs: 100, rank: 64, alpha: 128 } },
+    ],
     inputKind: "audio_captioned",
     datasetRequirements: {
       fileTypes: [".wav", ".mp3", ".flac", ".ogg", ".opus"],
@@ -787,9 +815,9 @@ const ACE_STEP: ModelManifest = {
           { value: "sft", label: "sft (50-step, SFT)" },
         ],
       },
-      { key: "rank", type: "number", label: "LoRA rank", default: 8, min: 1, max: 256, helpText: "Side-Step's own CLI default is 64; a smaller rank trains faster for a pipeline-proof run." },
+      { key: "rank", type: "number", label: "LoRA rank", default: 8, min: 1, max: 256, helpText: "Side-Step's own default is 64; a smaller rank trains faster and makes a smaller adapter." },
       { key: "alpha", type: "number", label: "LoRA alpha", default: 16, min: 1, max: 512 },
-      { key: "epochs", type: "number", label: "Epochs", default: 3, min: 1, max: 500, helpText: "Kept small for a pipeline-proof run — real LoRA fine-tunes in the wild often use hundreds of epochs over a larger dataset." },
+      { key: "epochs", type: "number", label: "Epochs", default: 3, min: 1, max: 500, helpText: "One epoch is one pass over all your clips. LoRA fine-tunes usually run tens to hundreds of epochs." },
       { key: "learning_rate", type: "number", label: "Learning rate", default: 0.0001, min: 0.000001, max: 0.01, step: 0.00001 },
     ],
     hardware: {
@@ -935,6 +963,11 @@ const RAVE: ModelManifest = {
   training: {
     supported: true,
     method: "from_scratch",
+    presets: [
+      { id: "quick", label: "Quick test", description: "Checks that everything works. The result won't sound like your audio yet.", values: { max_steps: 60 } },
+      { id: "standard", label: "Standard", description: "A first usable timbre model.", values: { max_steps: 20000 } },
+      { id: "thorough", label: "Thorough", description: "Toward RAVE's own recommended quality. Best with 20+ minutes of audio.", values: { max_steps: 100000 } },
+    ],
     inputKind: "audio_raw",
     // Deliberately modest for a *pipeline-proof* run, not a production
     // timbre model — RAVE's own community guidance wants 20+ minutes for a
@@ -968,8 +1001,8 @@ const RAVE: ModelManifest = {
         label: "Training steps",
         default: 60,
         min: 10,
-        max: 500,
-        helpText: "Kept deliberately small — this proves the pipeline produces a real checkpoint, not a musically finished model. RAVE's own docs describe production runs in the hundreds of thousands of steps.",
+        max: 1000000,
+        helpText: "RAVE learns your sound from scratch, so it needs many steps: tens of thousands for a first usable model, hundreds of thousands for RAVE's own recommended quality.",
       },
       {
         key: "batch_size",

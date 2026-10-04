@@ -102,6 +102,13 @@ export interface TrainedModelRow {
   variant_name: string | null;
   disk_size_bytes: number | null;
   has_preview: boolean;
+  // Whether a new run can continue training this model, and what it must keep.
+  continue_info: {
+    resumable: boolean;
+    reason?: string;
+    locked: Record<string, string | number>;
+    totalSteps?: number;
+  };
 }
 
 export interface KwesiDbApi {

@@ -306,6 +306,18 @@ file). **Known trade-off**: if the user later moves or deletes the
 will fail until it's restored — not silently corrected, but also not
 hidden; noted in `kwesi.docs/04-roadmap.md`.
 
+## Continuing a trained model
+
+The exported `.ts` can't be trained further, so each run also keeps
+`<variant>.resume/` beside it: the training checkpoint (`last.ckpt`, ~120MB
+for v2_small) and the run's `config.gin`. `rave train --ckpt` needs both: it
+reads the config from next to the checkpoint (`rave.core.search_for_config`)
+and otherwise crashes on its own error message. `--ckpt` also restores the
+step count, so a continued run passes `--max_steps` as the *total* (the
+source's steps, followed back through any runs it continued from, plus the
+new ones). Verified: a 60-step model continued for 60 more logged "Restored
+all states" and stopped at `max_steps=120`.
+
 ## Verification (real, run twice)
 
 1. **Standalone CLI** (`venvs/.rave-train-smoketest/`, not committed): a

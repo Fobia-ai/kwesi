@@ -118,11 +118,22 @@ export function FieldControl({
   input,
   value,
   onChange,
+  disabled = false,
 }: {
   input: ManifestInput;
   value: unknown;
   onChange: (value: unknown) => void;
+  disabled?: boolean;
 }) {
+  if (disabled) {
+    // Shown, not editable: e.g. a setting a continued training run must keep.
+    const option = input.type === "select" ? input.options.find((o) => o.value === value) : undefined;
+    return (
+      <div className="kwesi-glass rounded-[10px] px-3 py-2 text-sm text-ink-muted" aria-disabled="true">
+        {option?.label ?? String(value ?? "")}
+      </div>
+    );
+  }
   switch (input.type) {
     case "text":
       return (

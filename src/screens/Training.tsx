@@ -15,12 +15,14 @@ import {
 import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
 import { kwesiTraining, type TrainingDiskCheck, type TrainingProgressEvent } from "../lib/training";
 import { kwesiEnvironment, type MusecocoGpuStatus } from "../lib/environment";
-import { kwesiDb, type TrainingRunRow } from "../lib/db";
+import { kwesiDb, type TrainedModelRow, type TrainingRunRow } from "../lib/db";
 import { ModelSetupDialog } from "../components/models/ModelSetupDialog";
 import { InfoHint } from "../components/ui/InfoHint";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Callout } from "../components/ui/Callout";
 import { InsetCard } from "../components/ui/InsetCard";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
+import { estimateTrainingSeconds, formatEstimate } from "../lib/trainingEstimate";
 import { PreviewButton } from "../components/training/PreviewButton";
 import { LogPanel } from "../components/ui/LogPanel";
 import { AlertIcon, CheckCircleIcon, CloseIcon } from "../components/ui/icons";
@@ -276,22 +278,15 @@ function CaptionedDataset({
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-        <div className="inline-flex rounded-chip bg-ink/[0.06] p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => onCaptionModeChange("files")}
-            className={`rounded-chip px-2.5 py-1 transition-colors ${captionMode === "files" ? "bg-bg text-ink shadow-glass-sm" : "text-ink-muted"}`}
-          >
-            From files
-          </button>
-          <button
-            type="button"
-            onClick={() => onCaptionModeChange("text")}
-            className={`rounded-chip px-2.5 py-1 transition-colors ${captionMode === "text" ? "bg-bg text-ink shadow-glass-sm" : "text-ink-muted"}`}
-          >
-            Type manually
-          </button>
-        </div>
+        <SegmentedControl
+          ariaLabel="Caption source"
+          value={captionMode}
+          onChange={onCaptionModeChange}
+          options={[
+            { value: "files", label: "From files" },
+            { value: "text", label: "Type manually" },
+          ]}
+        />
         <InfoHint
           label="caption source"
           text={`From files: drop a caption or subtitle file next to each audio clip and they pair up by name (song1.wav ↔ song1.txt). Supported: ${CAPTION_EXTS.join(", ")} — subtitle timestamps (.srt/.vtt/.lrc) are stripped automatically. Use a row's dropdown to fix any mismatch.\n\nType manually: write a caption per clip, or import a whole CSV/JSON of filename → caption.`}
@@ -548,7 +543,7 @@ function requiredBaseVariant(modelId: string, hyperparams: GenerationFormValues)
  * because it's an opt-in, one-time ~5 minute build mainly worth it for
  * training; generation picks the kernel up on its own once it exists.
  */
-function MusecocoGpuCard() {
+function MusecocoGpuCard({ onBuilt }: { onBuilt?: () => void }) {
   const [status, setStatus] = useState<MusecocoGpuStatus | null>(null);
   const [building, setBuilding] = useState(false);
   const [log, setLog] = useState<string[]>([]);
@@ -574,6 +569,7 @@ function MusecocoGpuCard() {
     const result = await kwesiEnvironment.buildMusecocoGpu();
     setBuilding(false);
     if (!result.ok) setError(result.reason ?? "Build failed.");
+    else onBuilt?.();
     setStatus(await kwesiEnvironment.musecocoGpuStatus());
   }
 
@@ -611,9 +607,12 @@ function MusecocoGpuCard() {
   );
 }
 
-function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
+function NewTrainingRunForm({ onSubmitted, trainedVersion }: { onSubmitted: () => void; trainedVersion: number }) {
   const trainableModels = useMemo(() => Object.values(MANIFESTS), []);
   const [modelId, setModelId] = useState<string>("");
+  // Continue training one of the user's own models instead of the stock base.
+  const [trainedForModel, setTrainedForModel] = useState<TrainedModelRow[]>([]);
+  const [continueFrom, setContinueFrom] = useState<string>("");
   const [runName, setRunName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [datasetCaptions, setDatasetCaptions] = useState<Record<string, string>>({});
@@ -666,6 +665,45 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   }
 
   const hardwareGate = training ? evaluateHardwareGate(manifest!, training.hardware.minVramGb, gpu) : { level: "ok" as const };
+
+  useEffect(() => {
+    setContinueFrom("");
+  }, [modelId]);
+  // Re-fetched when a run finishes too, so a model trained moments ago can
+  // be continued without re-picking the base model.
+  useEffect(() => {
+    if (!modelId) {
+      setTrainedForModel([]);
+      return;
+    }
+    kwesiTraining.listTrainedModels(modelId).then(setTrainedForModel);
+  }, [modelId, trainedVersion]);
+  const continueSource = trainedForModel.find((t) => t.id === continueFrom) ?? null;
+  const locked = continueSource?.continue_info.locked ?? {};
+  // Keep the settings the source fixes in place whenever it changes.
+  useEffect(() => {
+    if (continueSource) setHyperparams((prev) => ({ ...prev, ...continueSource.continue_info.locked }));
+  }, [continueSource]);
+  const unlockedValues = (values: Record<string, string | number>) =>
+    Object.fromEntries(Object.entries(values).filter(([k]) => !(k in locked)));
+
+  // Presets: the one whose values all match the current settings is shown
+  // as selected; anything else reads as "Custom".
+  const activePreset =
+    training?.presets.find((p) =>
+      Object.entries(unlockedValues(p.values)).every(([k, v]) => String(hyperparams[k]) === String(v)),
+    ) ?? null;
+  const [museCocoGpuBuilt, setMuseCocoGpuBuilt] = useState(false);
+  useEffect(() => {
+    if (modelId === "musecoco") kwesiEnvironment.musecocoGpuStatus().then((st) => setMuseCocoGpuBuilt(st.built));
+  }, [modelId]);
+  const estimateFor = (values: GenerationFormValues) =>
+    estimateTrainingSeconds(modelId, values, {
+      fileCount: files.length,
+      // Idle model servers are stopped before a run, so total VRAM is what counts.
+      museCocoOnGpu: museCocoGpuBuilt && (gpu?.totalVramGb ?? 0) >= 16,
+    });
+  const currentEstimate = training ? estimateFor(hyperparams) : null;
 
   // Re-checked (debounced) whenever anything that changes the estimate does.
   const [disk, setDisk] = useState<TrainingDiskCheck | null>(null);
@@ -726,6 +764,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
         datasetCaptions: isCaptionedDataset
           ? await resolveCaptions(captionMode, files, datasetCaptions, captionFiles, captionPairing)
           : undefined,
+        continueFrom: continueSource ? continueSource.id : undefined,
       });
       if (!result.ok) {
         setSubmitError(result.reason ?? "Could not start this training run.");
@@ -781,6 +820,41 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
             />
           </label>
 
+          {trainedForModel.length > 0 && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="flex items-center gap-1.5">
+                Start from
+                <InfoHint
+                  label="start from"
+                  text={`Train the stock ${manifest.displayName} again from scratch, or keep training one of your own models on new clips. Continuing keeps what it already learned; settings it was built with (like its size) stay fixed.`}
+                />
+              </span>
+              <select
+                value={continueFrom}
+                onChange={(e) => setContinueFrom(e.target.value)}
+                className="kwesi-glass rounded-[10px] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
+              >
+                <option value="">Stock {manifest.displayName}</option>
+                <optgroup label="Keep training one of your models">
+                  {trainedForModel.map((t) => (
+                    <option key={t.id} value={t.id} disabled={!t.continue_info.resumable}>
+                      {t.display_name}
+                      {!t.continue_info.resumable && t.continue_info.reason ? ` — ${t.continue_info.reason}` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              {continueSource && (
+                <Callout tone="info">
+                  Continues training {continueSource.display_name}
+                  {continueSource.continue_info.totalSteps ? ` (at ${continueSource.continue_info.totalSteps.toLocaleString()} steps so far)` : ""}.
+                  The training length below is added on top.
+                  {Object.keys(locked).length > 0 && " Settings it was built with are locked."}
+                </Callout>
+              )}
+            </label>
+          )}
+
           <div className="flex flex-col gap-1.5 text-sm">
             <span className="flex items-center gap-1.5">
               Dataset ({isMidiDataset ? "MIDI files" : isCaptionedDataset ? "audio + captions" : "raw audio, no captions needed"})
@@ -828,7 +902,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
             )}
           </div>
 
-          {manifest.modelId === "musecoco" && <MusecocoGpuCard />}
+          {manifest.modelId === "musecoco" && <MusecocoGpuCard onBuilt={() => setMuseCocoGpuBuilt(true)} />}
 
           <div className="flex flex-col gap-3 border-t border-ink/10 pt-3">
             <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">
@@ -838,6 +912,34 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                 text="The knobs that control how training runs. They don't change your dataset — they shape how long it trains, how fast it learns, and how much the result adapts to your clips. Hover the ⓘ next to each for details."
               />
             </p>
+            {training.presets.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <SegmentedControl
+                  ariaLabel="Training preset"
+                  value={activePreset?.id ?? null}
+                  onChange={(id) => {
+                    const preset = training.presets.find((p) => p.id === id);
+                    if (preset) setHyperparams((prev) => ({ ...prev, ...unlockedValues(preset.values) }));
+                  }}
+                  options={training.presets.map((p) => {
+                    const est = estimateFor({ ...hyperparams, ...unlockedValues(p.values) });
+                    return {
+                      value: p.id,
+                      label: (
+                        <span>
+                          {p.label}
+                          {est !== null && <span className="ml-1.5 text-ink-muted">{formatEstimate(est)}</span>}
+                        </span>
+                      ),
+                    };
+                  })}
+                />
+                <p className="text-xs text-ink-muted">
+                  {activePreset ? activePreset.description : "Custom settings."}
+                  {currentEstimate !== null && ` About ${formatEstimate(currentEstimate).replace("~", "")} on an RTX 3090-class GPU.`}
+                </p>
+              </div>
+            )}
             {training.hyperparameters.map((input) => {
               const hint = hintTextFor(input);
               return (
@@ -850,6 +952,7 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
                     input={input}
                     value={hyperparams[input.key]}
                     onChange={(v) => setHyperparams((prev) => ({ ...prev, [input.key]: v }))}
+                    disabled={input.key in locked}
                   />
                 </label>
               );
@@ -946,11 +1049,13 @@ function RunRow({
   run,
   live,
   hasPreview,
+  continuedFrom,
   onCancel,
 }: {
   run: TrainingRunRow;
   live: TrainingProgressEvent | undefined;
   hasPreview: boolean;
+  continuedFrom?: string;
   onCancel: () => void;
 }) {
   const manifest: ModelManifest | undefined = MANIFESTS[run.model_id];
@@ -971,6 +1076,7 @@ function RunRow({
             <span className="text-xs text-ink-muted">{manifest?.displayName ?? run.model_id}</span>
             <StatusBadge status={run.status} />
           </div>
+          {continuedFrom && <p className="mt-0.5 text-xs text-ink-muted">Continued from {continuedFrom}</p>}
           {typeof hyperparams.max_steps === "number" && (
             <p className="mt-0.5 text-xs text-ink-muted">
               {hyperparams.max_steps} steps
@@ -1006,10 +1112,18 @@ export function TrainingScreen() {
   const [liveByRun, setLiveByRun] = useState<Record<string, TrainingProgressEvent>>({});
   // trained_model ids whose run left a preview clip
   const [withPreview, setWithPreview] = useState<Set<string>>(new Set());
+  // Bumped whenever trained models change (a run completed or one was deleted).
+  const [trainedVersion, setTrainedVersion] = useState(0);
+  // variant name -> run name, to show what a continued run started from
+  const [nameByVariant, setNameByVariant] = useState<Map<string, string>>(new Map());
 
   const refresh = useCallback(() => {
     kwesiTraining.list().then(setRuns);
-    kwesiTraining.listTrainedModels().then((tms) => setWithPreview(new Set(tms.filter((t) => t.has_preview).map((t) => t.id))));
+    setTrainedVersion((v) => v + 1);
+    kwesiTraining.listTrainedModels().then((tms) => {
+      setWithPreview(new Set(tms.filter((t) => t.has_preview).map((t) => t.id)));
+      setNameByVariant(new Map(tms.filter((t) => t.variant_name).map((t) => [t.variant_name!, t.display_name])));
+    });
   }, []);
 
   useEffect(() => {
@@ -1040,7 +1154,7 @@ export function TrainingScreen() {
 
       <GlassPanel radius="panel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <NewTrainingRunForm onSubmitted={refresh} />
+          <NewTrainingRunForm onSubmitted={refresh} trainedVersion={trainedVersion} />
 
           <div className="p-5">
             <h2 className="mb-3 text-sm font-semibold">Training Runs</h2>
@@ -1054,6 +1168,11 @@ export function TrainingScreen() {
                     run={run}
                     live={liveByRun[run.id]}
                     hasPreview={!!run.output_checkpoint_id && withPreview.has(run.output_checkpoint_id)}
+                    continuedFrom={
+                      run.base_checkpoint_variant
+                        ? (nameByVariant.get(run.base_checkpoint_variant) ?? "a deleted model")
+                        : undefined
+                    }
                     onCancel={() => cancelRun(run.id)}
                   />
                 ))}

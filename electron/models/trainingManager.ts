@@ -50,7 +50,7 @@ import {
   stopIdleServers,
   type PreviewRequest,
 } from "./modelServer.js";
-import { trainedPreviewPath } from "./trainedModels.js";
+import { raveResumeCheckpointPath, raveResumeDir, resolveContinueSource, trainedPreviewPath } from "./trainedModels.js";
 import { TRAINING_VENV_BY_MODEL } from "./envInstaller.js";
 
 const PROGRESS_CHANNEL = "kwesi:training:progress";
@@ -97,6 +97,9 @@ export interface SubmitTrainingRunParams {
   // dataset never sends this. See Training.tsx's DatasetDropZone caption
   // table for how the renderer builds this map.
   datasetCaptions?: Record<string, string>;
+  // A trained model (trained_model id) to keep training instead of the stock
+  // base. Resolved and validated in main; see trainedModels.ts.
+  continueFrom?: string;
 }
 
 export interface SubmitTrainingResult {
@@ -569,6 +572,15 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
     const checkpointsDir = ensureAceStepCheckpointsLayout(vendorDir);
 
     const baseVariant = typeof hyperparams.base_variant === "string" ? hyperparams.base_variant : "turbo";
+    // Continuing: Side-Step's --resume-from loads an adapter folder's weights
+    // (no training_state.pt -> starts at epoch 0), but its safe_path() only
+    // accepts folders under the working directory, so copy the source in.
+    const source = params.continueFrom ? resolveContinueSource(params.continueFrom, modelId) : null;
+    const resumeDir = path.join(workDir, "resume");
+    if (source) {
+      copyDirRecursive(source.resumePath, resumeDir);
+      appendLog(`[kwesi] Continuing from ${source.trainedModel.display_name}.\n`);
+    }
     const rank = clampInt(hyperparams.rank, 1, 256, 8);
     const alpha = clampInt(hyperparams.alpha, 1, 512, 16);
     const epochs = clampInt(hyperparams.epochs, 1, 500, 3);
@@ -656,6 +668,7 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
         "0",
         "--lr",
         String(learningRate),
+        ...(source ? ["--resume-from", path.relative(workDir, resumeDir)] : []),
       ],
       workDir,
       appendLog,
@@ -853,7 +866,9 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
     broadcast({ type: "status", runId, status: "running" });
 
     const baseVariant = typeof hyperparams.base_variant === "string" ? hyperparams.base_variant : "small";
-    const epochs = clampInt(hyperparams.epochs, 1, 20, 1);
+    const source = params.continueFrom ? resolveContinueSource(params.continueFrom, modelId) : null;
+    if (source) appendLog(`[kwesi] Continuing from ${source.trainedModel.display_name}.\n`);
+    const epochs = clampInt(hyperparams.epochs, 1, 200, 1);
     const learningRateRaw = Number(hyperparams.learning_rate);
     const batchSize = clampInt(hyperparams.batch_size, 1, 8, 1);
 
@@ -889,7 +904,9 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
         // (downloads into the shared Hugging Face cache on first use per
         // model scale — a real, one-time network dependency distinct from
         // this app's own already-downloaded weights).
-        `continue_from=//pretrained/facebook/musicgen-${baseVariant}`,
+        // A trained model's export folder holds state_dict.bin, which
+        // audiocraft's //pretrained/ loader reads from a local folder too.
+        `continue_from=//pretrained/${source ? source.resumePath : `facebook/musicgen-${baseVariant}`}`,
         "compression_model_checkpoint=//pretrained/facebook/encodec_32khz",
         "conditioner=text2music",
         `dset=audio/${dsetName}`,
@@ -1027,7 +1044,11 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
       throw new Error(`MuseCoco venv not found at ${venvDir} (expected fairseq-train). See servers/musecoco/README.md.`);
     }
     const vendorModelDir = path.join(serversRootDir(), "musecoco", "vendor", "2-attribute2music_model");
-    const restoreFrom = path.join(vendorModelDir, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt");
+    const source = params.continueFrom ? resolveContinueSource(params.continueFrom, modelId) : null;
+    const restoreFrom = source
+      ? source.resumePath
+      : path.join(vendorModelDir, "checkpoints", "linear_mask-1billion", "checkpoint_2_280000.pt");
+    if (source) appendLog(`[kwesi] Continuing from ${source.trainedModel.display_name}.\n`);
     if (!fs.existsSync(restoreFrom)) {
       throw new Error(`MuseCoco base checkpoint not found at ${restoreFrom}. See servers/musecoco/README.md.`);
     }
@@ -1320,8 +1341,13 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
     const gpu = await queryGpuVram();
     const gpuFlag = gpu.available ? "0" : "-1";
     const config = typeof hyperparams.config === "string" && hyperparams.config.length > 0 ? hyperparams.config : "v2_small";
-    const maxSteps = clampInt(hyperparams.max_steps, 10, 2000, 60);
+    const newSteps = clampInt(hyperparams.max_steps, 10, 1000000, 60);
     const batchSize = clampInt(hyperparams.batch_size, 1, 32, 4);
+    // Continuing: rave --ckpt restores the source's step count, so
+    // --max_steps is a total -- the source's steps plus this run's.
+    const source = params.continueFrom ? resolveContinueSource(params.continueFrom, modelId) : null;
+    const maxSteps = (source?.totalSteps ?? 0) + newSteps;
+    if (source) appendLog(`[kwesi] Continuing from ${source.trainedModel.display_name} (step ${source.totalSteps}).\n`);
     // Guarantees at least one periodic checkpoint lands within max_steps —
     // validation is deliberately skipped (--val_every effectively disabled)
     // since RAVE's export step doesn't depend on it having run (the
@@ -1329,7 +1355,7 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
     // export.py handles that without erroring — confirmed by running it —
     // it just yields a maximally-truncated, not-yet-refined latent space,
     // which is fine for a pipeline-proof checkpoint).
-    const saveEvery = Math.max(1, Math.floor(maxSteps / 2));
+    const saveEvery = Math.max(1, Math.floor(newSteps / 2));
 
     await runPhase(
       runId,
@@ -1363,6 +1389,7 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
         gpuFlag,
         "--progress",
         "True",
+        ...(source ? ["--ckpt", source.resumePath] : []),
       ],
       workDir,
       appendLog,
@@ -1392,6 +1419,14 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
     ensureDir(outputDir);
     const finalCheckpointPath = path.join(outputDir, `${variantName}.ts`);
     fs.copyFileSync(exportedTs, finalCheckpointPath);
+    // The exported .ts can't be trained further; keep the training
+    // checkpoint (~120MB for v2_small) and the run's config.gin (rave's run
+    // dir is <run>/config.gin + <run>/version_0/checkpoints/*.ckpt) so a
+    // later run can --ckpt resume it.
+    const resumeDir = raveResumeDir(outputDir, variantName);
+    ensureDir(resumeDir);
+    fs.copyFileSync(checkpointPath, raveResumeCheckpointPath(outputDir, variantName));
+    fs.copyFileSync(path.join(path.dirname(path.dirname(path.dirname(checkpointPath))), "config.gin"), path.join(resumeDir, "config.gin"));
 
     // Bridges the user-facing output location into the exact layout
     // servers/rave/server.py's get_model() hardcodes
@@ -1434,11 +1469,9 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
     repo.updateTrainingRunStatus(runId, "failed", { error: message, completedAt: Date.now(), pid: null });
     broadcast({ type: "failed", runId, error: message });
   } finally {
-    logStream.end();
-    const interval = heartbeatIntervals.get(runId);
-    if (interval) clearInterval(interval);
-    heartbeatIntervals.delete(runId);
-    activeProcesses.delete(runId);
+    // Same cleanup as every other pipeline (this one used to skip pruning
+    // its work dir, leaving preprocessed data and checkpoints behind).
+    cleanupTrainingRun(runId, () => logStream.end());
   }
 }
 
@@ -1465,6 +1498,17 @@ export async function submitTrainingRun(params: SubmitTrainingRunParams): Promis
   }
   if (!params.runName.trim()) {
     return { ok: false, reason: "A run name is required." };
+  }
+  if (params.continueFrom) {
+    try {
+      const source = resolveContinueSource(params.continueFrom, params.modelId);
+      // Settings the source fixes (model size, LoRA shape, RAVE config) win
+      // over whatever the form sent, and the run records its source so
+      // chains of continued runs can be followed back.
+      params = { ...params, hyperparams: { ...params.hyperparams, ...source.locked }, baseCheckpointVariant: source.variantName };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
   }
   const disk = await checkTrainingDisk({
     modelId: params.modelId,

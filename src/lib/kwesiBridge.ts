@@ -111,6 +111,7 @@ declare global {
           hyperparams: Record<string, unknown>;
           outputDir: string;
           datasetCaptions?: Record<string, string>;
+          continueFrom?: string;
         }) => Promise<{ ok: boolean; reason?: string; trainingRun?: TrainingRunRow }>;
         list: (modelId?: string) => Promise<TrainingRunRow[]>;
         get: (runId: string) => Promise<TrainingRunRow | null>;

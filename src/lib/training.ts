@@ -34,6 +34,8 @@ export interface SubmitTrainingRunParams {
   // meaningful for `training.inputKind === "audio_captioned"` models
   // (ACE-Step 1.5, MusicGen). See Training.tsx's caption table.
   datasetCaptions?: Record<string, string>;
+  // A trained model's id, to keep training it instead of the stock base.
+  continueFrom?: string;
 }
 
 export interface KwesiTrainingApi {
