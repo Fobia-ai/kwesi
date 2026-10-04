@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { DoodleBackdrop } from "../DoodleBackdrop";
 import { GlassPanel } from "../ui/GlassPanel";
 import { PillButton } from "../ui/PillButton";
 import { LockIcon } from "../ui/icons";
@@ -29,7 +30,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 
   return (
     <div className="kwesi-glass fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-2xl">
-      <div className="kwesi-backdrop" />
+      <DoodleBackdrop />
       <GlassPanel strong radius="panel" className="relative z-10 flex w-full max-w-xs flex-col items-center gap-4 p-6 text-center">
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent/10 text-accent">
           <LockIcon width={20} height={20} />

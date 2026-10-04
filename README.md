@@ -41,7 +41,7 @@ Kwesi wraps several open-source music generation models behind one consistent in
 
 - **Generate music locally** with text, audio, MIDI, or structured attribute inputs.
 - **Browse and install models** from an in-app Model Manager.
-- **Train your own checkpoints** on your own audio or MIDI for supported models.
+- **Train your own checkpoints** on your own audio or MIDI for supported models — with dataset checks, presets, time and disk estimates, a preview clip at the end, and the option to keep training a model you already made.
 - **Play, export, and reveal outputs** through a built-in audio transport and MIDI/notation viewers.
 - **Lock the app** with a local-only passcode (optional).
 
@@ -50,7 +50,7 @@ Core concepts:
 - **Workspace** — bound to one model family at creation time.
 - **Project** — lives inside a workspace; a folder for a song/session.
 - **Generation** — one output (audio, MIDI, or both) inside a project.
-- **Trained model** — a checkpoint you produced, reusable like any catalog variant.
+- **Trained model** — a checkpoint you produced, listed under "Your trained models" in any workspace of the same model, and manageable (preview, open folder, delete) from Model Manager.
 
 ---
 
@@ -109,7 +109,7 @@ Communication:
 | Model | What it does | Inputs | Outputs | License | Verified? |
 |-------|--------------|--------|---------|---------|-----------|
 | **MusicGen** (Meta AudioCraft) | Text-to-music | Text prompt; optional melody audio for `melody` variant | WAV 32 kHz | Code MIT; weights CC-BY-NC | Inference & training verified |
-| **MuseCoco** (Microsoft) | Attribute-to-MIDI | Structured attributes (mood, key, tempo, genre, etc.) | MIDI | Repo MIT; verify checkpoint terms | Inference verified; training CLI wired but not completed |
+| **MuseCoco** (Microsoft) | Attribute-to-MIDI | Structured attributes (mood, key, tempo, genre, etc.) | MIDI, plus a rendered WAV | Repo MIT; verify checkpoint terms | Inference & training verified (CPU, or GPU after building GPU acceleration) |
 | **ACE-Step 1.5** | Text/lyrics-to-audio | Prompt, lyrics in 50+ languages, BPM/key, genre/instrument tags, reference audio | WAV 48 kHz | MIT | Inference & training verified |
 | **RAVE** (IRCAM/ACIDS) | Neural timbre transfer / resynthesis | Audio file (the source to transform) | WAV 44.1 kHz | CC-BY-NC-SA (code + weights) | Inference & training verified |
 | **Museformer** (Microsoft) | Symbolic music continuation | Random generation or MIDI seed | MIDI | MIT | Inference verified end-to-end **on GPU**; training not wired |
@@ -129,6 +129,7 @@ To build and run Kwesi:
 - **Git** with LFS support if you plan to clone model checkpoints directly
 - **Linux** for verified packaging; macOS and Windows builds are config-only from this repo
 - A GPU is strongly recommended for most models, though RAVE and MuseCoco can run on CPU (slowly)
+- **Optional, Linux + NVIDIA only:** MuseCoco's GPU acceleration is built from the Training screen. The app downloads its own pinned build toolchain for it (no system CUDA install needed), and deletes it afterwards.
 
 For end users of a packaged build, the same prerequisites apply to installing model environments from inside the app.
 
@@ -180,7 +181,7 @@ pip install -r requirements.txt
 python3 download_models.py
 ```
 
-Then install the per-model venvs. From inside the app, go to **Settings → Models / Environments** and click **Install** for each model. The app uses `uv` to install the pinned dependencies in `servers/<model>/requirements.txt`.
+Then install the per-model venvs. From inside the app, go to **Settings → Environment** and click **Install** for each model. The app uses `uv` to install the pinned dependencies in `servers/<model>/requirements.txt`.
 
 Or, manually for a single model (example: RAVE):
 
@@ -215,24 +216,49 @@ npm run test         # Vitest unit tests
 
 ## Training your own checkpoints
 
-Kwesi can fine-tune or train several models on your own material:
+Kwesi can fine-tune or train four models on your own material, all from the **Training** tab:
 
-| Model | What you need | Output |
-|-------|---------------|--------|
-| **RAVE** | 3+ audio files, ~1+ minute total | A TorchScript `.ts` checkpoint usable in a new workspace |
-| **MusicGen** | Audio files + text captions | A fine-tuned AudioCraft LM checkpoint |
-| **ACE-Step 1.5** | Audio files + captions | A LoRA adapter (currently registered but not selectable from the generation UI) |
-| **MuseCoco** | A pre-binarized fairseq data-bin directory | Continued fairseq checkpoint |
+| Model | What you need | What you get |
+|-------|---------------|--------------|
+| **RAVE** | 3+ audio files, 1+ minute total | A TorchScript `.ts` timbre model (trained from scratch) |
+| **MusicGen** | 2+ audio clips with captions (30 s+ each works best) | A fine-tuned MusicGen checkpoint |
+| **ACE-Step 1.5** | 2+ audio clips with captions | A LoRA adapter, applied on top of the base it was trained on |
+| **MuseCoco** | 1+ MIDI files | A fine-tuned MuseCoco checkpoint |
 
-To start a training run:
+Every finished model shows up under **Your trained models** in the checkpoint picker of any workspace that uses the same model, and in **Model Manager → My Trained Models**.
 
-1. Open the **Training** tab from the left rail.
-2. Pick a supported base model and checkpoint.
-3. Drop in your dataset.
-4. Adjust hyperparameters (rendered from the model's manifest).
-5. Choose an output folder and start the run.
+### Starting a run
 
-Training can take hours. Kwesi writes a PID and heartbeat file per run, and will mark any run still `running` at startup as `interrupted` (true resume across app restarts is not implemented).
+1. Open the **Training** tab and pick a model.
+2. Optionally pick **Start from** one of your own models to keep training it instead of the stock base.
+3. Drop in your dataset. For captioned models, caption files (`.txt`, `.lrc`, `.srt`, `.vtt`) pair up with clips of the same name, or you can type captions in.
+4. Pick a preset — **Quick test**, **Standard** or **Thorough** — or adjust the settings yourself. Every setting has an ⓘ explaining it.
+5. Choose where to save it and start the run.
+
+### What the form checks before you start
+
+- **Dataset** — each clip's length is shown. Too few files, too little audio, and empty or unreadable files block the run; clips that are too short or too long for the model, and duplicate names, show a warning.
+- **Time** — each preset shows an estimated duration, measured on an RTX 3090 (for example, RAVE's Standard preset: ~9 min estimated, 7.5 min measured).
+- **Disk space** — how much the run needs for temporary files and for the finished model, against what's free. A run that won't fit can't start.
+- **Setup** — the model's training environment, and any base weights the run fine-tunes from, must be installed; a dialog offers to install them.
+
+### During and after a run
+
+- Live progress for each phase (preparing the dataset, training, exporting, making the preview) and the full log.
+- Idle model servers are stopped first, so the run gets the GPU memory.
+- When it finishes, the app generates a **short preview clip** with the new model, playable from the run and from Model Manager.
+- Temporary files are cleaned up; only the run's log is kept.
+- From **Model Manager → My Trained Models** you can preview, open the folder, or **delete** a trained model and everything it saved.
+
+### Continuing a trained model
+
+Choosing one of your models under **Start from** keeps training it on new clips. Settings it was built with (MusicGen's size, ACE-Step's base and LoRA shape, RAVE's config) are locked, and the training length you pick is added on top. RAVE models keep a small training checkpoint (`<model>.resume/`, ~120 MB) for this.
+
+### Model-specific notes
+
+- **MuseCoco** reads instruments, tempo, key, time signature and more straight from your MIDI files, so no labels are needed. It trains on the CPU (~50 s per update) unless you build **GPU acceleration** from its card on the Training screen (Linux + NVIDIA, about 5 minutes once); after that it trains at ~1 s per update and generates in seconds instead of minutes. See [`servers/musecoco/README.md`](servers/musecoco/README.md).
+- **ACE-Step** trained adapters get a **LoRA strength** control (0–1) in the generation form.
+- A run that was still going when the app closed is marked **interrupted** on the next launch; resuming a half-finished run isn't supported (start a new one, or continue from a finished model).
 
 ---
 
@@ -251,7 +277,7 @@ npm run package:win
 
 Packaged outputs land in `release/`.
 
-**Important packaging limitation:** The Electron app shell, renderer, and SQLite layer are packaged. The per-model Python servers (`servers/<model>/`) and their venvs (`KWESI_VENVS_DIR`) are **not bundled** yet. A packaged build will launch and run every UI/DB feature, but real model inference still requires the `servers/` directory and installed venvs on disk. Bundling them is a multi-gigabyte, platform-specific follow-up.
+**What a packaged build contains:** the app itself plus each model's small server source (`servers/<model>/`). The multi-gigabyte parts — each model's Python environment, its upstream code, and its weights — are downloaded and installed from inside the app (Model Manager and Settings → Environment), not bundled.
 
 ### Auto-updater
 
@@ -327,20 +353,22 @@ This repo is honest about what has actually been built and run:
 |------|--------|
 | App shell + React UI + SQLite | Verified on Linux |
 | MusicGen inference | Verified end-to-end |
-| MuseCoco inference | Verified end-to-end (CPU) |
+| MuseCoco inference | Verified end-to-end (CPU, and GPU with GPU acceleration built) |
 | ACE-Step 1.5 inference | Verified end-to-end |
 | RAVE inference | Verified end-to-end |
 | RAVE training | Verified end-to-end |
 | MusicGen training | Verified end-to-end |
 | ACE-Step 1.5 training | Verified end-to-end |
-| MuseCoco training | CLI wired, run started, not completed |
+| MuseCoco training | Verified end-to-end from MIDI files (CPU and GPU) |
+| Training extras: presets, dataset/disk checks, previews, continue training, delete | Verified in the app for all four trainable models |
+| MuseCoco GPU acceleration build | Verified on Linux + NVIDIA (RTX 3090) |
 | Museformer inference | Verified end-to-end **on GPU** (CPU not supported) |
 | YuE2 inference | Standalone proven; wired into app, full Electron end-to-end not yet exercised (weights not present on this machine) |
 | Linux packaging (AppImage + deb) | Built and verified |
 | macOS packaging | Config-only |
 | Windows packaging | Config-only |
 | Auto-updater | Wired; only works after repo is public |
-| Bundled Python servers/venvs in installer | Not implemented |
+| Model environments in installer | Installed from inside the app instead (server source is bundled) |
 
 ---
 

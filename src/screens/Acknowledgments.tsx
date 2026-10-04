@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DoodleBackdrop } from "../components/DoodleBackdrop";
 import { Badge } from "../components/ui/Badge";
 import { useNavigate } from "react-router-dom";
 import { CATALOG, LICENSE_LABEL } from "../data/catalog";
@@ -32,7 +33,7 @@ export function AcknowledgmentsScreen() {
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-y-auto px-6 py-12">
-      <div className="kwesi-backdrop" />
+      <DoodleBackdrop />
       <div className="relative z-10 flex w-full max-w-3xl flex-col items-center">
         <img src={kwesiLogoFull} alt="Kwesi" className="h-12 w-auto" />
         <p className="mt-3 max-w-sm text-center text-sm text-ink-muted">

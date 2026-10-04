@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --kwesi-bg: 245 245 247;
+  --kwesi-bg: 255 255 255;
   --kwesi-ink: 22 22 25;
   --kwesi-ink-muted: 108 108 116;
   --kwesi-accent: 20 20 22;
@@ -126,6 +126,23 @@ body {
   pointer-events: none;
   overflow: hidden;
   background: rgb(var(--kwesi-bg));
+}
+
+/* DoodleBackdrop.tsx: a dotted grid under a frame of music doodles. Both
+   use the ink token, so they flip with the theme like everything else. */
+.kwesi-dot-grid {
+  background-color: rgb(var(--kwesi-bg));
+  background-image: radial-gradient(rgb(var(--kwesi-ink) / 0.14) 1.1px, transparent 1.6px);
+  background-size: 22px 22px;
+  background-position: 11px 11px;
+}
+
+.kwesi-doodles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: rgb(var(--kwesi-ink) / 0.15);
 }
 
 /* Full-bleed canvas for the raymarched 3D backdrop (BackdropScene.tsx). It

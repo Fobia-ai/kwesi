@@ -1,11 +1,11 @@
 import { Outlet } from "react-router-dom";
 import { IconRail } from "./ui/IconRail";
-import { BackdropScene } from "./BackdropScene";
+import { DoodleBackdrop } from "./DoodleBackdrop";
 
 export function AppShell() {
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <BackdropScene />
+      <DoodleBackdrop />
       {/* Capped and centred so on a wide display the app floats in the
           middle of the backdrop rather than stretching edge to edge. */}
       <div className="relative z-10 mx-auto flex h-full w-full max-w-[1440px] gap-5 px-7 py-6">
