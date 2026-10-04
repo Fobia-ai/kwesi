@@ -42,12 +42,20 @@ import { checkTrainingDisk } from "./trainingDiskCheck.js";
 
 // Measured peak for a MuseCoco GPU fine-tune is ~14.6GB; leave headroom.
 const MUSECOCO_GPU_TRAIN_MIN_FREE_GB = 16;
-import { ACE_STEP_LORA_META_FILE, aceStepVendorDir, ensureAceStepCheckpointsLayout } from "./modelServer.js";
+import {
+  ACE_STEP_LORA_META_FILE,
+  aceStepVendorDir,
+  ensureAceStepCheckpointsLayout,
+  generatePreviewClip,
+  stopIdleServers,
+  type PreviewRequest,
+} from "./modelServer.js";
+import { trainedPreviewPath } from "./trainedModels.js";
 import { TRAINING_VENV_BY_MODEL } from "./envInstaller.js";
 
 const PROGRESS_CHANNEL = "kwesi:training:progress";
 
-export type TrainingPhase = "preprocess" | "train" | "export";
+export type TrainingPhase = "preprocess" | "train" | "export" | "preview";
 
 export type TrainingProgressEvent =
   | { type: "status"; runId: string; status: string }
@@ -389,6 +397,41 @@ function failTrainingRun(runId: string, appendLog: (text: string) => void, err: 
   broadcast({ type: "failed", runId, error: message });
 }
 
+// Runs before each pipeline's own try/catch, so it must never throw -- a
+// server that won't stop just means less free VRAM, not a failed run.
+async function freeGpuForTraining(appendLog: (text: string) => void): Promise<void> {
+  try {
+    const stopped = await stopIdleServers();
+    if (stopped.length > 0) {
+      appendLog(`[kwesi] Stopped idle model servers to free GPU memory for training: ${stopped.join(", ")}.\n`);
+    }
+  } catch (err) {
+    appendLog(`[kwesi] Couldn't stop idle model servers: ${err instanceof Error ? err.message : err}\n`);
+  }
+}
+
+/**
+ * Best-effort: one short clip from the just-trained model, saved next to it
+ * (see trainedPreviewPath) so it can be heard before use. A failure is
+ * logged and the run still completes -- the model itself is fine.
+ */
+async function attachPreview(runId: string, appendLog: (text: string) => void, req: PreviewRequest): Promise<void> {
+  appendLog("[kwesi] Making a short preview clip with the trained model…\n");
+  broadcast({ type: "progress", runId, phase: "preview", step: 0 });
+  try {
+    await generatePreviewClip(req);
+    appendLog(`[kwesi] Preview saved to ${req.outputPath}\n`);
+  } catch (err) {
+    fs.rmSync(req.outputPath, { force: true });
+    appendLog(`[kwesi] No preview this time: ${err instanceof Error ? err.message : err}\n`);
+  }
+}
+
+/** The dataset's first caption, used as the preview prompt. */
+function firstCaption(params: SubmitTrainingRunParams): string | undefined {
+  return Object.values(params.datasetCaptions ?? {}).find((c) => c.trim().length > 0);
+}
+
 function cleanupTrainingRun(runId: string, close: () => void): void {
   close();
   const interval = heartbeatIntervals.get(runId);
@@ -481,6 +524,7 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
   const { logPath, appendLog, close } = openTrainingLog(workDir, runId);
   repo.updateTrainingRunStatus(runId, "preparing", { logPath, startedAt: Date.now() });
   broadcast({ type: "status", runId, status: "preparing" });
+  await freeGpuForTraining(appendLog);
 
   try {
     const staged = stageDatasetFiles(datasetFiles, allowedExtensions, rawDir);
@@ -636,6 +680,12 @@ async function runAceStepTrainingPipeline(params: SubmitTrainingRunParams, runId
     const baseDir = ACE_STEP_TRAIN_BASE_DIRS[baseVariant] ?? `acestep-v15-${baseVariant.replace(/_/g, "-")}`;
     fs.writeFileSync(path.join(finalOutputDir, ACE_STEP_LORA_META_FILE), JSON.stringify({ baseVariant: baseDir }, null, 2));
     repo.upsertTrainedModelVariant(modelId, variantName, finalOutputDir, dirSizeBytes(finalOutputDir), params.runName);
+    await attachPreview(runId, appendLog, {
+      modelId,
+      variantName,
+      outputPath: trainedPreviewPath(outputDir, variantName),
+      caption: firstCaption(params),
+    });
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputDir);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputDir });
@@ -699,6 +749,7 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
   const { logPath, appendLog, close } = openTrainingLog(workDir, runId);
   repo.updateTrainingRunStatus(runId, "preparing", { logPath, startedAt: Date.now() });
   broadcast({ type: "status", runId, status: "preparing" });
+  await freeGpuForTraining(appendLog);
 
   try {
     const staged = stageDatasetFiles(datasetFiles, allowedExtensions, rawDir);
@@ -903,6 +954,12 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
     const variantDir = bridgeFilesIntoModelsRoot(modelId, variantName, finalOutputDir, ["state_dict.bin", "compression_state_dict.bin"]);
     const diskSizeBytes = dirSizeBytes(finalOutputDir);
     repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes, params.runName);
+    await attachPreview(runId, appendLog, {
+      modelId,
+      variantName,
+      outputPath: trainedPreviewPath(outputDir, variantName),
+      caption: firstCaption(params),
+    });
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputDir);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputDir });
@@ -960,6 +1017,7 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
   const { logPath, appendLog, close } = openTrainingLog(workDir, runId);
   repo.updateTrainingRunStatus(runId, "preparing", { logPath, startedAt: Date.now() });
   broadcast({ type: "status", runId, status: "preparing" });
+  await freeGpuForTraining(appendLog);
 
   try {
     const venvName = TRAINING_VENV_BY_MODEL[modelId];
@@ -1141,6 +1199,11 @@ async function runMuseCocoTrainingPipeline(params: SubmitTrainingRunParams, runI
     // this variant row by modelServer.ts, never from the renderer) and
     // swaps its loaded model when it changes.
     repo.upsertTrainedModelVariant(modelId, variantName, finalOutputPath, fs.statSync(finalOutputPath).size, params.runName);
+    if (kernelBuilt) {
+      await attachPreview(runId, appendLog, { modelId, variantName, outputPath: trainedPreviewPath(outputDir, variantName) });
+    } else {
+      appendLog("[kwesi] No preview: generating one on the CPU takes ~15 minutes. Build GPU acceleration to get previews.\n");
+    }
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalOutputPath);
     repo.updateTrainingRunStatus(runId, "completed", { outputCheckpointId: trainedModel.id, completedAt: Date.now(), pid: null });
     broadcast({ type: "completed", runId, trainedModelId: trainedModel.id, checkpointPath: finalOutputPath });
@@ -1188,6 +1251,7 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
 
   repo.updateTrainingRunStatus(runId, "preparing", { logPath, startedAt: Date.now() });
   broadcast({ type: "status", runId, status: "preparing" });
+  await freeGpuForTraining(appendLog);
 
   try {
     const staged: string[] = [];
@@ -1350,6 +1414,12 @@ async function runTrainingPipeline(params: SubmitTrainingRunParams, runId: strin
 
     const diskSizeBytes = fs.statSync(finalCheckpointPath).size;
     repo.upsertTrainedModelVariant(modelId, variantName, variantDir, diskSizeBytes, params.runName);
+    await attachPreview(runId, appendLog, {
+      modelId,
+      variantName,
+      outputPath: trainedPreviewPath(outputDir, variantName),
+      inputAudioPath: params.datasetFiles[0],
+    });
     const trainedModel = repo.createTrainedModel(modelId, runId, params.runName, finalCheckpointPath);
 
     repo.updateTrainingRunStatus(runId, "completed", {

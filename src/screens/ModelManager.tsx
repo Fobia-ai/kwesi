@@ -15,6 +15,7 @@ import { ModelsIcon, ExternalLinkIcon, TrainingIcon, ChevronDownIcon, DownloadIc
 import { InsetCard } from "../components/ui/InsetCard";
 import { Badge } from "../components/ui/Badge";
 import { Callout } from "../components/ui/Callout";
+import { PreviewButton } from "../components/training/PreviewButton";
 
 const OUTPUT_KIND_LABEL: Record<string, string> = {
   audio: "Audio",
@@ -513,6 +514,7 @@ export function ModelManagerScreen() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
+                    {tm.has_preview && <PreviewButton trainedModelId={tm.id} />}
                     <PillButton variant="ghost" size="sm" onClick={() => kwesiTraining.revealTrainedModel(tm.id)} aria-label={`Show ${tm.display_name} in folder`}>
                       <FolderIcon width={13} height={13} />
                       Open folder

@@ -3,7 +3,7 @@ import type { TrainingDiskCheck, TrainingDiskParams } from "./kwesiBridge";
 
 export type { TrainingDiskCheck, TrainingDiskParams } from "./kwesiBridge";
 
-export type TrainingPhase = "preprocess" | "train" | "export";
+export type TrainingPhase = "preprocess" | "train" | "export" | "preview";
 
 export type TrainingProgressEvent =
   | { type: "status"; runId: string; status: string }
@@ -45,6 +45,8 @@ export interface KwesiTrainingApi {
   // Deletes one trained model's files and registration (see electron/models/trainedModels.ts).
   deleteTrainedModel(id: string): Promise<{ ok: boolean; reason?: string; freedBytes?: number }>;
   revealTrainedModel(id: string): Promise<{ ok: boolean }>;
+  // The short clip made with a model when its run finished, if any.
+  readTrainedPreview(id: string): Promise<Uint8Array | null>;
   // How much disk a run needs vs. what's free (see electron/models/trainingDiskCheck.ts).
   diskCheck(params: TrainingDiskParams): Promise<TrainingDiskCheck>;
   pickOutputDir(modelId: string, runName: string): Promise<{ ok: boolean; path?: string }>;
@@ -61,6 +63,7 @@ function realTrainingApi(bridge: NonNullable<Window["kwesi"]>["training"]): Kwes
     listTrainedModels: (modelId) => bridge.listTrainedModels(modelId),
     deleteTrainedModel: (id) => bridge.deleteTrainedModel(id),
     revealTrainedModel: (id) => bridge.revealTrainedModel(id),
+    readTrainedPreview: (id) => bridge.readTrainedPreview(id),
     diskCheck: (params) => bridge.diskCheck(params),
     pickOutputDir: (modelId, runName) => bridge.pickOutputDir(modelId, runName),
     defaultOutputDir: (modelId, runName) => bridge.defaultOutputDir(modelId, runName),
@@ -180,6 +183,9 @@ function createMockTrainingApi(): KwesiTrainingApi {
     },
     async revealTrainedModel() {
       return { ok: false };
+    },
+    async readTrainedPreview() {
+      return null;
     },
     async diskCheck(params) {
       const loc = { path: params.outputDir, freeBytes: null, neededBytes: 0 };

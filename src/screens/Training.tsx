@@ -21,6 +21,7 @@ import { InfoHint } from "../components/ui/InfoHint";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Callout } from "../components/ui/Callout";
 import { InsetCard } from "../components/ui/InsetCard";
+import { PreviewButton } from "../components/training/PreviewButton";
 import { LogPanel } from "../components/ui/LogPanel";
 import { AlertIcon, CheckCircleIcon, CloseIcon } from "../components/ui/icons";
 import { useDatasetCheck, type ClipProbe } from "../lib/datasetCheck";
@@ -908,6 +909,13 @@ function NewTrainingRunForm({ onSubmitted }: { onSubmitted: () => void }) {
   );
 }
 
+const PHASE_LABEL: Record<string, string> = {
+  preprocess: "Preparing dataset",
+  train: "Training",
+  export: "Exporting",
+  preview: "Making a preview clip",
+};
+
 function RunProgress({ run, live }: { run: TrainingRunRow; live: TrainingProgressEvent | undefined }) {
   if (run.status !== "running" && run.status !== "preparing") return null;
   const progress = live && live.type === "progress" ? live : null;
@@ -920,9 +928,11 @@ function RunProgress({ run, live }: { run: TrainingRunRow; live: TrainingProgres
           style={{ width: pct !== undefined ? `${pct}%` : "30%" }}
         />
       </div>
-      {progress && (
+      {progress && progress.phase === "preview" ? (
+        <div className="text-[11px] text-ink-muted">{PHASE_LABEL.preview}…</div>
+      ) : progress && (
         <div className="text-[11px] text-ink-muted">
-          {progress.phase} · step {progress.step}
+          {PHASE_LABEL[progress.phase] ?? progress.phase} · step {progress.step}
           {progress.maxSteps ? `/${progress.maxSteps}` : ""}
           {progress.rate ? ` · ${progress.rate.toFixed(1)} it/s` : ""}
           {progress.etaText ? ` · ETA ${progress.etaText}` : ""}
@@ -932,7 +942,17 @@ function RunProgress({ run, live }: { run: TrainingRunRow; live: TrainingProgres
   );
 }
 
-function RunRow({ run, live, onCancel }: { run: TrainingRunRow; live: TrainingProgressEvent | undefined; onCancel: () => void }) {
+function RunRow({
+  run,
+  live,
+  hasPreview,
+  onCancel,
+}: {
+  run: TrainingRunRow;
+  live: TrainingProgressEvent | undefined;
+  hasPreview: boolean;
+  onCancel: () => void;
+}) {
   const manifest: ModelManifest | undefined = MANIFESTS[run.model_id];
   const hyperparams = useMemo(() => {
     try {
@@ -972,6 +992,9 @@ function RunRow({ run, live, onCancel }: { run: TrainingRunRow; live: TrainingPr
             Cancel
           </PillButton>
         )}
+        {run.status === "completed" && hasPreview && run.output_checkpoint_id && (
+          <PreviewButton trainedModelId={run.output_checkpoint_id} />
+        )}
       </div>
       <RunProgress run={run} live={live} />
     </InsetCard>
@@ -981,9 +1004,12 @@ function RunRow({ run, live, onCancel }: { run: TrainingRunRow; live: TrainingPr
 export function TrainingScreen() {
   const [runs, setRuns] = useState<TrainingRunRow[] | null>(null);
   const [liveByRun, setLiveByRun] = useState<Record<string, TrainingProgressEvent>>({});
+  // trained_model ids whose run left a preview clip
+  const [withPreview, setWithPreview] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(() => {
     kwesiTraining.list().then(setRuns);
+    kwesiTraining.listTrainedModels().then((tms) => setWithPreview(new Set(tms.filter((t) => t.has_preview).map((t) => t.id))));
   }, []);
 
   useEffect(() => {
@@ -1023,7 +1049,13 @@ export function TrainingScreen() {
             ) : (
               <div className="flex flex-col gap-2">
                 {runs.map((run) => (
-                  <RunRow key={run.id} run={run} live={liveByRun[run.id]} onCancel={() => cancelRun(run.id)} />
+                  <RunRow
+                    key={run.id}
+                    run={run}
+                    live={liveByRun[run.id]}
+                    hasPreview={!!run.output_checkpoint_id && withPreview.has(run.output_checkpoint_id)}
+                    onCancel={() => cancelRun(run.id)}
+                  />
                 ))}
               </div>
             )}

@@ -119,6 +119,7 @@ declare global {
         deleteTrainedModel: (id: string) => Promise<{ ok: boolean; reason?: string; freedBytes?: number }>;
         diskCheck: (params: TrainingDiskParams) => Promise<TrainingDiskCheck>;
         revealTrainedModel: (id: string) => Promise<{ ok: boolean }>;
+        readTrainedPreview: (id: string) => Promise<Uint8Array | null>;
         pickOutputDir: (modelId: string, runName: string) => Promise<{ ok: boolean; path?: string }>;
         defaultOutputDir: (modelId: string, runName: string) => Promise<string>;
         onProgress: (callback: (event: unknown) => void) => () => void;
@@ -216,7 +217,7 @@ declare global {
         onProgress: (callback: (event: EnvProgress) => void) => () => void;
       };
       audioRender: {
-        onRequest: (callback: (request: { requestId: string; midiPath: string }) => void) => () => void;
+        onRequest: (callback: (request: { requestId: string; midiBytes: Uint8Array }) => void) => () => void;
         respond: (response: { requestId: string; ok: boolean; wavBytes?: Uint8Array; reason?: string }) => void;
       };
     };

@@ -34,8 +34,16 @@ export interface TrainedVariantOption {
   label: string; // shown in the picker
 }
 
-export function visibleInputs(inputs: ManifestInput[], selectedVariant: string | null): ManifestInput[] {
-  return inputs.filter((input) => !input.onlyForVariant || input.onlyForVariant === selectedVariant);
+export function visibleInputs(
+  inputs: ManifestInput[],
+  selectedVariant: string | null,
+  trainedVariantNames: string[] = [],
+): ManifestInput[] {
+  return inputs.filter(
+    (input) =>
+      (!input.onlyForVariant || input.onlyForVariant === selectedVariant) &&
+      (!input.onlyForTrainedVariant || (selectedVariant !== null && trainedVariantNames.includes(selectedVariant))),
+  );
 }
 
 /**
@@ -403,7 +411,11 @@ export function DynamicGenerationForm({
     );
   }
 
-  const shown = visibleInputs(manifest.inputs, selectedVariant);
+  const shown = visibleInputs(
+    manifest.inputs,
+    selectedVariant,
+    trainedOptions.map((t) => t.name),
+  );
   const missingMusicName = !String(values.music_name ?? "").trim();
   const missingArtistProfile = !String(values.artist_profile_id ?? "").trim();
   const missingRequired =

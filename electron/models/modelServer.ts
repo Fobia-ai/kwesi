@@ -223,6 +223,8 @@ let aceStepLoadedVariant: string | null = null;
 // Install path of the trained LoRA adapter currently loaded and enabled on
 // that slot-1 model, or null when it's running the plain base DiT.
 let aceStepLoadedLora: string | null = null;
+// Strength the loaded LoRA is applied at (the server's default after a load is 1.0).
+let aceStepLoraScale = 1;
 // Coalesces concurrent submissions that race to start the same real server —
 // without this, two generations submitted back-to-back before the first
 // health check resolves would each spawn their own subprocess.
@@ -507,6 +509,19 @@ async function stopRealServer(modelId: string): Promise<void> {
 }
 
 /** Called from main.ts on app quit so no orphaned Python process is left running. */
+/**
+ * Stops every model server with no generation in progress, returning their
+ * model ids. Training calls this first: a server left loaded from earlier
+ * generations (or post-training previews) holds GPU memory a run needs --
+ * enough to push MuseCoco from GPU to CPU training. They restart on demand.
+ */
+export async function stopIdleServers(): Promise<string[]> {
+  const busy = new Set([...activeGenerationJobs.values()].map((job) => job.modelId));
+  const idle = [...realServers.keys()].filter((modelId) => !busy.has(modelId));
+  await Promise.all(idle.map((modelId) => stopRealServer(modelId)));
+  return idle;
+}
+
 export async function shutdownAllRealServers(): Promise<void> {
   await Promise.all([...realServers.keys()].map((modelId) => stopRealServer(modelId)));
 }
@@ -913,7 +928,7 @@ async function aceStepModelInitialized(port: number): Promise<boolean> {
  * the trained LoRA on top of it (or no LoRA for a stock variant). Each step
  * is skipped when already in place, so repeat generations cost nothing.
  */
-async function ensureAceStepCheckpoint(port: number, variant: string): Promise<string> {
+async function ensureAceStepCheckpoint(port: number, variant: string, loraScale = 1): Promise<string> {
   const lora = resolveAceStepLora(variant);
   const baseVariant = lora?.baseVariant ?? variant;
   const wantedLora = lora?.adapterPath ?? null;
@@ -931,6 +946,14 @@ async function ensureAceStepCheckpoint(port: number, variant: string): Promise<s
     await aceStepLoraCall(port, "load", { lora_path: wantedLora });
     await aceStepLoraCall(port, "toggle", { use_lora: true });
     aceStepLoadedLora = wantedLora;
+    aceStepLoraScale = 1;
+  }
+  if (wantedLora) {
+    const scale = Math.min(1, Math.max(0, Number.isFinite(loraScale) ? loraScale : 1));
+    if (scale !== aceStepLoraScale) {
+      await aceStepLoraCall(port, "scale", { scale });
+      aceStepLoraScale = scale;
+    }
   }
   return baseVariant;
 }
@@ -970,6 +993,94 @@ interface AceStepQueryResultResponse {
   error?: string | null;
 }
 
+/**
+ * Submits one ACE-Step task, polls it to completion and downloads the audio
+ * to outputPath -- the server's own async API (POST /release_task -> POST
+ * /query_result -> GET /v1/audio, docs/en/API.md). Shared by workspace
+ * generation and post-training previews.
+ */
+async function aceStepRenderTask(
+  port: number,
+  request: Record<string, unknown>,
+  outputPath: string,
+  controller: AbortController,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  const releaseRes = await fetch(`http://127.0.0.1:${port}/release_task`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: withTimeout(controller, 30_000),
+    body: JSON.stringify({
+      ...request,
+      // audio_format defaults to mp3 on ACE-Step's own server (docs/en/
+      // API.md section 4.2); this app's outputs are wav everywhere.
+      audio_format: "wav",
+      // The 5Hz LM is disabled process-wide (see spawnAceStepServer) --
+      // these all default true on ACE-Step's own API and would otherwise
+      // try to invoke an LM that was never initialized.
+      thinking: false,
+      use_cot_caption: false,
+      use_cot_language: false,
+      use_format: false,
+      sample_mode: false,
+    }),
+  });
+  if (!releaseRes.ok) {
+    const text = await releaseRes.text().catch(() => releaseRes.statusText);
+    throw new Error(`ace-step-1.5 /release_task returned ${releaseRes.status}: ${text}`);
+  }
+  const releaseBody = (await releaseRes.json()) as AceStepReleaseTaskResponse;
+  const taskId = releaseBody.data?.task_id;
+  if (!taskId) {
+    throw new Error(`ace-step-1.5 /release_task did not return a task_id: ${JSON.stringify(releaseBody)}`);
+  }
+
+  const startedAt = Date.now();
+  // Real inference can legitimately run for several minutes at longer
+  // durations/batch sizes with the LLM disabled -- budget generously.
+  const pollBudgetMs = 20 * 60 * 1000;
+  const pollDeadline = startedAt + pollBudgetMs;
+  let resultFileUrl: string | null = null;
+
+  while (Date.now() < pollDeadline) {
+    if (controller.signal.aborted) break;
+    await delay(2000);
+    if (controller.signal.aborted) break;
+    const queryRes = await fetch(`http://127.0.0.1:${port}/query_result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: withTimeout(controller, 10_000),
+      body: JSON.stringify({ task_id_list: [taskId] }),
+    }).catch(() => null);
+    if (!queryRes || !queryRes.ok) continue;
+
+    const queryBody = (await queryRes.json()) as AceStepQueryResultResponse;
+    const item = queryBody.data?.find((r) => r.task_id === taskId);
+    if (!item) continue;
+
+    onProgress?.(Math.min(90, Math.round(((Date.now() - startedAt) / pollBudgetMs) * 100)));
+
+    if (item.status === 1) {
+      const parsed = JSON.parse(item.result ?? "[]") as Array<{ file?: string }>;
+      const first = parsed.find((r) => typeof r.file === "string" && r.file.length > 0);
+      if (!first?.file) throw new Error(`ace-step-1.5 task ${taskId} succeeded but returned no audio file`);
+      resultFileUrl = first.file;
+      break;
+    }
+    if (item.status === 2) {
+      throw new Error(`ace-step-1.5 task ${taskId} failed (see the server's own log for the real cause)`);
+    }
+  }
+
+  if (!resultFileUrl) {
+    throw new Error(`ace-step-1.5 task ${taskId} did not complete within the ${pollBudgetMs / 60_000}-minute poll budget`);
+  }
+
+  const audioRes = await fetch(`http://127.0.0.1:${port}${resultFileUrl}`, { signal: withTimeout(controller, 60_000) });
+  if (!audioRes.ok) throw new Error(`ace-step-1.5 failed to download generated audio: ${audioRes.status}`);
+  fs.writeFileSync(outputPath, Buffer.from(await audioRes.arrayBuffer()));
+}
+
 async function runRealAceStepJob(workspaceId: string, generation: repo.GenerationRow): Promise<void> {
   const generationId = generation.id;
   const projectId = generation.project_id;
@@ -979,12 +1090,16 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     const { port } = await ensureRealServerRunning(ACE_STEP_MODEL_ID);
     // A trained LoRA variant runs on its base DiT, so `variant` below is
     // always a real base checkpoint name the server knows.
-    const variant = await ensureAceStepCheckpoint(port, generation.checkpoint_variant ?? DEFAULT_ACE_STEP_VARIANT);
+    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
+    const variant = await ensureAceStepCheckpoint(
+      port,
+      generation.checkpoint_variant ?? DEFAULT_ACE_STEP_VARIANT,
+      typeof inputParams.lora_scale === "number" ? inputParams.lora_scale : 1,
+    );
 
     repo.updateGenerationStatus(generationId, "running");
     broadcast({ type: "running", generationId, projectId, progressPct: 0 });
 
-    const inputParams = JSON.parse(generation.input_params) as Record<string, unknown>;
     const durationSec = typeof inputParams.duration_sec === "number" ? inputParams.duration_sec : 120;
     const bpm = typeof inputParams.bpm === "number" ? inputParams.bpm : undefined;
     const keyScale = typeof inputParams.key_signature === "string" && inputParams.key_signature ? inputParams.key_signature : undefined;
@@ -1001,11 +1116,10 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
     ensureDir(dir);
     const outputPath = path.join(dir, "output.wav");
 
-    const releaseRes = await fetch(`http://127.0.0.1:${port}/release_task`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: withTimeout(controller, 30_000),
-      body: JSON.stringify({
+    const startedAt = Date.now();
+    await aceStepRenderTask(
+      port,
+      {
         prompt: buildAceStepPrompt(inputParams),
         lyrics,
         vocal_language: vocalLanguage,
@@ -1016,83 +1130,11 @@ async function runRealAceStepJob(workspaceId: string, generation: repo.Generatio
         batch_size: batchCount,
         model: variant,
         reference_audio_path: referenceAudioPath,
-        // audio_format defaults to mp3 on ACE-Step's own server (see
-        // docs/en/API.md section 4.2) — this app's manifest declares wav
-        // output (matching every other real model's own.wav convention and
-        // audio.ts's mimeTypeFor), so it's requested explicitly rather than
-        // relying on the real default.
-        audio_format: "wav",
-        // The 5Hz LM is disabled process-wide (see spawnAceStepServer) —
-        // these all default true on ACE-Step's own API and would otherwise
-        // try to invoke an LM that was never initialized.
-        thinking: false,
-        use_cot_caption: false,
-        use_cot_language: false,
-        use_format: false,
-        sample_mode: false,
-      }),
-    });
-    if (!releaseRes.ok) {
-      const text = await releaseRes.text().catch(() => releaseRes.statusText);
-      throw new Error(`ace-step-1.5 /release_task returned ${releaseRes.status}: ${text}`);
-    }
-    const releaseBody = (await releaseRes.json()) as AceStepReleaseTaskResponse;
-    const taskId = releaseBody.data?.task_id;
-    if (!taskId) {
-      throw new Error(`ace-step-1.5 /release_task did not return a task_id: ${JSON.stringify(releaseBody)}`);
-    }
-
-    const startedAt = Date.now();
-    // Real inference can legitimately run for several minutes at longer
-    // durations/batch sizes with the LLM disabled — budget generously, same
-    // spirit as servers/musecoco/README.md's 30-minute CPU budget.
-    const pollBudgetMs = 20 * 60 * 1000;
-    const pollDeadline = startedAt + pollBudgetMs;
-    let resultFileUrl: string | null = null;
-
-    while (Date.now() < pollDeadline) {
-      if (controller.signal.aborted) break;
-      await delay(2000);
-      if (controller.signal.aborted) break;
-      const queryRes = await fetch(`http://127.0.0.1:${port}/query_result`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: withTimeout(controller, 10_000),
-        body: JSON.stringify({ task_id_list: [taskId] }),
-      }).catch(() => null);
-      if (!queryRes || !queryRes.ok) continue;
-
-      const queryBody = (await queryRes.json()) as AceStepQueryResultResponse;
-      const item = queryBody.data?.find((r) => r.task_id === taskId);
-      if (!item) continue;
-
-      broadcast({
-        type: "running",
-        generationId,
-        projectId,
-        progressPct: Math.min(90, Math.round(((Date.now() - startedAt) / pollBudgetMs) * 100)),
-      });
-
-      if (item.status === 1) {
-        const parsed = JSON.parse(item.result ?? "[]") as Array<{ file?: string }>;
-        const first = parsed.find((r) => typeof r.file === "string" && r.file.length > 0);
-        if (!first?.file) throw new Error(`ace-step-1.5 task ${taskId} succeeded but returned no audio file`);
-        resultFileUrl = first.file;
-        break;
-      }
-      if (item.status === 2) {
-        throw new Error(`ace-step-1.5 task ${taskId} failed (see the server's own log for the real cause)`);
-      }
-    }
-
-    if (!resultFileUrl) {
-      throw new Error(`ace-step-1.5 task ${taskId} did not complete within the ${pollBudgetMs / 60_000}-minute poll budget`);
-    }
-
-    const audioRes = await fetch(`http://127.0.0.1:${port}${resultFileUrl}`, { signal: withTimeout(controller, 60_000) });
-    if (!audioRes.ok) throw new Error(`ace-step-1.5 failed to download generated audio: ${audioRes.status}`);
-    const audioBuf = Buffer.from(await audioRes.arrayBuffer());
-    fs.writeFileSync(outputPath, audioBuf);
+      },
+      outputPath,
+      controller,
+      (pct) => broadcast({ type: "running", generationId, projectId, progressPct: pct }),
+    );
 
     const durationMs = Date.now() - startedAt;
     repo.updateGenerationStatus(generationId, "done", { outputFiles: [outputPath], durationMs });
@@ -1264,6 +1306,82 @@ const PROGRESS_STEPS = 5;
 // Small, fixed chance of a simulated failure so the error-handling UI has
 // something real to exercise, per the Phase 4 roadmap spec.
 const FAILURE_RATE = 0.12;
+
+
+// --- Post-training preview clips ----------------------------------------------
+
+export interface PreviewRequest {
+  modelId: string;
+  // The trained variant -- already registered, so the servers resolve it
+  // exactly like a workspace generation would.
+  variantName: string;
+  outputPath: string; // .wav
+  caption?: string; // MusicGen/ACE-Step prompt (the dataset's first caption)
+  inputAudioPath?: string; // RAVE's source clip (the dataset's first file)
+}
+
+async function postGenerate(port: number, body: unknown, timeoutMs: number): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(timeoutMs),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`server returned ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+}
+
+/**
+ * One short clip from a freshly trained model, so it can be heard before
+ * it's picked in a workspace. Uses the same servers and requests as
+ * workspace generation. Throws on failure -- the caller treats that as "no
+ * preview", never as a failed training run.
+ */
+export async function generatePreviewClip(req: PreviewRequest): Promise<void> {
+  const { port } = await ensureRealServerRunning(req.modelId);
+  const prompt = req.caption?.trim() || "a short instrumental piece";
+  switch (req.modelId) {
+    case MUSICGEN_MODEL_ID:
+      await postGenerate(port, { variant: req.variantName, prompt, duration_sec: 8, output_path: req.outputPath }, 5 * 60_000);
+      return;
+    case RAVE_MODEL_ID:
+      if (!req.inputAudioPath) throw new Error("no source clip to transfer");
+      await postGenerate(
+        port,
+        { variant: req.variantName, input_audio_path: req.inputAudioPath, output_path: req.outputPath },
+        5 * 60_000,
+      );
+      return;
+    case ACE_STEP_MODEL_ID: {
+      const baseVariant = await ensureAceStepCheckpoint(port, req.variantName);
+      await aceStepRenderTask(
+        port,
+        { prompt, lyrics: "[Instrumental]", vocal_language: "en", audio_duration: 10, batch_size: 1, model: baseVariant },
+        req.outputPath,
+        new AbortController(),
+      );
+      return;
+    }
+    case MUSECOCO_MODEL_ID: {
+      const midiPath = req.outputPath.replace(/\.wav$/, ".mid");
+      await postGenerate(
+        port,
+        {
+          input_params: {},
+          output_path: midiPath,
+          checkpoint_path: trainedVariantPath(MUSECOCO_MODEL_ID, req.variantName) ?? undefined,
+        },
+        30 * 60_000,
+      );
+      // Same Tone.js render that turns a workspace MuseCoco track into audio.
+      const rendered = await requestRendererAudioRender(midiPath, req.outputPath);
+      fs.rmSync(midiPath, { force: true });
+      if (!rendered.ok) throw new Error(`couldn't render the MIDI to audio: ${rendered.reason}`);
+      return;
+    }
+    default:
+      throw new Error(`no preview for ${req.modelId}`);
+  }
+}
 
 async function runMockJob(
   workspaceId: string,

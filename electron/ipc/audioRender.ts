@@ -36,7 +36,7 @@ export function registerAudioRenderIpcHandlers() {
 }
 
 /**
- * Asks the renderer to render a real MIDI file to WAV bytes and writes the
+ * Asks the renderer to render a MIDI file to WAV bytes and writes the
  * result to `outputPath` -- main owns the file write (not the renderer),
  * matching how every other job in modelServer.ts writes its own output
  * directly, and avoiding a second new "silent write anywhere" IPC handler.
@@ -54,6 +54,16 @@ export async function requestRendererAudioRender(
   const win = BrowserWindow.getAllWindows()[0];
   if (!win || win.isDestroyed()) return { ok: false, reason: "No renderer window available" };
 
+  // Main reads the MIDI and sends its bytes: the renderer's file access is
+  // limited to the workspaces folder, and a training preview's MIDI lives
+  // beside the trained model instead.
+  let midiBytes: Uint8Array;
+  try {
+    midiBytes = new Uint8Array(await fs.promises.readFile(midiPath));
+  } catch (err) {
+    return { ok: false, reason: `couldn't read ${midiPath}: ${err instanceof Error ? err.message : err}` };
+  }
+
   const requestId = randomUUID();
   const response = await new Promise<RenderResponse>((resolve) => {
     const timer = setTimeout(() => {
@@ -64,7 +74,7 @@ export async function requestRendererAudioRender(
       clearTimeout(timer);
       resolve(r);
     });
-    win.webContents.send(REQUEST_CHANNEL, { requestId, midiPath });
+    win.webContents.send(REQUEST_CHANNEL, { requestId, midiBytes });
   });
 
   if (!response.ok || !response.wavBytes) {

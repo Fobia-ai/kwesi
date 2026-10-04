@@ -101,6 +101,7 @@ export interface TrainedModelRow {
   // were registered.
   variant_name: string | null;
   disk_size_bytes: number | null;
+  has_preview: boolean;
 }
 
 export interface KwesiDbApi {

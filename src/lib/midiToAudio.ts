@@ -118,13 +118,10 @@ function triggerDrumHit(midiNote: number, time: number, velocity: number) {
  * electron/ipc/audioRender.ts; Node has no Web Audio API, so this has to
  * run here in the renderer, not in the main-process job itself).
  */
-export async function renderMidiToWav(midiPath: string): Promise<Uint8Array> {
-  const read = await window.kwesi!.audio.read(midiPath);
-  if (!read.ok || !read.bytes) throw new Error(read.reason ?? "Could not read MIDI file");
-
+export async function renderMidiToWav(midiBytes: Uint8Array): Promise<Uint8Array> {
   // Midi's constructor accepts an ArrayLike<number> directly, so the
   // Uint8Array itself works without any manual ArrayBuffer extraction.
-  const midi = new Midi(read.bytes);
+  const midi = new Midi(midiBytes);
 
   const tracksWithNotes = midi.tracks.filter((t) => t.notes.length > 0);
   if (tracksWithNotes.length === 0) throw new Error("MIDI file has no notes");

@@ -43,6 +43,10 @@ interface ManifestInputBase {
   // this exactly — e.g. MusicGen's melody reference only applies to the
   // "melody" variant.
   onlyForVariant?: string;
+  // Only rendered when the selected checkpoint is one of the user's own
+  // trained models (e.g. ACE-Step's LoRA strength, meaningless on a stock
+  // checkpoint).
+  onlyForTrainedVariant?: boolean;
   // Marks this as *the* genre-conditioning input for the model (at most one
   // per manifest) — DynamicGenerationForm seeds it from the selected artist
   // profile's own genres (src/data/genres.ts) whenever the artist changes,
@@ -705,6 +709,18 @@ const ACE_STEP: ModelManifest = {
     },
     { key: "reference_audio", type: "audio_upload", label: "Reference audio (style/cover, optional)", accept: "audio/*" },
     { key: "duration_sec", type: "number", label: "Duration (sec)", min: 10, max: 600, default: 120 },
+    {
+      key: "lora_scale",
+      type: "number",
+      label: "LoRA strength",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 1,
+      onlyForTrainedVariant: true,
+      helpText:
+        "How strongly your trained adapter shapes the result: 1 is full strength, 0 is the base model alone. Lower it if results sound too much like your training clips.",
+    },
     { key: "bpm", type: "number", label: "BPM (optional)", min: 40, max: 220 },
     { key: "key_signature", type: "text", label: "Key/scale (optional)", placeholder: "e.g. F# minor" },
     { key: "time_signature", type: "text", label: "Time signature (optional)", placeholder: "e.g. 4/4" },

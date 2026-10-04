@@ -12,9 +12,9 @@ import { renderMidiToWav } from "./midiToAudio";
 export function installAudioRenderListener() {
   if (!window.kwesi?.audioRender) return;
   const audioRender = window.kwesi.audioRender;
-  audioRender.onRequest(async ({ requestId, midiPath }) => {
+  audioRender.onRequest(async ({ requestId, midiBytes }) => {
     try {
-      const wavBytes = await renderMidiToWav(midiPath);
+      const wavBytes = await renderMidiToWav(midiBytes);
       audioRender.respond({ requestId, ok: true, wavBytes });
     } catch (err) {
       audioRender.respond({ requestId, ok: false, reason: err instanceof Error ? err.message : String(err) });

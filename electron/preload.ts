@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld("kwesi", {
     diskCheck: (params: { modelId: string; outputDir: string; hyperparams: Record<string, unknown>; datasetBytes: number }) =>
       ipcRenderer.invoke("kwesi:training:diskCheck", params),
     revealTrainedModel: (id: string) => ipcRenderer.invoke("kwesi:training:revealTrainedModel", id),
+    readTrainedPreview: (id: string) => ipcRenderer.invoke("kwesi:training:readTrainedPreview", id),
     pickOutputDir: (modelId: string, runName: string) =>
       ipcRenderer.invoke("kwesi:training:pickOutputDir", modelId, runName),
     defaultOutputDir: (modelId: string, runName: string) =>
@@ -159,8 +160,8 @@ contextBridge.exposeInMainWorld("kwesi", {
   // other channel here. See electron/ipc/audioRender.ts's own comment for
   // why this shape exists at all (Node has no Web Audio API).
   audioRender: {
-    onRequest: (callback: (request: { requestId: string; midiPath: string }) => void) => {
-      const listener = (_event: IpcRendererEvent, request: { requestId: string; midiPath: string }) =>
+    onRequest: (callback: (request: { requestId: string; midiBytes: Uint8Array }) => void) => {
+      const listener = (_event: IpcRendererEvent, request: { requestId: string; midiBytes: Uint8Array }) =>
         callback(request);
       ipcRenderer.on("kwesi:audioRender:request", listener);
       return () => ipcRenderer.removeListener("kwesi:audioRender:request", listener);
