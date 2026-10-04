@@ -910,7 +910,7 @@ const YUE2: ModelManifest = {
       kind: "midi",
       format: "abc",
       notes:
-        "The real symbolic output is ABC notation text (score.abc — real staff notation with vocal/instrumental voices), not a binary Standard MIDI File — there is no .mid byte output anywhere in the real pipeline and no ABC->MIDI conversion utility in the repo. Rendered as plain monospace text (src/components/midi/AbcScoreViewer.tsx) rather than through the real PianoRollViewer, which only parses SMF .mid bytes and cannot render ABC as-is — the \"midi\" kind is kept here as the closest existing manifest slot rather than inventing a new output kind. A real ABC-notation (staff) renderer would be a further improvement, not required for the score to be visible.",
+        "The symbolic output is ABC notation text (score.abc), with vocal and instrumental voices. The app renders it as staff notation (src/components/midi/AbcNotationRenderer.tsx) and converts it to MIDI for the piano roll and export (src/lib/abcToMidi.ts).",
     },
   ],
   server: { entrypoint: "server.py", venv: "yue2", portRange: [17660, 17679] },

@@ -12,7 +12,7 @@ less VRAM than the model's own documented 24GB minimum.
 hand-written FastAPI wrapper around `YuE2Pipeline`, `electron/models/modelServer.ts`
 spawns and routes to it the same way it does for MusicGen/MuseCoco, and
 the YuE2 manifest declares dual audio + ABC outputs that the app's existing
-audio player and `AbcScoreViewer` can display. See "What's not done" below for
+audio player and `AbcNotationRenderer` can display. See "What's not done" below for
 the one remaining honest gap.
 
 ## Repo and what it actually is

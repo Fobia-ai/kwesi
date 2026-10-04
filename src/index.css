@@ -8,12 +8,8 @@
   --kwesi-ink-muted: 108 108 116;
   --kwesi-accent: 20 20 22;
   --kwesi-accent-ink: 255 255 255;
-  /* Glass surface tokens: base color + per-mode alpha, so .kwesi-glass
-     itself never hardcodes a light/dark-specific color (see the bug this
-     fixed — .dark-class overrides were unreachable because nothing ever
-     applied a literal .dark class; only prefers-color-scheme flipped the
-     rest of the palette, leaving glass panels stuck light-mode-white with
-     now-white text on top of them). */
+  /* Glass surface tokens: base color + alpha, so .kwesi-glass itself never
+     hardcodes a color. */
   --kwesi-glass-bg: 255 255 255;
   --kwesi-glass-bg-alpha: 0.65;
   --kwesi-glass-strong-alpha: 0.8;
@@ -28,65 +24,13 @@
      starts level with each screen's main glass panel instead of the header
      text above it. Update both together if PageHeader's typography changes. */
   --kwesi-header-h: 90px;
-  /* Status colors, flipped per theme like ink/accent. Tailwind's dark:
-     variants never apply here (dark mode comes from prefers-color-scheme,
-     not a .dark class), so these must be tokens, not dark: overrides. */
+  /* Status colors, as tokens like ink/accent so every surface uses one
+     palette. */
   --kwesi-danger: 220 38 38;
   --kwesi-warning: 180 83 9;
   --kwesi-success: 4 120 87;
 }
 
-.dark {
-  --kwesi-bg: 9 9 13;
-  --kwesi-ink: 240 240 242;
-  /* Was 150 150 158 -- measured against the real backdrop image (average
-     and brightest sampled patches, through the scrim and glass below):
-     that value never cleared even a lenient contrast ratio in the
-     brighter regions (as low as ~1.1:1 against a white-ish patch). This
-     clears ~4.5:1 (WCAG AA for normal text) against the average patch and
-     stays close to it even in a compounded worst case (a chip pill on
-     top of a glass panel over the image's brightest area) -- verified
-     with an actual luminance/contrast calculation against the shipped
-     backdrop.png, not eyeballed. */
-  --kwesi-ink-muted: 198 198 204;
-  --kwesi-accent: 245 245 247;
-  --kwesi-accent-ink: 20 20 22;
-  /* Was a white base at 0.07/0.1 alpha -- correct only when whatever sits
-     behind the glass is already dark (true of BackdropScene's rendered
-     scene, false of a bright custom backdrop image): tinting *toward
-     white* over a bright image makes panels brighter still, the opposite
-     of legible. A dark base at real alpha here properly pulls brightness
-     down regardless of what's behind it, and still reads as glass over
-     the dark rendered scene too (verified against both). */
-  --kwesi-glass-bg: 26 26 30;
-  --kwesi-glass-bg-alpha: 0.5;
-  --kwesi-glass-strong-alpha: 0.7;
-  --kwesi-glass-border: 255 255 255;
-  --kwesi-glass-border-alpha: 0.14;
-  --kwesi-glass-sheen: 0.1;
-  --kwesi-danger: 252 165 165;
-  --kwesi-warning: 252 211 77;
-  --kwesi-success: 110 231 183;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --kwesi-bg: 9 9 13;
-    --kwesi-ink: 240 240 242;
-    --kwesi-ink-muted: 198 198 204;
-    --kwesi-accent: 245 245 247;
-    --kwesi-accent-ink: 20 20 22;
-    --kwesi-glass-bg: 26 26 30;
-    --kwesi-glass-bg-alpha: 0.5;
-    --kwesi-glass-strong-alpha: 0.7;
-    --kwesi-glass-border: 255 255 255;
-    --kwesi-glass-border-alpha: 0.14;
-    --kwesi-glass-sheen: 0.1;
-    --kwesi-danger: 252 165 165;
-    --kwesi-warning: 252 211 77;
-    --kwesi-success: 110 231 183;
-  }
-}
 
 * {
   box-sizing: border-box;
@@ -116,9 +60,7 @@ body {
   color: rgb(var(--kwesi-ink));
 }
 
-/* Stage for the 3D backdrop. Flat on its own — the depth comes from the lit
-   geometry BackdropScene.tsx raymarches on the canvas above, deliberately
-   not from a CSS gradient wash. */
+/* Full-window layer behind the app (see DoodleBackdrop.tsx). */
 .kwesi-backdrop {
   position: fixed;
   inset: 0;
@@ -128,8 +70,8 @@ body {
   background: rgb(var(--kwesi-bg));
 }
 
-/* DoodleBackdrop.tsx: a dotted grid under a frame of music doodles. Both
-   use the ink token, so they flip with the theme like everything else. */
+/* DoodleBackdrop.tsx: a dotted grid under a frame of music doodles, both
+   drawn in the ink colour. */
 .kwesi-dot-grid {
   background-color: rgb(var(--kwesi-bg));
   background-image: radial-gradient(rgb(var(--kwesi-ink) / 0.14) 1.1px, transparent 1.6px);
@@ -143,37 +85,6 @@ body {
   width: 100%;
   height: 100%;
   color: rgb(var(--kwesi-ink) / 0.15);
-}
-
-/* Full-bleed canvas for the raymarched 3D backdrop (BackdropScene.tsx). It
-   renders at half resolution and is upscaled here, which also softens the
-   blobs' edges for free. */
-.kwesi-backdrop-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.kwesi-backdrop-image {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* Darkens a bright custom backdrop image back toward the app's normal
-   moodiness, so dark-mode glass panels (tuned against this component's own
-   dark rendered scene) keep their text contrast over it. Only rendered
-   alongside a custom image — the rendered scene is already dark, and
-   doesn't get this on top of it. */
-.kwesi-backdrop-scrim {
-  position: absolute;
-  inset: 0;
-  background: rgb(9 9 13 / 0.55);
 }
 
 /* The hero's DJ bobs to the music — gently, and not at all when the OS asks

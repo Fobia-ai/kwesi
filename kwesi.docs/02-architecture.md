@@ -571,7 +571,7 @@ training and with what input kind, and
   is now wired into the real-server path too — `servers/yue2/server.py` is a
   hand-written FastAPI wrapper around `YuE2Pipeline`, `modelServer.ts` routes
   to it on port `17660`, and the manifest declares dual `audio` + `midi`
-  outputs for the existing audio player and `AbcScoreViewer`. A real
+  outputs for the existing audio player and `AbcNotationRenderer`. A real
   standalone generation was proven in Phase 8; the wrapped server has not
   been exercised end-to-end through Electron on this machine because the
   YuE2 model weights are not present here. **Phase 9 status:**
