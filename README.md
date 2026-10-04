@@ -58,7 +58,7 @@ Core concepts:
 
 | Welcome | Home / Player | MIDI piano roll |
 |---|---|---|
-| ![First-launch welcome screen on the dotted doodle backdrop](./.github/screenshots/welcome.png) | ![Player card with track overview and lyrics](./.github/screenshots/home.png) | ![Piano roll of a MuseCoco track](./.github/screenshots/midi.png) |
+| ![First-launch welcome screen crediting each model on the dotted doodle backdrop](./.github/screenshots/welcome.png) | ![Player card with track overview and lyrics](./.github/screenshots/home.png) | ![Piano roll of a MuseCoco track](./.github/screenshots/midi.png) |
 
 | ABC notation | Workspace setup | New track form |
 |---|---|---|
@@ -78,7 +78,7 @@ Core concepts:
 
 **What the screenshots show**
 
-- **Welcome** — The first-launch screen. The whole app sits on a white dotted grid framed by music doodles.
+- **Welcome** — The first-launch screen, which credits each model to its authors with its licence. The whole app sits on a white dotted grid framed by music doodles.
 - **Home / player card** — The main playback view for a project. Switch between Overview, Lyrics, MIDI piano roll, ABC notation, and text exports.
 - **MIDI piano roll / ABC notation** — Symbolic models (MuseCoco, Museformer, YuE2) show their notes as a piano roll and as engraved staff notation, next to the rendered audio.
 - **Workspace setup** — A workspace is permanently bound to one model family when it is created.
