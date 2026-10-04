@@ -488,8 +488,9 @@ export function DynamicGenerationForm({
   return (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm">
-        Track name
-        <span className="text-danger"> *</span>
+        <span>
+          Track name<span className="text-danger"> *</span>
+        </span>
         <input
           value={(values.music_name as string) ?? ""}
           onChange={(e) => setValue("music_name", e.target.value)}
@@ -499,8 +500,9 @@ export function DynamicGenerationForm({
       </label>
 
       <label className="flex flex-col gap-1.5 text-sm">
-        Artist profile
-        <span className="text-danger"> *</span>
+        <span>
+          Artist profile<span className="text-danger"> *</span>
+        </span>
         <div className="flex items-center gap-2">
           {selectedArtistProfile && (
             <AvatarImage avatarPath={selectedArtistProfile.avatarPath} name={selectedArtistProfile.name} size={28} />
@@ -597,8 +599,10 @@ export function DynamicGenerationForm({
         }
         return (
           <label key={input.key} className="flex flex-col gap-1.5 text-sm">
-            {input.label}
-            {requiredMark}
+            <span>
+              {input.label}
+              {requiredMark}
+            </span>
             {control}
             {help}
           </label>

@@ -136,7 +136,8 @@ function layout(W: number, H: number, opts: DoodleLayoutOptions = {}): Placement
       // stray doodle; near it, about half.
       // Page headers (title + subtitle) sit on the backdrop itself, top-left
       // of the content area, so that strip stays clear like the middle.
-      if (headerStrip && x > 70 && x < Math.max(W * 0.62, 700) && y < 105) continue;
+      // ...and the header's actions on the right (New Project, free space).
+      if (headerStrip && y < 105 && ((x > 70 && x < Math.max(W * 0.62, 700)) || x > W - 300)) continue;
       const inside = x > INNER.x0 && x < INNER.x1 && y > INNER.y0 && y < INNER.y1;
       const near = x > INNER.x0 - 110 && x < INNER.x1 + 110 && y > INNER.y0 - 90 && y < INNER.y1 + 90;
       const keep = inside ? rand() < strays : near ? rand() < 0.55 : rand() < 0.9;

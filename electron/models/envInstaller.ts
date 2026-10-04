@@ -50,6 +50,10 @@ function vendorDir(modelId: string): string {
 export type OnOutput = (line: string) => void;
 
 /** Runs one command to completion, streaming combined stdout/stderr line-by-line. Rejects with a real, readable error on a non-zero exit. */
+// CSI sequences (colours, cursor moves) plus the rarer OSC form.
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
+
 export function runCommand(
   command: string,
   args: string[],
@@ -65,7 +69,9 @@ export function runCommand(
 
     let buffered = "";
     const onChunk = (chunk: Buffer) => {
-      buffered += chunk.toString();
+      // uv/pip colour their output even when piped; the setup dialogs and
+      // Settings > Environment showed it as raw "[36m…" escape codes.
+      buffered += chunk.toString().replace(ANSI_ESCAPE_RE, "");
       const lines = buffered.split(/\r?\n/);
       buffered = lines.pop() ?? "";
       for (const line of lines) if (line.length > 0) options.onOutput?.(line);

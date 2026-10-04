@@ -43,6 +43,10 @@ function NewWorkspaceModal({
 
   return (
     <>
+      {/* Hidden while the setup dialog is up -- two stacked glass dialogs
+          bleed into each other. Name and model live in this component, so
+          they're still filled in when it comes back. */}
+      {!showSetupDialog && (
       <Modal title="New Workspace" onClose={onClose}>
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5 text-sm">
@@ -79,6 +83,7 @@ function NewWorkspaceModal({
           </div>
         </div>
       </Modal>
+      )}
       {showSetupDialog && <ModelSetupDialog modelId={modelId} onClose={() => setShowSetupDialog(false)} />}
     </>
   );

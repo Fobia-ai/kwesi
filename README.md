@@ -56,29 +56,40 @@ Core concepts:
 
 ## Demo / screenshots
 
-| Home / Player | New track form | Workspace setup |
+| Welcome | Home / Player | MIDI piano roll |
 |---|---|---|
-| ![Home — player card with track overview and lyrics](./.github/screenshots/home.png) | ![New track form for ACE-Step 1.5](./.github/screenshots/form.png) | ![Creating a new workspace tied to a model](./.github/screenshots/workspace.png) |
+| ![First-launch welcome screen on the dotted doodle backdrop](./.github/screenshots/welcome.png) | ![Player card with track overview and lyrics](./.github/screenshots/home.png) | ![Piano roll of a MuseCoco track](./.github/screenshots/midi.png) |
 
-| Model Manager | Settings → Environment | Setup / install model |
+| ABC notation | Workspace setup | New track form |
 |---|---|---|
-| ![Download checkpoints per model variant](./.github/screenshots/modelmanager.png) | ![Install or check each model's Python environment](./.github/screenshots/settings.png) | ![Per-model setup dialog for weights and environment](./.github/screenshots/setup.png) |
+| ![Staff notation rendered from a track's ABC export](./.github/screenshots/notation.png) | ![Creating a new workspace tied to a model](./.github/screenshots/workspace.png) | ![New track form for ACE-Step 1.5](./.github/screenshots/form.png) |
 
-| Setup in progress | Generating | Training |
+| Generating | Model Manager | My trained models |
 |---|---|---|
-| ![Live install log while a venv is being created](./.github/screenshots/setupongoing.png) | ![Track queued and generating inside the player card](./.github/screenshots/generating.png) | ![Start a custom training run from the Training tab](./.github/screenshots/training.png) |
+| ![A batch of tracks generating inside a new project](./.github/screenshots/generating.png) | ![Download checkpoints per model variant](./.github/screenshots/modelmanager.png) | ![A trained RAVE model with Preview, Open folder and Delete](./.github/screenshots/trained.png) |
+
+| Settings → Environment | Setup dialog | Training |
+|---|---|---|
+| ![Install or check each model's Python environment](./.github/screenshots/settings.png) | ![Per-model setup dialog for weights and environment](./.github/screenshots/setup.png) | ![ACE-Step training with a captioned dataset and presets](./.github/screenshots/training.png) |
+
+| Training MuseCoco from MIDI | Continue training |
+|---|---|
+| ![MuseCoco training form with MIDI files, GPU acceleration and presets](./.github/screenshots/gpu.png) | ![Starting a RAVE run from a model you trained before](./.github/screenshots/continue.png) |
 
 **What the screenshots show**
 
+- **Welcome** — The first-launch screen. The whole app sits on a white dotted grid framed by music doodles.
 - **Home / player card** — The main playback view for a project. Switch between Overview, Lyrics, MIDI piano roll, ABC notation, and text exports.
-- **New track form** — Model-specific inputs: prompt, lyrics, genre/instrument tags, checkpoint variant, and artist profile.
+- **MIDI piano roll / ABC notation** — Symbolic models (MuseCoco, Museformer, YuE2) show their notes as a piano roll and as engraved staff notation, next to the rendered audio.
 - **Workspace setup** — A workspace is permanently bound to one model family when it is created.
-- **Model Manager** — Browse available checkpoints, see size and status, and queue downloads.
+- **New track form** — Model-specific inputs: prompt, lyrics, genre/instrument tags, checkpoint variant, and artist profile.
+- **Generating** — Tracks queued and generating, with progress and a Stop control.
+- **Model Manager** — Browse available checkpoints, see size and status, and queue downloads. Models you train are listed under My Trained Models, where you can preview, open or delete each one.
 - **Settings → Environment** — Check prerequisites and install each model's isolated Python venv without touching a terminal.
-- **Setup dialog** — Some models need both weights and an environment before they can generate; install them from this modal or jump to Settings.
-- **Setup in progress** — Live output from `uv` as dependencies are downloaded and installed.
-- **Generating** — A track queued for generation with progress and a Stop control.
-- **Training** — Pick a base model, drop in your dataset, and start a local training run.
+- **Setup dialog** — If a model is missing its weights or environment, this dialog lets you install them before you create a workspace or generate.
+- **Training** — Pick a base model, drop in your dataset, and choose a preset. The form checks the dataset and free disk space and shows a time estimate before you start.
+- **Training MuseCoco from MIDI** — Train on your own MIDI files, with optional GPU acceleration built from the same screen.
+- **Continue training** — Start a new run from a model you trained before. Settings that must match the original are locked.
 
 ---
 
