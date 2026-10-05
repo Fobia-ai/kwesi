@@ -70,8 +70,8 @@ export function ModelSetupDialog({ modelId, onClose, purpose = "generate", varia
         if (event.modelId !== modelId || event.variantName !== targetVariantName) return;
         if (event.type === "installed" || event.type === "failed") setInstallingVariant(false);
         refreshVariant();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelId, targetVariantName],
   );
 

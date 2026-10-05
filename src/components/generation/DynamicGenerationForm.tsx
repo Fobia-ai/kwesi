@@ -354,7 +354,6 @@ export function DynamicGenerationForm({
     // Queried once per mount — free VRAM doesn't meaningfully change while
     // this form is open, and re-querying per variant/field change would
     // just be extra nvidia-smi calls for no real benefit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

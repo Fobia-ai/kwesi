@@ -4,7 +4,7 @@ import path from "node:path";
 import * as repo from "../db/repositories.js";
 import { modelVariantDir, ensureDir, removeDirIfExists } from "../db/paths.js";
 import { listRepoFiles, resolveFileUrl, type HfFileInfo } from "./hfClient.js";
-import { tryResolveGatewayFileUrl, KWESI_ACCESS_TOKEN } from "./gatewayClient.js";
+import { tryResolveGatewayFileUrl } from "./gatewayClient.js";
 import { checkDiskSpace } from "./diskSpace.js";
 import { dirSizeBytes } from "../lib/fsSize.js";
 
