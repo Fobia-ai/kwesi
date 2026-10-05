@@ -179,6 +179,15 @@ declare global {
           avatarPath: string,
         ) => Promise<{ ok: boolean; bytes?: Uint8Array; mimeType?: string; reason?: string }>;
       };
+      updates: {
+        getStatus: () => Promise<UpdateStatus>;
+        check: () => Promise<UpdateStatus>;
+        download: () => Promise<UpdateStatus>;
+        install: () => Promise<boolean>;
+        getPreference: () => Promise<AutoUpdatePreference>;
+        setEnabled: (enabled: boolean) => Promise<{ preference: AutoUpdatePreference; status: UpdateStatus }>;
+        onStatus: (callback: (status: UpdateStatus) => void) => () => void;
+      };
       crashLog: {
         report: (
           kind: "window-error" | "unhandledrejection",
@@ -224,6 +233,29 @@ declare global {
     };
   }
 }
+
+// Mirrors electron/updates/updateStatus.ts's UpdateStatus / AutoUpdatePreference.
+export type UpdateDisabledReason = "dev" | "managed" | "env" | "setting" | "unsupported-install";
+export interface AutoUpdatePreference {
+  enabled: boolean;
+  source: "setting" | "env" | "default";
+}
+export type UpdateStatus =
+  | { state: "disabled"; reason: UpdateDisabledReason }
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "available"; version: string; releaseDate?: string }
+  | { state: "not-available"; checkedAt: number }
+  | {
+      state: "downloading";
+      version: string;
+      percent: number;
+      transferred: number;
+      total: number;
+      bytesPerSecond: number;
+    }
+  | { state: "downloaded"; version: string }
+  | { state: "error"; message: string; version?: string };
 
 // Mirrors electron/models/envInstaller.ts's own types.
 /** Pre-run disk-space check (electron/models/trainingDiskCheck.ts). */

@@ -15,8 +15,35 @@ on:
 permissions:
   contents: write
 
+# Auto-update (electron/updates/autoUpdate.ts) reads the latest PUBLISHED
+# GitHub Release: it fetches latest-linux.yml / latest-mac.yml / latest.yml
+# from it, then the installer (and its .blockmap, for differential
+# downloads) those files point to. So every one of those files has to be
+# uploaded, and a tag push publishes the release rather than leaving it a
+# draft -- drafts are invisible to the updater. A manual run
+# (workflow_dispatch) still only ever makes a draft.
+
 jobs:
+  # The version in latest*.yml comes from package.json, not the tag. If they
+  # disagree, installed apps compare against the wrong version, so fail
+  # before spending time on three builds.
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tag matches package.json version
+        if: github.event_name == 'push'
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
   release-linux:
+    needs: check-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,9 +70,11 @@ jobs:
           path: |
             release/*.AppImage
             release/*.deb
+            release/latest-linux.yml
           if-no-files-found: error
 
   release-macos:
+    needs: check-version
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -107,10 +136,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
-          path: release/*.dmg
+          # The zip is what MacUpdater installs from; the dmg is for manual
+          # downloads.
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
           if-no-files-found: error
 
   release-windows:
+    needs: check-version
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -136,7 +172,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error
 
   create-release:
@@ -164,10 +203,21 @@ jobs:
       - name: List release artifacts
         run: ls -lah release
 
+      # A release without these is silently invisible to every installed copy.
+      - name: Check update metadata is present
+        run: |
+          for f in latest-linux.yml latest-mac.yml latest.yml; do
+            test -f "release/$f" || { echo "::error::release/$f is missing"; exit 1; }
+          done
+
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'push' || inputs.publish
         with:
-          draft: true
+          # Published on a tag push so installed apps see it; a draft from a
+          # manual run. A tag with a pre-release suffix (v1.2.0-beta.1) is
+          # marked prerelease, which the updater also skips.
+          draft: ${{ github.event_name != 'push' }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: release/*

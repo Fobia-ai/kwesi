@@ -29,6 +29,7 @@ import { registerCrashLogIpcHandlers } from "./ipc/crashLog.js";
 import { registerSettingsIpcHandlers } from "./ipc/settings.js";
 import { registerEnvironmentIpcHandlers } from "./ipc/environment.js";
 import { registerAudioRenderIpcHandlers } from "./ipc/audioRender.js";
+import { registerUpdatesIpcHandlers } from "./ipc/updates.js";
 import { reconcileInstalledModelsFromDisk } from "./models/reconcile.js";
 import { shutdownAllRealServers } from "./models/modelServer.js";
 import { reconcileTrainingRunsOnStartup } from "./models/trainingManager.js";
@@ -103,6 +104,7 @@ registerCrashLogIpcHandlers();
 registerSettingsIpcHandlers(kwesiEnv.KWESI_EXPORTS_DIR, kwesiEnv.KWESI_MODELS_DIR);
 registerEnvironmentIpcHandlers();
 registerAudioRenderIpcHandlers();
+registerUpdatesIpcHandlers();
 
 // Recognizes weights already sitting in KWESI_MODELS_DIR from outside the
 // app's own download queue (e.g. scripts/download_models.py) so "installed"
@@ -198,11 +200,11 @@ ipcMain.handle("kwesi:get-env", () => kwesiEnv);
 
 app.whenReady().then(() => {
   createWindow();
-  // Phase 13: best-effort GitHub Releases check, packaged builds only --
-  // see electron/updates/autoUpdate.ts for why this reliably no-ops against
-  // this repo today (it's private) and why that's fine (fails silently to
-  // the crash log, never a blocking dialog).
-  checkForUpdates();
+  // Launch-time GitHub Releases check. A no-op when the updater is off
+  // (dev run, KWESI_MANAGED_PACKAGE=1, KWESI_AUTO_UPDATE=false); a failure
+  // only becomes an "error" status in Settings > About, never a dialog.
+  // See electron/updates/autoUpdate.ts.
+  void checkForUpdates();
 });
 
 app.on("window-all-closed", () => {

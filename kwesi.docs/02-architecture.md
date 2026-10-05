@@ -677,6 +677,7 @@ about who owns the value.
 | `KWESI_TRAINED_MODELS_DIR` | Default starting location for the per-training-run output picker (always user-editable per run, same pattern as `KWESI_EXPORTS_DIR` — this is not a locked structural dir) | `$KWESI_MODELS_DIR/custom` |
 | `KWESI_MODEL_SERVER_PORT_RANGE` | Local port range the Model Server Manager allocates from | `17600-17999` |
 | `KWESI_LOCK_IDLE_TIMEOUT_MINUTES` | Minutes of inactivity before the app auto-locks (app-lock feature, Phase 12) | `10` (only applies once a passcode is set; `0` disables idle-lock and keeps relaunch-only locking) |
+| `KWESI_AUTO_UPDATE` | GitHub Releases auto-update (see "Auto-update") | on; `false`/`0`/`no`/`off` turns it off entirely. The Settings → About switch overrides it once used |
 
 Example resulting layout with defaults:
 
@@ -806,7 +807,7 @@ read with that in mind. It is fixed and verified now (see below).
    startup log also showed the real Model-Manager disk-reconciliation pass
    (`[reconcile] found ... -> marked installed`) completing against the
    real `models/` directory during this same run.
-5. The packaged auto-update check ran for real against the live (private)
+5. The packaged auto-update check ran for real against the live (then private)
    GitHub repo, failed with the expected 404, and was caught and logged
    (one `crashes.log` entry, `kind: "auto-update-error"`) without crashing
    the app or blocking startup — see "Auto-update" below.
@@ -850,44 +851,112 @@ when present.
 
 ---
 
-## Auto-update (Phase 13)
+## Auto-update
 
-`electron/updates/autoUpdate.ts` wires `electron-updater`'s `autoUpdater`
-to check `electron-builder.yml`'s `publish` feed
-(`provider: github, owner: Fobia-ai, repo: kwesi`) once per launch, packaged
-builds only (`checkForUpdates()` no-ops immediately if `!app.isPackaged`,
-since there's no `app-update.yml` to compare against in a dev run).
-`autoDownload` is left `false` — this phase only checks and logs, it
-doesn't download or install anything, since there's no tested update flow
-to land users in yet.
+Checks GitHub Releases on the public repo `github.com/Fobia-ai/kwesi`
+(`electron-builder.yml`'s `publish` block, baked into the packaged
+`app-update.yml`) with `electron-updater`, and gives the user a
+check → download → restart flow in the UI. Nothing downloads without a
+click (`autoDownload = false`); a downloaded update installs when the user
+clicks **Restart to update**, or on the next normal quit
+(`autoInstallOnAppQuit`).
 
-**Honest, known limitation: this repo is currently PRIVATE.**
-electron-updater's GitHub provider fetches release metadata
-(`releases.atom`, then the versioned `latest*.yml` asset) over a plain,
-unauthenticated HTTPS request. That works for a public repo; GitHub
-returns a 404 for an anonymous request against a private repo's releases
-(**confirmed live** against the real repo, 2026-09-15 — see the exact
-`HttpError: 404` in the verification run below). There is no way to ship a
-*working* private-repo auto-updater to end users without embedding a
-GitHub token in the distributed binary — and a token embedded in every
-install is a leaked credential, not a real solution — so until this repo
-is made public (or a future update feed moves off GitHub Releases to
-something with its own real per-user auth story), a genuine update check
-against this feed will keep failing. This isn't a bug to fix later in the
-usual sense; it's a real tradeoff between "repo stays private" and
-"auto-update works," to be made deliberately whenever it's made at all.
+**Off entirely — no network request at all — when any of:**
+- the app is running from source (`!app.isPackaged`; there's no
+  `app-update.yml` to compare against),
+- `KWESI_MANAGED_PACKAGE=1` (a launcher such as Fobia owns install/update),
+- the user turned it off. The **Automatic updates** On / Off switch in
+  Settings → About is saved as the `autoUpdate` setting and **always
+  wins** once used, because installer users can't realistically set env
+  vars. Until it's used, `KWESI_AUTO_UPDATE` decides: `false` / `0` / `no`
+  / `off` (any case) is off, anything else is on. With neither set, it's
+  on. See `resolveAutoUpdatePreference`. The switch applies immediately
+  (`setAutoUpdateEnabled`; switching on also runs a check right away), and
+  switching off also cancels "install on next quit" for an
+  already-downloaded update.
 
-**Verified real (2026-09-15, this machine):** a packaged Linux build's
-startup log showed the actual sequence —
-`Checking for update` → a real HTTPS request to
-`https://github.com/Fobia-ai/kwesi/releases.atom` → a genuine `404
-HttpError` from GitHub → caught by the `error` handler → one structured
-entry written to the local `crashes.log` (`kind: "auto-update-error"`) →
-the app kept running normally for the rest of its lifetime, no dialog, no
-crash. That's the fail-gracefully behavior this was built for, observed
-actually happening, not just coded defensively and assumed to work.
+The only server contacted is GitHub: `github.com/Fobia-ai/kwesi/releases.atom`
+(latest published tag), then
+`.../releases/download/vX.Y.Z/latest-linux.yml` (or `latest-mac.yml` /
+`latest.yml`), then, only on **Download**, the installer from the same
+path (served via GitHub's asset CDN).
 
----
+electron-updater can also refuse to run in a packaged build it can't
+replace in place (e.g. the unpacked `linux-unpacked/` directory rather than
+the AppImage or `.deb`): `checkForUpdates()` resolves `null` with no
+events, which the app reports as "can't update itself" with a link to the
+releases page.
+
+### Pieces
+
+| Layer | File | What it does |
+|---|---|---|
+| State machine | `electron/updates/autoUpdate.ts` | Wraps `electron-updater`'s events into one `UpdateStatus` value; `checkForUpdates` / `downloadUpdate` / `installUpdate`; launch check from `main.ts` plus a re-check every 6 h while idle |
+| Pure helpers | `electron/updates/updateStatus.ts` | `UpdateStatus` type, `resolveAutoUpdatePreference` (switch > env > on), `parseAutoUpdateFlag` (`KWESI_AUTO_UPDATE`), `summarizeUpdateError` (first line of electron-updater's multi-line HTTP errors; offline → plain sentence). Unit-tested |
+| IPC | `electron/ipc/updates.ts` | `kwesi:updates:getStatus` / `check` / `download` / `install` / `getPreference` / `setEnabled` (renderer → main); every status change pushed on `kwesi:updates:status` (main → renderer). Owns the `autoUpdate` setting |
+| Bridge | `electron/preload.ts` → `window.kwesi.updates`, typed in `src/lib/kwesiBridge.ts` | |
+| Client | `src/lib/updates.ts` | `kwesiUpdates` (real, or a browser-preview mock — set `localStorage["kwesi-mock-update"]="1"` to walk a fake release through the whole flow) and the `useUpdateStatus()` hook |
+| UI | `src/components/settings/UpdatesSection.tsx` (Settings → About), `UpdateRailButton` in `src/components/ui/IconRail.tsx` | About shows the running version, a status badge, the Automatic updates switch (hidden for dev runs and launcher-managed installs) and the action for the current state (Check for updates / Download / progress / Restart to update / Try again). The rail grows a quiet download icon + version only once a newer release is known; it links to About |
+
+`UpdateStatus` states: `disabled` (with a reason: `dev`, `managed`, `env`,
+`setting`, `unsupported-install`), `idle`, `checking`, `available`, `not-available`,
+`downloading` (percent / bytes), `downloaded`, `error` (a short message;
+carries the version when a *download* failed, so "Try again" retries the
+download instead of re-checking). Every error is also written to the local
+`crashes.log` (`kind: "auto-update-error"`) with the full message.
+
+### What a release has to contain
+
+electron-updater only sees the **latest published, non-prerelease** GitHub
+Release — a draft is invisible (that's what produced the earlier
+`Unable to find latest version on GitHub ... 406`: v0.1.2–v0.1.4 were all
+drafts). From that release it downloads the platform's metadata file, then
+the installer it names:
+
+| Platform | Metadata | Installed from | Updater |
+|---|---|---|---|
+| Linux | `latest-linux.yml` | `Kwesi-X.AppImage` (or `kwesi_X_amd64.deb`) | `AppImageUpdater` / `DebUpdater` |
+| macOS | `latest-mac.yml` | `Kwesi-X-arm64-mac.zip` (+ `.blockmap`) — a dmg can't be applied, hence the `zip` target | `MacUpdater` (needs a signed app) |
+| Windows | `latest.yml` | `Kwesi-Setup-X.exe` (+ `.blockmap`) | `NsisUpdater` |
+
+electron-builder writes the `latest*.yml` and `.blockmap` files next to the
+installers whenever a `publish` block exists, even with `--publish=never`.
+`.github/workflows/release.yml` uploads all of them and, on a `v*.*.*` tag
+push, **publishes** the release (manual `workflow_dispatch` runs still make
+a draft; tags with a `-suffix` are marked prerelease). A `check-version`
+job fails the run first if the tag doesn't equal `v` + `package.json`'s
+version, since the version installed apps compare against comes from
+`package.json`, not the tag.
+
+The Windows installer is named `${productName}-Setup-${version}.${ext}`
+(no spaces): GitHub renames uploaded assets' spaces to dots, so the default
+`Kwesi Setup X.exe` would no longer match the `url` in `latest.yml`.
+
+To ship an update: bump `package.json`'s `version`, commit, tag `vX.Y.Z`,
+push the tag.
+
+**Verified (2026-10-04, Linux, packaged AppImages, temp `KWESI_HOME`):**
+- *Live feed:* a v0.2.0 AppImage checked `github.com/Fobia-ai/kwesi`,
+  found the published v0.2.0 release, and got a 404 on
+  `latest-linux.yml`. That release was built by the old workflow, which
+  didn't upload it, so Settings → About showed the "missing its update
+  file" error with Try again / Releases on GitHub. The first release cut
+  by the fixed workflow is the first one installed copies can update to.
+- *Full flow:* a v0.2.0 AppImage whose `app-update.yml` pointed at a local
+  generic feed serving a v0.2.1 build. On launch it found 0.2.1, and the
+  rail showed the `v0.2.1` button, which opened About. **Download**
+  fetched it ("ready to install"), and **Restart to update** replaced the
+  AppImage file in place (hash matched the 0.2.1 build) and relaunched it.
+  The relaunched app showed v0.2.1, "Up to date", and no rail button.
+- *Off switches:* with `KWESI_AUTO_UPDATE=false` (switch never used) or
+  `KWESI_MANAGED_PACKAGE=1`, the same build made **zero** feed requests,
+  even with 0.2.1 sitting on the feed, and a manual `check` stayed
+  disabled.
+- *Settings switch over env:* launched with `KWESI_AUTO_UPDATE=false`, the
+  switch showed Off ("Currently set by KWESI_AUTO_UPDATE"). Clicking On
+  ran a live GitHub check immediately, with no relaunch. Clicking Off, then
+  relaunching with `KWESI_AUTO_UPDATE=true`, stayed off (`source:
+  "setting"`) with zero update requests.
 
 ## Crash/error logging (Phase 13)
 

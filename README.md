@@ -279,7 +279,7 @@ Choosing one of your models under **Start from** keeps training it on new clips.
 # Linux (AppImage + deb) — verified on this machine
 npm run package:linux
 
-# macOS (dmg) — config-only, requires macOS to build
+# macOS (dmg + zip) — config-only, requires macOS to build
 npm run package:mac
 
 # Windows (nsis) — config-only, requires Windows to build
@@ -292,7 +292,14 @@ Packaged outputs land in `release/`.
 
 ### Auto-updater
 
-The app is wired to check `https://github.com/Fobia-ai/kwesi/releases` on launch using `electron-updater`. **This only works once the repo is public.** Private repositories return 404 for anonymous update checks, so the app logs the failure gracefully and continues.
+Installed copies of Kwesi update themselves from this repo's [GitHub Releases](https://github.com/Fobia-ai/kwesi/releases) using `electron-updater`:
+
+- Kwesi checks for a new release when it starts (and every few hours while it stays open). The only server it talks to is GitHub: this repo's `releases.atom` feed, then the release's `latest-*.yml`. Nothing downloads until you ask.
+- When a newer version exists, a small download icon with the version appears at the bottom of the left rail. It opens **Settings → About**, which shows your current version and a **Check for updates** button. Once a newer version is found there, you get **Download**, a progress bar, and then **Restart to update**. A downloaded update also installs the next time you quit.
+- It works for the AppImage and `.deb` on Linux, the installed app on Windows, and a signed app on macOS. Running from source never checks.
+- **Turning it off:** use the **Automatic updates** On / Off switch in Settings → About. It takes effect immediately and is remembered. When it's off, Kwesi makes no update requests at all. For scripted or managed setups there's also the `KWESI_AUTO_UPDATE` env var (`false` / `0` / `no` / `off`), but the Settings switch overrides it once someone uses it. Updates are on by default. Copies installed by the Fobia launcher (`KWESI_MANAGED_PACKAGE=1`) never self-update; the launcher handles that.
+
+**Cutting a release:** bump `version` in `package.json`, commit, then tag and push `vX.Y.Z` (it must match `package.json`, or the workflow fails). `.github/workflows/release.yml` builds Linux, macOS and Windows, uploads the installers plus the `latest*.yml` and `.blockmap` files the updater reads, and **publishes** the release. A draft is invisible to the updater, so a release only reaches installed copies once it's published. Details: [kwesi.docs/02-architecture.md](kwesi.docs/02-architecture.md#auto-update).
 
 ---
 
@@ -313,6 +320,7 @@ Every data path is controlled by an environment variable with a sensible default
 | `KWESI_TRAINED_MODELS_DIR` | Default training output picker location | `$KWESI_MODELS_DIR/custom` |
 | `KWESI_MODEL_SERVER_PORT_RANGE` | Local ports for model servers | `17600-17999` |
 | `KWESI_LOCK_IDLE_TIMEOUT_MINUTES` | Auto-lock after inactivity | `10` |
+| `KWESI_AUTO_UPDATE` | Check GitHub Releases for app updates (`false` turns it off). The Settings → About switch overrides it once used | `true` |
 
 Precedence:
 
@@ -378,7 +386,7 @@ This repo is honest about what has actually been built and run:
 | Linux packaging (AppImage + deb) | Built and verified |
 | macOS packaging | Config-only |
 | Windows packaging | Config-only |
-| Auto-updater | Wired; only works after repo is public |
+| Auto-updater | Check → download → restart verified end to end on a Linux AppImage (local feed); live GitHub check and the Settings on/off switch verified. macOS/Windows update paths config-only |
 | Model environments in installer | Installed from inside the app instead (server source is bundled) |
 
 ---

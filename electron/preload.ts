@@ -169,6 +169,19 @@ contextBridge.exposeInMainWorld("kwesi", {
     respond: (response: { requestId: string; ok: boolean; wavBytes?: Uint8Array; reason?: string }) =>
       ipcRenderer.send("kwesi:audioRender:response", response),
   },
+  updates: {
+    getStatus: () => ipcRenderer.invoke("kwesi:updates:getStatus"),
+    check: () => ipcRenderer.invoke("kwesi:updates:check"),
+    download: () => ipcRenderer.invoke("kwesi:updates:download"),
+    install: () => ipcRenderer.invoke("kwesi:updates:install"),
+    getPreference: () => ipcRenderer.invoke("kwesi:updates:getPreference"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("kwesi:updates:setEnabled", enabled),
+    onStatus: (callback: (status: unknown) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("kwesi:updates:status", listener);
+      return () => ipcRenderer.removeListener("kwesi:updates:status", listener);
+    },
+  },
   crashLog: {
     report: (
       kind: "window-error" | "unhandledrejection",

@@ -14,6 +14,7 @@ import {
   TrashIcon,
 } from "../components/ui/icons";
 import { EnvironmentTab } from "../components/settings/EnvironmentTab";
+import { UpdatesSection } from "../components/settings/UpdatesSection";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
@@ -41,7 +42,7 @@ const SECTIONS = [
   { tab: "Environment", blurb: "Each model's real Python environment — check or install them here." },
   { tab: "Security", blurb: "Passcode and auto-lock." },
   { tab: "Reset", blurb: "Wipe downloaded models, your music, and more." },
-  { tab: "About", blurb: "The open-source models Kwesi builds on." },
+  { tab: "About", blurb: "Your version, updates, and the open-source models Kwesi builds on." },
 ] as const;
 
 const TABS = SECTIONS.map((s) => s.tab);
@@ -999,31 +1000,38 @@ export function SettingsScreen() {
             {tab === "Security" && <SecurityTab />}
             {tab === "Reset" && <ResetTab />}
             {tab === "About" && (
-              <div className="flex max-w-2xl flex-col">
-                {CATALOG.map((entry) => (
-                  <div
-                    key={entry.modelId}
-                    className="flex items-center gap-3 border-b border-ink/[0.07] py-3 last:border-b-0"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{entry.displayName}</span>
-                        <Badge tone="neutral" caps>
-                          {LICENSE_LABEL[entry.licenseTier]}
-                        </Badge>
-                      </div>
-                      <p className="truncate text-xs text-ink-muted">{entry.org}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openExternal(entry.repoUrl)}
-                      aria-label={`Open ${entry.displayName} on GitHub`}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.06] hover:text-ink"
+              <div className="flex max-w-2xl flex-col gap-6">
+                <section>
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Kwesi</p>
+                  <UpdatesSection />
+                </section>
+                <section className="flex flex-col">
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Open-source models</p>
+                  {CATALOG.map((entry) => (
+                    <div
+                      key={entry.modelId}
+                      className="flex items-center gap-3 border-b border-ink/[0.07] py-3 last:border-b-0"
                     >
-                      <GitHubIcon />
-                    </button>
-                  </div>
-                ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{entry.displayName}</span>
+                          <Badge tone="neutral" caps>
+                            {LICENSE_LABEL[entry.licenseTier]}
+                          </Badge>
+                        </div>
+                        <p className="truncate text-xs text-ink-muted">{entry.org}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openExternal(entry.repoUrl)}
+                        aria-label={`Open ${entry.displayName} on GitHub`}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-ink/[0.06] hover:text-ink"
+                      >
+                        <GitHubIcon />
+                      </button>
+                    </div>
+                  ))}
+                </section>
               </div>
             )}
           </div>

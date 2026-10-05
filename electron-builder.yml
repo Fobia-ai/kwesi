@@ -87,8 +87,11 @@ linux:
 # APPLE_TEAM_ID are present. Without credentials, electron-builder skips
 # signing and the .dmg shows the standard Gatekeeper warning.
 mac:
+  # dmg is what people download by hand; zip is what electron-updater's
+  # MacUpdater actually installs from (it can't apply a dmg), so both ship.
   target:
     - dmg
+    - zip
   category: public.app-category.music
   icon: build/icons/icon.icns
   hardenedRuntime: true
@@ -107,20 +110,27 @@ win:
   icon: build/icons/icon.ico
 
 nsis:
+  # No spaces: the default "Kwesi Setup X.exe" gets renamed to
+  # "Kwesi.Setup.X.exe" when uploaded to a GitHub Release, which then no
+  # longer matches the `url` electron-builder wrote into latest.yml, so
+  # Windows updates 404.
+  artifactName: "${productName}-Setup-${version}.${ext}"
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
 
 # electron-updater checks this feed at runtime (see
-# electron/updates/autoUpdate.ts). The repo is currently PRIVATE, which the
-# default GitHub provider doesn't support for anonymous update checks --
-# documented honestly in kwesi.docs/02-architecture.md rather than pretended
-# to work. `--publish=never` is used in every package:* script above, so
-# this config is inert unless someone deliberately runs a publish.
+# electron/updates/autoUpdate.ts). The repo is public, so update checks are
+# plain anonymous HTTPS requests -- no token ships in the app. This block is
+# also what makes electron-builder write latest-linux.yml / latest-mac.yml /
+# latest.yml (and the .blockmap files) next to the installers, which
+# .github/workflows/release.yml uploads to the GitHub Release. Only a
+# PUBLISHED, non-prerelease release is visible to the updater -- drafts are
+# not. `--publish=never` is used in every package:* script, so electron-builder
+# itself never uploads anything; the workflow does.
 publish:
   - provider: github
     owner: Fobia-ai
     repo: kwesi
-    private: true
     releaseType: release

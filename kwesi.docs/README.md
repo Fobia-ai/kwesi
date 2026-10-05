@@ -43,24 +43,23 @@ with actual generated audio/MIDI files, checked for validity and
 non-silence.
 
 Phase 13 (packaging & distribution) closes the roadmap, with Linux
-genuinely built and verified end-to-end (electron-builder AppImage + deb,
-real `better-sqlite3` reads/writes proven through the packaged app's IPC
-bridge via Chrome DevTools Protocol — which also caught and fixed a real,
-pre-existing preload-script bug dating back to Phase 1) plus local-only
-crash logging and an auto-updater wired to GitHub Releases (that repo is
-currently private, so live update checks fail gracefully by design — see
-[02-architecture.md](02-architecture.md)). macOS/Windows packaging is
-config-only (electron-builder configs written and schema-valid, never
-built on this Linux machine — not claimed to work), and shipping the
-per-model Python servers/venvs inside an installer remains a real,
-separate follow-up. See [04-roadmap.md](04-roadmap.md)'s Phase 13 section
-for the full honest per-item breakdown.
+genuinely built and verified end-to-end (electron-builder AppImage +
+deb, real `better-sqlite3` reads/writes proven through the packaged
+app's IPC bridge via Chrome DevTools Protocol — which also caught and
+fixed a real, pre-existing preload-script bug dating back to Phase 1)
+plus local-only crash logging and an auto-updater on GitHub Releases
+with a check → download → restart flow in Settings → About (see
+[02-architecture.md](02-architecture.md)'s "Auto-update"). macOS/Windows
+packaging is config-only (electron-builder configs written and
+schema-valid, never built on this Linux machine — not claimed to work),
+and shipping the per-model Python servers/venvs inside an installer
+remains a real, separate follow-up. See [04-roadmap.md](04-roadmap.md)'s
+Phase 13 section for the full honest per-item breakdown.
 
 Nothing is "remaining" against the original 13-phase roadmap, though see
 the paragraph above and Phase 13's own notes for what's config-only vs.
 fully verified, and what a genuine next release would still need
-(macOS/Windows builds, bundled model servers, a public repo or an
-authenticated feed for auto-update to actually function for end users).
+(macOS/Windows builds, bundled model servers).
 
 - Stack **confirmed and built**: Electron + React + local Python sidecar
   servers per model, one isolated venv per model (several models needed
