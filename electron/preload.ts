@@ -140,6 +140,8 @@ contextBridge.exposeInMainWorld("kwesi", {
     resolveModelsDrift: () => ipcRenderer.invoke("kwesi:settings:resolveModelsDrift"),
     getAcknowledged: () => ipcRenderer.invoke("kwesi:settings:getAcknowledged"),
     setAcknowledged: () => ipcRenderer.invoke("kwesi:settings:setAcknowledged"),
+    getTrainingTermsAccepted: () => ipcRenderer.invoke("kwesi:settings:getTrainingTermsAccepted"),
+    acceptTrainingTerms: () => ipcRenderer.invoke("kwesi:settings:acceptTrainingTerms"),
   },
   environment: {
     checkPrerequisites: () => ipcRenderer.invoke("kwesi:environment:checkPrerequisites"),

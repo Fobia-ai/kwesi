@@ -9,6 +9,10 @@ carry additional or different terms.
 - `LICENSE-Kwesi.md` — Kwesi application code and original documentation.
   - **CC BY-NC 4.0** — non-commercial use with attribution.
   - Copyright © 2026 Fobia
+  - **Additional permission:** what you make with Kwesi (music, MIDI, notation,
+    trained models) is yours, and Fobia places no restriction of its own on
+    using it, including commercially. Each model's license still applies. See
+    "The music you make with Kwesi" in `LICENSE-Kwesi.md`.
 
 ## Third-party model licenses
 

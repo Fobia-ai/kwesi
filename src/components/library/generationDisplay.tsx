@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { GenerationRow } from "../../lib/db";
-import { getManifest, type ManifestSelectOption, type ModelManifest } from "../../data/manifests";
-import { LICENSE_LABEL } from "../../data/catalog";
+import type { ManifestSelectOption, ModelManifest } from "../../data/manifests";
 import { Badge } from "../ui/Badge";
 
 // Kept as the library's name for the shared Badge.
@@ -17,27 +16,6 @@ export function StatusChip({ status }: { status: string }) {
     <Badge tone="live" pulse>
       {status === "running" ? "Generating" : "Queued"}
     </Badge>
-  );
-}
-
-// Non-commercial-licensed outputs get a visible badge wherever they can be
-// saved out. MIT models render nothing — nothing to warn about. RAVE's
-// cc-by-nc-sa is the strictest tier in the catalog (share-alike on top of
-// non-commercial), so its tooltip spells that out.
-export function LicenseBadge({ modelId }: { modelId: string }) {
-  const manifest = getManifest(modelId);
-  if (!manifest || manifest.licenseTier === "mit") return null;
-  const terms =
-    manifest.licenseTier === "cc-by-nc-sa"
-      ? "non-commercial use only, and any derivative work must be shared under this same license (share-alike)."
-      : "non-commercial use only.";
-  return (
-    <span
-      className="shrink-0 rounded-chip bg-warning/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
-      title={`${manifest.displayName} output is licensed ${LICENSE_LABEL[manifest.licenseTier]} — ${terms}`}
-    >
-      {LICENSE_LABEL[manifest.licenseTier]}
-    </span>
   );
 }
 

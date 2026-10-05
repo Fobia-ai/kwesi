@@ -24,6 +24,8 @@ import { InsetCard } from "../components/ui/InsetCard";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { estimateTrainingSeconds, formatEstimate } from "../lib/trainingEstimate";
 import { PreviewButton } from "../components/training/PreviewButton";
+import { TrainingTermsDialog } from "../components/training/TrainingTermsDialog";
+import { kwesiSettings } from "../lib/settings";
 import { LogPanel } from "../components/ui/LogPanel";
 import { AlertIcon, CheckCircleIcon, CloseIcon } from "../components/ui/icons";
 import { useDatasetCheck, type ClipProbe } from "../lib/datasetCheck";
@@ -625,6 +627,7 @@ function NewTrainingRunForm({ onSubmitted, trainedVersion }: { onSubmitted: () =
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   function resetDataset() {
     setFiles([]);
@@ -735,6 +738,11 @@ function NewTrainingRunForm({ onSubmitted, trainedVersion }: { onSubmitted: () =
   const baseVariant = manifest ? requiredBaseVariant(manifest.modelId, hyperparams) : null;
   async function startRun() {
     if (!training || !manifest) return;
+    // Asked once, before the first run: train only on what's yours.
+    if (!(await kwesiSettings.getTrainingTermsAccepted())) {
+      setTermsOpen(true);
+      return;
+    }
     const [env, variants] = await Promise.all([
       kwesiEnvironment.checkTrainingStatus(manifest.modelId),
       baseVariant ? kwesiDb.listModelVariants(manifest.modelId) : Promise.resolve([]),
@@ -997,6 +1005,17 @@ function NewTrainingRunForm({ onSubmitted, trainedVersion }: { onSubmitted: () =
               {submitting ? "Starting…" : "Start training run"}
             </PillButton>
           </div>
+
+          {termsOpen && (
+            <TrainingTermsDialog
+              onCancel={() => setTermsOpen(false)}
+              onAccept={async () => {
+                await kwesiSettings.acceptTrainingTerms();
+                setTermsOpen(false);
+                await startRun();
+              }}
+            />
+          )}
 
           {setupOpen && (
             <ModelSetupDialog

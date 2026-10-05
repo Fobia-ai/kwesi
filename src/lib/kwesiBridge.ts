@@ -210,6 +210,8 @@ declare global {
         resolveModelsDrift: () => Promise<ModelDrift>;
         getAcknowledged: () => Promise<boolean>;
         setAcknowledged: () => Promise<{ ok: boolean }>;
+        getTrainingTermsAccepted: () => Promise<boolean>;
+        acceptTrainingTerms: () => Promise<{ ok: boolean }>;
       };
       environment: {
         checkPrerequisites: () => Promise<{

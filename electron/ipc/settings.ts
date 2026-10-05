@@ -10,6 +10,10 @@ const MODELS_DIR_SETTING_KEY = "modelsDir";
 // pattern) -- the Acknowledgments screen is meant to show once, ever, not
 // on every launch.
 const ACKNOWLEDGED_KEY = "acknowledgedFirstLaunch";
+// When the user accepted the training terms (their own content only, their
+// responsibility): asked once, before the first training run. Stored as the
+// ISO time of acceptance rather than a bare flag, so there is a record of when.
+const TRAINING_TERMS_KEY = "acceptedTrainingTerms";
 
 // Same native folder-picker pattern electron/ipc/training.ts's
 // pickOutputDir already uses.
@@ -101,6 +105,12 @@ export function registerSettingsIpcHandlers(defaultExportsDir: string, defaultMo
   ipcMain.handle("kwesi:settings:getAcknowledged", () => repo.getSetting(ACKNOWLEDGED_KEY) !== null);
   ipcMain.handle("kwesi:settings:setAcknowledged", () => {
     repo.setSetting(ACKNOWLEDGED_KEY, "1");
+    return { ok: true };
+  });
+
+  ipcMain.handle("kwesi:settings:getTrainingTermsAccepted", () => repo.getSetting(TRAINING_TERMS_KEY) !== null);
+  ipcMain.handle("kwesi:settings:acceptTrainingTerms", () => {
+    repo.setSetting(TRAINING_TERMS_KEY, new Date().toISOString());
     return { ok: true };
   });
 }

@@ -25,6 +25,11 @@ export interface KwesiSettingsApi {
   // passcode setting.
   getAcknowledged(): Promise<boolean>;
   setAcknowledged(): Promise<{ ok: boolean }>;
+  // The training terms (train only on content you own or have the rights
+  // to; you are responsible for it) are accepted once, before the first
+  // training run.
+  getTrainingTermsAccepted(): Promise<boolean>;
+  acceptTrainingTerms(): Promise<{ ok: boolean }>;
 }
 
 function realSettingsApi(bridge: NonNullable<Window["kwesi"]>["settings"]): KwesiSettingsApi {
@@ -42,6 +47,8 @@ function realSettingsApi(bridge: NonNullable<Window["kwesi"]>["settings"]): Kwes
     resolveModelsDrift: () => bridge.resolveModelsDrift(),
     getAcknowledged: () => bridge.getAcknowledged(),
     setAcknowledged: () => bridge.setAcknowledged(),
+    getTrainingTermsAccepted: () => bridge.getTrainingTermsAccepted(),
+    acceptTrainingTerms: () => bridge.acceptTrainingTerms(),
   };
 }
 
@@ -61,6 +68,7 @@ const MOCK_DEFAULT_EXPORTS_DIR = "/mock/exports";
 const MOCK_MODELS_DIR_KEY = "kwesi-mock-models-dir";
 const MOCK_DEFAULT_MODELS_DIR = "/mock/models";
 const MOCK_ACKNOWLEDGED_KEY = "kwesi-mock-acknowledged-v1";
+const MOCK_TRAINING_TERMS_KEY = "kwesi-mock-training-terms-v1";
 const EMPTY_DRIFT: ModelDrift = { toInstalled: [], toNotInstalled: [] };
 
 function createMockSettingsApi(): KwesiSettingsApi {
@@ -155,6 +163,21 @@ function createMockSettingsApi(): KwesiSettingsApi {
     async setAcknowledged() {
       try {
         localStorage.setItem(MOCK_ACKNOWLEDGED_KEY, "1");
+      } catch {
+        // best-effort only
+      }
+      return { ok: true };
+    },
+    async getTrainingTermsAccepted() {
+      try {
+        return localStorage.getItem(MOCK_TRAINING_TERMS_KEY) !== null;
+      } catch {
+        return false;
+      }
+    },
+    async acceptTrainingTerms() {
+      try {
+        localStorage.setItem(MOCK_TRAINING_TERMS_KEY, new Date().toISOString());
       } catch {
         // best-effort only
       }

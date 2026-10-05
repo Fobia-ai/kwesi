@@ -251,6 +251,7 @@ Every finished model shows up under **Your trained models** in the checkpoint pi
 - **Dataset** — each clip's length is shown. Too few files, too little audio, and empty or unreadable files block the run; clips that are too short or too long for the model, and duplicate names, show a warning.
 - **Time** — each preset shows an estimated duration, measured on an RTX 3090 (for example, RAVE's Standard preset: ~9 min estimated, 7.5 min measured).
 - **Disk space** — how much the run needs for temporary files and for the finished model, against what's free. A run that won't fit can't start.
+- **Your rights** — before your first run, Kwesi asks you to confirm that you own or have the rights to everything you train on, and that you're responsible for it. It asks once.
 - **Setup** — the model's training environment, and any base weights the run fine-tunes from, must be installed; a dialog offers to install them.
 
 ### During and after a run
@@ -410,6 +411,14 @@ The first-launch acknowledgments screen in the app shows the exact license for e
 Kwesi's own application code and original documentation are licensed under the
 **Creative Commons Attribution-NonCommercial 4.0 International License**
 (CC BY-NC 4.0). See [`LICENSES/LICENSE-Kwesi.md`](LICENSES/LICENSE-Kwesi.md).
+
+**What you make is yours.** Fobia grants an additional permission alongside
+CC BY-NC 4.0. The music, MIDI, notation and trained models you create with
+Kwesi are yours, and Fobia places no restriction of its own on how you use
+them, including commercially (for example, monetized videos or client work).
+The non-commercial term applies to Kwesi itself, not to your work. Each
+model's own license still applies. For commercial work, use a model that
+allows it, such as ACE-Step 1.5 (MIT).
 
 Bundled open-source models remain under their own licenses. See
 [`LICENSES/`](LICENSES/) for the full list. Important notes:

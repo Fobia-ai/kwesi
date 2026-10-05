@@ -21,7 +21,6 @@ import { HeroArtwork } from "./HeroArtwork";
 import {
   Chip,
   StatusChip,
-  LicenseBadge,
   ParamsGrid,
   formatRelativeTime,
   generationTitle,
@@ -365,7 +364,6 @@ export function LibraryCard(props: LibraryCardProps) {
                             · {(selected.generation.duration_ms / 1000).toFixed(1)}s to generate
                           </span>
                         )}
-                        {selected.generation.status === "done" && <LicenseBadge modelId={selected.modelId} />}
                       </div>
                       {generationGenres(selected.generation).length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
