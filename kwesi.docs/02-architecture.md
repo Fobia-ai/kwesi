@@ -744,7 +744,7 @@ opened its SQLite DB and ran the real disk-reconciliation query path (see
 | Platform | Targets | Status |
 |---|---|---|
 | Linux | AppImage, deb | **Built and verified end-to-end on this machine** — see below. |
-| macOS | dmg | **Config-only.** `electron-builder.yml`'s `mac` block is written and schema-valid, but a real dmg build needs macOS itself (electron-builder's dmg target isn't buildable on Linux) — never attempted here, and no claim is made that it works. |
+| macOS | dmg + zip, x64 and arm64 | **Built by CI, not locally.** A dmg needs macOS itself (electron-builder's dmg target isn't buildable on Linux), so `.github/workflows/release.yml` builds it on GitHub's Apple-silicon macOS runner, cross-building the Intel (x64) files. Not run on a real Mac from this repo. |
 | Windows | nsis | **Config-only.** The `win`/`nsis` blocks are written and schema-valid; a real nsis build was not attempted on this machine (out of this phase's verifiable scope, consistent with the instruction not to claim untested platforms work) — not attempted here either. |
 
 **A real, pre-existing bug this phase's own verification caught:**
@@ -916,7 +916,7 @@ the installer it names:
 | Platform | Metadata | Installed from | Updater |
 |---|---|---|---|
 | Linux | `latest-linux.yml` | `Kwesi-X.AppImage` (or `kwesi_X_amd64.deb`) | `AppImageUpdater` / `DebUpdater` |
-| macOS | `latest-mac.yml` | `Kwesi-X-arm64-mac.zip` (+ `.blockmap`) — a dmg can't be applied, hence the `zip` target | `MacUpdater` (needs a signed app) |
+| macOS | `latest-mac.yml` | `Kwesi-X-x64.zip` (Intel) or `Kwesi-X-arm64.zip` (Apple silicon), + `.blockmap` — a dmg can't be applied, hence the `zip` target. MacUpdater picks by "arm64" in the file name | `MacUpdater` (needs a signed app) |
 | Windows | `latest.yml` | `Kwesi-Setup-X.exe` (+ `.blockmap`) | `NsisUpdater` |
 
 electron-builder writes the `latest*.yml` and `.blockmap` files next to the

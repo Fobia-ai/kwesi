@@ -89,9 +89,19 @@ linux:
 mac:
   # dmg is what people download by hand; zip is what electron-updater's
   # MacUpdater actually installs from (it can't apply a dmg), so both ship.
+  # Both for Intel (x64) and Apple silicon (arm64): separate files rather
+  # than one universal build, so each download is half the size. The CI
+  # runner is Apple silicon and cross-builds x64.
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  # The arch is always in the name (by default x64 gets none), so the two
+  # dmgs can't be confused. MacUpdater also relies on it: on Apple silicon
+  # it picks the files with "arm64" in the name from latest-mac.yml, and on
+  # Intel the ones without.
+  artifactName: "${productName}-${version}-${arch}.${ext}"
   category: public.app-category.music
   icon: build/icons/icon.icns
   hardenedRuntime: true

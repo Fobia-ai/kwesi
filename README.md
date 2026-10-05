@@ -279,7 +279,7 @@ Choosing one of your models under **Start from** keeps training it on new clips.
 # Linux (AppImage + deb) — verified on this machine
 npm run package:linux
 
-# macOS (dmg + zip) — config-only, requires macOS to build
+# macOS (dmg + zip, for Intel and Apple silicon) — requires macOS to build; CI builds it on every release
 npm run package:mac
 
 # Windows (nsis) — config-only, requires Windows to build
