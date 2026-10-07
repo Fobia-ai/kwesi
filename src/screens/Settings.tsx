@@ -16,6 +16,7 @@ import {
 import { EnvironmentTab } from "../components/settings/EnvironmentTab";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { UpdatesSection } from "../components/settings/UpdatesSection";
+import { DeviceSupportTable } from "../components/settings/DeviceSupportTable";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
@@ -43,7 +44,7 @@ const SECTIONS = [
   { tab: "Environment", blurb: "Each model's real Python environment — check or install them here." },
   { tab: "Security", blurb: "Passcode and auto-lock." },
   { tab: "Reset", blurb: "Wipe downloaded models, your music, and more." },
-  { tab: "About", blurb: "Your version, updates, and the open-source models Kwesi builds on." },
+  { tab: "About", blurb: "Your version, updates, device support, and the open-source models Kwesi builds on." },
 ] as const;
 
 const TABS = SECTIONS.map((s) => s.tab);
@@ -1055,6 +1056,10 @@ export function SettingsScreen() {
                 <section>
                   <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Kwesi</p>
                   <UpdatesSection />
+                </section>
+                <section>
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Device support</p>
+                  <DeviceSupportTable />
                 </section>
                 <section className="flex flex-col">
                   <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-muted">Open-source models</p>
