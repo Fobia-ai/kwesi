@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { minVramGbFor, type ManifestInput, type ModelManifest } from "../../data/manifests";
+import type { ManifestInput, ModelManifest } from "../../data/manifests";
 import { LANGUAGES } from "../../data/languages";
-import { kwesiHardware, type GpuVramInfo } from "../../lib/hardware";
+import type { GpuVramInfo } from "../../lib/hardware";
 import type { ArtistProfile } from "../../lib/artistProfiles";
 import { PillButton } from "../ui/PillButton";
 import { EmptyState } from "../ui/EmptyState";
@@ -10,6 +10,7 @@ import { AvatarImage } from "../ui/AvatarImage";
 import { ChipMultiSelect } from "../ui/ChipMultiSelect";
 import { ModelsIcon } from "../ui/icons";
 import { LibraryMidiPicker } from "./LibraryMidiPicker";
+import { ResourceCard, useResourceCheck } from "./ResourceCard";
 
 export type GenerationFormValues = Record<string, unknown>;
 
@@ -324,6 +325,9 @@ export function DynamicGenerationForm({
   );
 
   const [selectedVariant, setSelectedVariant] = useState<string>(usableVariants[0] ?? "");
+  // Live while the form is open: can this machine run the chosen checkpoint,
+  // and is its model loaded yet?
+  const resourceCheck = useResourceCheck(manifest, selectedVariant || null, 3000);
   const [values, setValues] = useState<GenerationFormValues>(() => {
     // `music_name`, `artist_profile_id`, and `artist_genres` are generic,
     // fields every generation gets regardless of model — not part of any
@@ -341,21 +345,6 @@ export function DynamicGenerationForm({
     for (const input of manifest.inputs) initial[input.key] = defaultValueFor(input);
     return initial;
   });
-  const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    kwesiHardware.gpuVram().then((info) => {
-      if (!cancelled) setGpu(info);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Queried once per mount — free VRAM doesn't meaningfully change while
-    // this form is open, and re-querying per variant/field change would
-    // just be extra nvidia-smi calls for no real benefit.
-  }, []);
-
   useEffect(() => {
     const artist = artistProfiles.find((p) => p.id === values.artist_profile_id);
     const artistGenres = artist ? [...artist.genres] : [];
@@ -431,8 +420,6 @@ export function DynamicGenerationForm({
   const missingRequired =
     missingMusicName || missingArtistProfile || shown.some((input) => !isSatisfied(input, values[input.key]));
   const selectedArtistProfile = artistProfiles.find((p) => p.id === values.artist_profile_id) ?? null;
-  const requiredVramGb = minVramGbFor(manifest, selectedVariant || null);
-  const hardwareGate = evaluateHardwareGate(manifest, requiredVramGb, gpu);
 
   function setValue(key: string, value: unknown) {
     setValues((prev) => {
@@ -608,11 +595,11 @@ export function DynamicGenerationForm({
         );
       })}
 
-      <HardwareGateBanner status={hardwareGate} />
+      <ResourceCard check={resourceCheck} />
 
       <div className="mt-2 flex justify-end">
         <PillButton
-          disabled={disabled || missingRequired || hardwareGate.level === "block"}
+          disabled={disabled || missingRequired || resourceCheck.verdict.level === "block"}
           onClick={() => onSubmit(selectedVariant || null, normalizeForSubmit(values))}
         >
           Generate

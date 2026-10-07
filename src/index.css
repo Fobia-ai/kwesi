@@ -110,6 +110,23 @@ body {
   }
 }
 
+/* The resource card sliding into the hero's artwork slot from the right
+   while a track is queued or generating. */
+@keyframes kwesi-pop-in-right {
+  from { opacity: 0; transform: translateX(28px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.kwesi-pop-in-right {
+  animation: kwesi-pop-in-right 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kwesi-pop-in-right {
+    animation: none;
+  }
+}
+
 /* The sheen gradient is layered into `background` rather than a box-shadow
    on purpose: Tailwind's shadow-* utilities (GlassPanel passes
    shadow-glass-sm) are same-specificity and later in the cascade, so a

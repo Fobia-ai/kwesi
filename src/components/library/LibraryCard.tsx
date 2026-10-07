@@ -37,7 +37,8 @@ import { usePlayer, type PlayerTrack } from "../../lib/playerStore";
 import { findAudioFile, findMidiFile, findAbcFile, parseOutputFiles } from "../../lib/audioFiles";
 import { buildExportPlan } from "../../lib/exportPackage";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { getManifest } from "../../data/manifests";
+import { getManifest, type ModelManifest } from "../../data/manifests";
+import { ResourceCard, useResourceCheck } from "../generation/ResourceCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -161,6 +162,11 @@ export function LibraryCard(props: LibraryCardProps) {
   const selected = items.find((i) => i.generation.id === selectedId) ?? null;
   const selectedArtist = selected ? artistFor(selected.generation) : null;
   const selectedTrack = selected ? playerTrackFor(selected, selectedArtist) : null;
+
+  const selectedGenerating = selected?.generation.status === "queued" || selected?.generation.status === "running";
+  const selectedManifest = selected ? getManifest(selected.modelId) : undefined;
+  // Matches Tailwind's lg breakpoint, where the hero gains its side slot.
+  const wide = useMediaQuery("(min-width: 1024px)");
 
   // Keeps the hero card following whatever is actually playing -- without
   // this, auto-advance to the next queued track (playerStore.tsx's "ended"
@@ -336,7 +342,17 @@ export function LibraryCard(props: LibraryCardProps) {
             />
           ) : renderTab === "overview" ? (
             <>
-              <HeroArtwork className="absolute bottom-0 right-6 hidden h-[78%] lg:block" />
+              {/* While the selected track is queued or generating, the
+                  resource card takes the artwork's place on the right. Below
+                  the lg breakpoint there is no side slot, so HeroPlayback
+                  shows a compact version instead. */}
+              {selectedGenerating && selectedManifest && wide ? (
+                <div className="absolute right-6 top-1/2 z-10 w-[29%] -translate-y-1/2">
+                  <SideResourceCard key={selected!.generation.id} manifest={selectedManifest} generation={selected!.generation} />
+                </div>
+              ) : (
+                <HeroArtwork className="absolute bottom-0 right-6 hidden h-[78%] lg:block" />
+              )}
               <div className="relative z-10 flex min-h-0 flex-1 flex-col px-6 pb-5 pt-4 lg:max-w-[68%]">
                 {selected ? (
                   <>
@@ -386,6 +402,7 @@ export function LibraryCard(props: LibraryCardProps) {
                         track={selectedTrack}
                         queue={queue}
                         progressPct={progressPct}
+                        compactResources={!wide}
                         onShowLyrics={() => setTab("lyrics")}
                       />
                     </div>
@@ -622,6 +639,61 @@ export function LibraryCard(props: LibraryCardProps) {
   );
 }
 
+function useMediaQuery(query: string): boolean {
+  // matchMedia is missing in some environments (jsdom); assume a wide window.
+  const [matches, setMatches] = useState(() => window.matchMedia?.(query).matches ?? true);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return undefined;
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+/**
+ * The resource card in the hero's side slot: live GPU and memory, whether
+ * they're enough, and how far along the model is. Slides in from the right.
+ */
+function SideResourceCard({ manifest, generation }: { manifest: ModelManifest; generation: GenerationRow }) {
+  const running = generation.status === "running";
+  const check = useResourceCheck(manifest, generation.checkpoint_variant, 1500, running);
+  return (
+    <ResourceCard
+      check={check}
+      phase={running ? "running" : "queued"}
+      dense
+      className="kwesi-pop-in-right !bg-white/75 shadow-glass-sm"
+    />
+  );
+}
+
+/**
+ * A queued or generating track's progress surface: what the GPU and memory
+ * are doing, whether they're enough, how far along the model is, and Stop.
+ */
+function GeneratingCard({
+  manifest,
+  generation,
+  progressPct,
+}: {
+  manifest: ModelManifest;
+  generation: GenerationRow;
+  progressPct: number;
+}) {
+  const running = generation.status === "running";
+  const check = useResourceCheck(manifest, generation.checkpoint_variant, 1500, running);
+  return (
+    <ResourceCard
+      check={check}
+      phase={running ? "running" : "queued"}
+      progress={{ pct: progressPct, onCancel: () => void kwesiGeneration.cancel(generation.id) }}
+    />
+  );
+}
+
 /**
  * The hero's playback surface — whatever this track can actually do right
  * now: the transport for audio, the roll for MIDI-only output, progress
@@ -632,12 +704,15 @@ function HeroPlayback({
   track,
   queue,
   progressPct,
+  compactResources,
   onShowLyrics,
 }: {
   item: LibraryItem;
   track: PlayerTrack | null;
   queue: PlayerTrack[];
   progressPct: number;
+  // No side slot for the resource card (narrow window): show it here, compact.
+  compactResources: boolean;
   onShowLyrics: () => void;
 }) {
   const generation = item.generation;
@@ -646,6 +721,14 @@ function HeroPlayback({
 
   if (generation.status !== "done") {
     const cancellable = generation.status === "queued" || generation.status === "running";
+    const manifest = cancellable && compactResources ? getManifest(item.modelId) : undefined;
+    if (manifest) {
+      return (
+        <div className="min-w-0 flex-1">
+          <GeneratingCard manifest={manifest} generation={generation} progressPct={progressPct} />
+        </div>
+      );
+    }
     return (
       <div className="min-w-0 flex-1">
         <OutputViewerPlaceholder

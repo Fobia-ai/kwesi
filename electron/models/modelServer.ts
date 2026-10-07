@@ -515,6 +515,11 @@ async function stopRealServer(modelId: string): Promise<void> {
  * generations (or post-training previews) holds GPU memory a run needs --
  * enough to push MuseCoco from GPU to CPU training. They restart on demand.
  */
+/** Models whose real server is up right now, i.e. holding memory. */
+export function loadedServerModelIds(): string[] {
+  return [...realServers.keys()];
+}
+
 export async function stopIdleServers(): Promise<string[]> {
   const busy = new Set([...activeGenerationJobs.values()].map((job) => job.modelId));
   const idle = [...realServers.keys()].filter((modelId) => !busy.has(modelId));

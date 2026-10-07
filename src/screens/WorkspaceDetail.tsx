@@ -318,8 +318,11 @@ function ProjectPane({
     const result = await kwesiGeneration.submit(project.id, checkpointVariant, values, outputKindOf(manifest));
     if (result.ok) {
       setIsCreating(false);
+      // Reload the list first: selecting an id the list doesn't hold yet
+      // makes the keep-one-selected effect below snap back to another track,
+      // and the hero (with its resource card) would never show the new one.
+      await refresh();
       if (result.generation) setSelectedGenerationId(result.generation.id);
-      refresh();
     }
   }
 

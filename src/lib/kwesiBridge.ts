@@ -100,6 +100,7 @@ declare global {
           freeVramGb: number;
           gpuName?: string;
         }>;
+        resources: () => Promise<SystemResources>;
       };
       training: {
         submit: (params: {
@@ -234,6 +235,21 @@ declare global {
       };
     };
   }
+}
+
+// Mirrors electron/models/gpuInfo.ts's SystemResources, plus the models
+// Kwesi has loaded (electron/ipc/hardware.ts).
+export interface SystemResources {
+  gpu: {
+    available: boolean;
+    name?: string;
+    totalVramGb: number;
+    usedVramGb: number;
+    freeVramGb: number;
+    utilizationPct: number | null;
+  };
+  ram: { totalGb: number; freeGb: number };
+  loadedModelIds: string[];
 }
 
 // Mirrors electron/updates/updateStatus.ts's UpdateStatus / AutoUpdatePreference.

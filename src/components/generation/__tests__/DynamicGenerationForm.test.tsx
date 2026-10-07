@@ -7,9 +7,21 @@ import { getManifest, type ModelManifest } from "../../../data/manifests";
 import { kwesiHardware } from "../../../lib/hardware";
 import type { ArtistProfile } from "../../../lib/artistProfiles";
 
-vi.mock("../../../lib/hardware", () => ({
-  kwesiHardware: { gpuVram: vi.fn() },
-}));
+// Keeps the real useSystemResources hook (it reads through kwesiHardware)
+// and only swaps the bridge underneath it.
+vi.mock("../../../lib/hardware", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/hardware")>();
+  actual.kwesiHardware.resources = vi.fn();
+  return actual;
+});
+
+function gpuResources(gpu: { available: boolean; totalVramGb: number; freeVramGb: number }) {
+  return {
+    gpu: { ...gpu, name: "Mock GPU", usedVramGb: gpu.totalVramGb - gpu.freeVramGb, utilizationPct: 0 },
+    ram: { totalGb: 64, freeGb: 40 },
+    loadedModelIds: [],
+  };
+}
 
 const MOCK_PROFILES: ArtistProfile[] = [
   {
@@ -46,13 +58,8 @@ function renderForm(
 
 describe("DynamicGenerationForm", () => {
   beforeEach(() => {
-    vi.mocked(kwesiHardware.gpuVram).mockReset();
-    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({
-      available: true,
-      totalVramGb: 24,
-      freeVramGb: 24,
-      gpuName: "Mock GPU",
-    });
+    vi.mocked(kwesiHardware.resources).mockReset();
+    vi.mocked(kwesiHardware.resources).mockResolvedValue(gpuResources({ available: true, totalVramGb: 24, freeVramGb: 24 }));
   });
 
   it("shows an install prompt when no variant of the model is installed", () => {
@@ -192,40 +199,35 @@ describe("DynamicGenerationForm", () => {
   });
 
   it("shows a hardware warning (but still allows Generate) when free VRAM is below the model's minimum", async () => {
-    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({
-      available: true,
-      totalVramGb: 8,
-      freeVramGb: 1,
-      gpuName: "Mock Low-VRAM GPU",
-    });
+    vi.mocked(kwesiHardware.resources).mockResolvedValue(gpuResources({ available: true, totalVramGb: 8, freeVramGb: 1 }));
     const user = userEvent.setup();
     renderForm(["small"]);
     await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
     await user.type(screen.getByPlaceholderText(/Midnight Drive/), "My Song");
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(screen.getByRole("alert")).toHaveTextContent(/Hardware warning/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Not enough free GPU memory right now/);
     expect(screen.getByRole("button", { name: "Generate" })).not.toBeDisabled();
   });
 
   it("blocks Generate when no GPU is detected and the model has no CPU fallback", async () => {
     // MusicGen's real manifest has cpuFallback: false — the one case a
-    // generation is guaranteed to fail outright, per evaluateHardwareGate's
-    // own reasoning in DynamicGenerationForm.tsx.
-    vi.mocked(kwesiHardware.gpuVram).mockResolvedValue({ available: false, totalVramGb: 0, freeVramGb: 0 });
+    // generation is guaranteed to fail outright, per assessResources's own
+    // reasoning in src/lib/resourceCheck.ts.
+    vi.mocked(kwesiHardware.resources).mockResolvedValue(gpuResources({ available: false, totalVramGb: 0, freeVramGb: 0 }));
     const user = userEvent.setup();
     renderForm(["small"]);
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(screen.getByRole("alert")).toHaveTextContent(/Hardware requirement not met/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/This model needs an NVIDIA GPU/);
 
     await user.type(screen.getByPlaceholderText(/Upbeat lo-fi hip hop/), "A calm piano piece");
     expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
   });
 
-  it("shows no hardware banner when the GPU comfortably meets the requirement", async () => {
+  it("says the GPU can handle it, with no alert, when it comfortably meets the requirement", async () => {
     renderForm(["small"]);
-    await waitFor(() => expect(kwesiHardware.gpuVram).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("Your GPU can handle this")).toBeInTheDocument());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
