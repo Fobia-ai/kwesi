@@ -28,6 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Agent, setGlobalDispatcher } from "undici";
 import * as repo from "../db/repositories.js";
+import { getDevicePreference, serverDeviceEnv } from "./devicePreference.js";
 import { generationDir, ensureDir, modelsRootDir, serversRootDir, venvDir } from "../db/paths.js";
 import { requestRendererAudioRender } from "../ipc/audioRender.js";
 
@@ -373,6 +374,7 @@ async function spawnAceStepServer(python: string): Promise<RealServerHandle> {
       // nothing calls. A later phase could wire up `thinking`/`use_format`
       // as real manifest inputs and flip this back to "auto".
       ACESTEP_INIT_LLM: "false",
+      ...serverDeviceEnv(getDevicePreference()),
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -413,7 +415,7 @@ async function spawnRealServer(modelId: string): Promise<RealServerHandle> {
 
   const port = REAL_SERVER_PORTS[modelId];
   const proc = spawn(python, [entrypoint, "--port", String(port)], {
-    env: { ...process.env, KWESI_MODELS_DIR: modelsRootDir() },
+    env: { ...process.env, KWESI_MODELS_DIR: modelsRootDir(), ...serverDeviceEnv(getDevicePreference()) },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -518,6 +520,25 @@ async function stopRealServer(modelId: string): Promise<void> {
 /** Models whose real server is up right now, i.e. holding memory. */
 export function loadedServerModelIds(): string[] {
   return [...realServers.keys()];
+}
+
+/**
+ * The device each loaded model reports it is running on ("cuda", "mps",
+ * "cpu"), from its own /health. A server that doesn't say is left out.
+ */
+export async function loadedServerDevices(): Promise<Record<string, string>> {
+  const entries = await Promise.all(
+    [...realServers.entries()].map(async ([modelId, handle]) => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/health`, { signal: AbortSignal.timeout(800) });
+        const body = (await res.json()) as { device?: unknown };
+        return typeof body.device === "string" ? ([modelId, body.device] as const) : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return Object.fromEntries(entries.filter((entry) => entry !== null));
 }
 
 export async function stopIdleServers(): Promise<string[]> {

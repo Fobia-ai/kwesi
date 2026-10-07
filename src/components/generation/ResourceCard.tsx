@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getManifest, minVramGbFor, type ModelManifest } from "../../data/manifests";
 import { kwesiGeneration, type ServerStatusValue } from "../../lib/generation";
 import { useSystemResources, type SystemResources } from "../../lib/hardware";
-import { assessResources, formatGb, type ResourceVerdict } from "../../lib/resourceCheck";
+import { assessResources, DEVICE_LABEL, formatGb, type ResourceVerdict } from "../../lib/resourceCheck";
 import { AlertIcon, CheckCircleIcon } from "../ui/icons";
 
 /**
@@ -54,9 +54,11 @@ export function useResourceCheck(
   const verdict = assessResources({
     displayName: manifest.displayName,
     cpuFallback: manifest.hardware.cpuFallback,
+    appleGpu: manifest.hardware.appleGpu,
     requiredVramGb,
     resources,
     modelLoaded: serverStatus === "running",
+    loadedDevice: serverStatus === "running" ? resources?.loadedModelDevices[manifest.modelId] : undefined,
     generating,
     otherLoadedModels: (resources?.loadedModelIds ?? [])
       .filter((id) => id !== manifest.modelId)
@@ -149,18 +151,25 @@ export function ResourceCard({
   const model = modelStatusLine(phase, serverStatus);
   const gpu = resources?.gpu;
   const compact = progress !== undefined;
-  // Once the model is in memory its share is already inside "used".
-  const showNeeded = !!gpu?.available && requiredVramGb > 0 && serverStatus !== "running" && phase !== "running";
   const problem = verdict.level === "warn" || verdict.level === "block";
+
+  const short = compact || dense;
+  const ramUsedGb = resources ? resources.ram.totalGb - resources.ram.freeGb : 0;
+  // Apple silicon has one pool of memory for the system and the GPU, so one
+  // meter says it all. The "needed" share only applies if the GPU is used.
+  const sharedMemory = gpu?.kind === "apple";
+  const usesGpu = verdict.device !== "cpu";
+  const showNeeded =
+    !!gpu?.available && usesGpu && requiredVramGb > 0 && serverStatus !== "running" && phase !== "running";
 
   const meters = resources && (
     <div className={compact ? "grid grid-cols-2 gap-x-5 gap-y-2" : "flex flex-col gap-2.5"}>
       {gpu?.available ? (
         <Meter
-          label="GPU memory"
-          caption={compact || dense ? undefined : gpu.name}
+          label={sharedMemory ? "Memory" : "GPU memory"}
+          caption={short ? undefined : sharedMemory ? "shared with the GPU" : gpu.name}
           value={
-            compact || dense
+            short
               ? `${formatGb(gpu.usedVramGb)} of ${formatGb(gpu.totalVramGb)}`
               : `${formatGb(gpu.usedVramGb)} of ${formatGb(gpu.totalVramGb)} used${showNeeded ? ` · needs ${formatGb(requiredVramGb)}` : ""}`
           }
@@ -171,15 +180,24 @@ export function ResourceCard({
       ) : (
         <div className="flex items-baseline justify-between gap-3 text-xs">
           <span className="font-medium text-ink">GPU memory</span>
-          <span className="text-ink-muted">{compact ? "No GPU" : "No NVIDIA GPU detected"}</span>
+          <span className="text-ink-muted">{compact ? "No GPU" : "No GPU detected"}</span>
         </div>
       )}
-      <Meter
-        label="System memory"
-        value={`${formatGb(resources.ram.totalGb - resources.ram.freeGb)} of ${formatGb(resources.ram.totalGb)}${compact || dense ? "" : " used"}`}
-        usedPct={((resources.ram.totalGb - resources.ram.freeGb) / resources.ram.totalGb) * 100}
-      />
+      {!sharedMemory && (
+        <Meter
+          label="System memory"
+          value={`${formatGb(ramUsedGb)} of ${formatGb(resources.ram.totalGb)}${short ? "" : " used"}`}
+          usedPct={(ramUsedGb / resources.ram.totalGb) * 100}
+        />
+      )}
     </div>
+  );
+
+  // Where it runs: the model's own report once loaded, the plan before that.
+  const deviceChip = verdict.device && (
+    <span className="shrink-0 rounded-chip bg-ink/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+      {DEVICE_LABEL[verdict.device]}
+    </span>
   );
 
   const modelDot = (
@@ -224,6 +242,7 @@ export function ResourceCard({
           <div className="flex items-center gap-2 text-xs">
             {modelDot}
             <span className="min-w-0 flex-1 truncate text-ink-muted">{model.text}</span>
+            {deviceChip}
             {phase === "running" && <span className="shrink-0 tabular-nums text-ink-muted">{Math.round(progress.pct)}%</span>}
           </div>
           <div
@@ -266,7 +285,8 @@ export function ResourceCard({
       <div className="flex items-center gap-2 border-t border-ink/[0.07] pt-2.5 text-xs">
         <span className="shrink-0 font-medium text-ink">Model</span>
         {modelDot}
-        <span className="min-w-0 text-ink-muted">{model.text}</span>
+        <span className="min-w-0 flex-1 text-ink-muted">{model.text}</span>
+        {deviceChip}
       </div>
     </section>
   );

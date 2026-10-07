@@ -12,17 +12,31 @@ log = logging.getLogger("yue2")
 
 app = FastAPI()
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+def pick_device() -> str:
+    """Where to run. KWESI_DEVICE=cpu (the app's "CPU only" setting) forces
+    the CPU; otherwise an NVIDIA GPU, then Apple's GPU (Metal), then the CPU."""
+    if os.environ.get("KWESI_DEVICE", "auto").strip().lower() == "cpu":
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+DEVICE = pick_device()
 if DEVICE == "cuda":
     log.info("Running on CUDA.")
+elif DEVICE == "mps":
+    # YuE2's own pipeline picks Metal on a Mac (yue2/pipeline.py); this
+    # wrapper has never been run on one.
+    log.info("Running on Apple's GPU (Metal) -- supported upstream, unverified here.")
 else:
     # servers/yue2/README.md's own real proof ran entirely on GPU (3-4GB
-    # observed VRAM); the pipeline's own __init__ hard-requires CUDA BF16
-    # support whenever device="cuda", but never checks in on a CPU device --
-    # a CPU run isn't confirmed to work at all here, just not blocked
-    # outright, consistent with every other real model's own device-detect
-    # pattern in this app (see servers/musecoco/server.py).
-    log.warning("Running without CUDA -- YuE2's real generation was only ever proven on GPU; this is unverified.")
+    # observed VRAM); a CPU run isn't confirmed to work at all here, just not
+    # blocked outright.
+    log.warning("Running on the CPU -- YuE2's real generation was only ever proven on a GPU; this is unverified.")
 
 _MODELS_DIR = os.environ.get("KWESI_MODELS_DIR")
 if not _MODELS_DIR:

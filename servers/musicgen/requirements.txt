@@ -10,9 +10,14 @@
 # the exact two-step command sequence.
 --extra-index-url https://download.pytorch.org/whl/cu124
 
-torch==2.6.0+cu124
-torchaudio==2.6.0+cu124
-xformers==0.0.29.post3
+# The +cu124 (NVIDIA) builds exist for Linux and Windows only. macOS gets the
+# plain PyPI build, which carries Apple's Metal (MPS) backend. xformers is an
+# NVIDIA-only speed-up with no macOS wheels; audiocraft runs without it.
+torch==2.6.0+cu124 ; sys_platform != "darwin"
+torchaudio==2.6.0+cu124 ; sys_platform != "darwin"
+torch==2.6.0 ; sys_platform == "darwin"
+torchaudio==2.6.0 ; sys_platform == "darwin"
+xformers==0.0.29.post3 ; sys_platform != "darwin"
 av==12.3.0
 transformers>=4.31.0
 flashy

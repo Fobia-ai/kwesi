@@ -133,6 +133,9 @@ export type KwesiPlatform = "darwin" | "win32" | "linux";
 export interface ModelHardware {
   minVramGb: number;
   cpuFallback: boolean;
+  // Can run on Apple silicon's GPU (Metal/MPS). Unset means a Mac runs it
+  // on the CPU.
+  appleGpu?: boolean;
   notes?: string;
   // Omit for "every platform this app packages for" -- only set when a
   // model genuinely doesn't run elsewhere (e.g. YuE2's real repo documents
@@ -290,7 +293,7 @@ const MUSICGEN: ModelManifest = {
   // choice -- see electron/db/database.ts's removeDiscontinuedMusicGenStyleVariant
   // for the one-time cleanup of anyone who already downloaded it.
   checkpointVariants: ["small", "medium", "large", "melody"],
-  hardware: { minVramGb: 4, cpuFallback: false, notes: "~16GB VRAM comfortable for medium; small runs on lighter GPUs." },
+  hardware: { minVramGb: 4, cpuFallback: false, appleGpu: true, notes: "~16GB VRAM comfortable for medium; small runs on lighter GPUs." },
   inputs: [
     { key: "prompt", type: "text", label: "Describe the music", required: true, placeholder: "Upbeat lo-fi hip hop with vinyl crackle" },
     {
@@ -694,7 +697,7 @@ const ACE_STEP: ModelManifest = {
     "acestep-v15-xl-sft",
     "acestep-v15-xl-turbo",
   ],
-  hardware: { minVramGb: 4, cpuFallback: true, notes: "4GB (2B turbo) up to 24GB (XL) depending on checkpoint. CPU supported but slow — model-level minimum is the lightest 2B-turbo case; see variantHardware for the real per-checkpoint spread." },
+  hardware: { minVramGb: 4, cpuFallback: true, appleGpu: true, notes: "4GB (2B turbo) up to 24GB (XL) depending on checkpoint. CPU supported but slow — model-level minimum is the lightest 2B-turbo case; see variantHardware for the real per-checkpoint spread." },
   // Real per-checkpoint minimums, transcribed from the real repo's own GPU
   // tier table (docs/en/INSTALL.md "Which Model Should I Choose?", verified
   // 2026-09-15 against the cloned ACE-Step-1.5 repo, not guessed): DiT-only

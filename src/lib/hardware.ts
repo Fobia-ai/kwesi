@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { SystemResources } from "./kwesiBridge";
+import type { DevicePreference, SystemResources } from "./kwesiBridge";
 
-export type { SystemResources } from "./kwesiBridge";
+export type { DevicePreference, SystemResources } from "./kwesiBridge";
 
 export interface GpuVramInfo {
   available: boolean;
@@ -14,12 +14,18 @@ export interface KwesiHardwareApi {
   gpuVram(): Promise<GpuVramInfo>;
   /** Live GPU and system memory, and which models Kwesi has loaded. */
   resources(): Promise<SystemResources>;
+  /** "auto" (best device each model supports) or "cpu" (CPU only). */
+  getDevicePreference(): Promise<DevicePreference>;
+  /** Saves it and unloads idle models, so the next track uses the new device. */
+  setDevicePreference(preference: DevicePreference): Promise<DevicePreference>;
 }
 
 function realHardwareApi(bridge: NonNullable<Window["kwesi"]>["hardware"]): KwesiHardwareApi {
   return {
     gpuVram: () => bridge.gpuVram(),
     resources: () => bridge.resources(),
+    getDevicePreference: () => bridge.getDevicePreference(),
+    setDevicePreference: (preference) => bridge.setDevicePreference(preference),
   };
 }
 
@@ -29,6 +35,7 @@ function realHardwareApi(bridge: NonNullable<Window["kwesi"]>["hardware"]): Kwes
  * `nvidia-smi` involved — this dev machine's actual RTX 3090, roughly idle.
  */
 function createMockHardwareApi(): KwesiHardwareApi {
+  let devicePreference: DevicePreference = "auto";
   return {
     async gpuVram() {
       return { available: true, totalVramGb: 24, freeVramGb: 19, gpuName: "Mock GPU (browser preview)" };
@@ -37,6 +44,7 @@ function createMockHardwareApi(): KwesiHardwareApi {
       return {
         gpu: {
           available: true,
+          kind: "nvidia",
           name: "Mock GPU (browser preview)",
           totalVramGb: 24,
           usedVramGb: 5,
@@ -45,7 +53,16 @@ function createMockHardwareApi(): KwesiHardwareApi {
         },
         ram: { totalGb: 64, freeGb: 41 },
         loadedModelIds: [],
+        loadedModelDevices: {},
+        devicePreference,
       };
+    },
+    async getDevicePreference() {
+      return devicePreference;
+    },
+    async setDevicePreference(preference) {
+      devicePreference = preference;
+      return devicePreference;
     },
   };
 }

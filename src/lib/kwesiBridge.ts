@@ -101,6 +101,8 @@ declare global {
           gpuName?: string;
         }>;
         resources: () => Promise<SystemResources>;
+        getDevicePreference: () => Promise<DevicePreference>;
+        setDevicePreference: (preference: DevicePreference) => Promise<DevicePreference>;
       };
       training: {
         submit: (params: {
@@ -239,9 +241,15 @@ declare global {
 
 // Mirrors electron/models/gpuInfo.ts's SystemResources, plus the models
 // Kwesi has loaded (electron/ipc/hardware.ts).
+/** Settings > System's "Run models on" (electron/models/devicePreference.ts). */
+export type DevicePreference = "auto" | "cpu";
+
 export interface SystemResources {
   gpu: {
     available: boolean;
+    // "apple": Apple silicon's GPU shares system memory, so its figures
+    // are the machine's RAM.
+    kind: "nvidia" | "apple" | "none";
     name?: string;
     totalVramGb: number;
     usedVramGb: number;
@@ -250,6 +258,9 @@ export interface SystemResources {
   };
   ram: { totalGb: number; freeGb: number };
   loadedModelIds: string[];
+  // What each loaded model says it's running on: "cuda", "mps" or "cpu".
+  loadedModelDevices: Record<string, string>;
+  devicePreference: DevicePreference;
 }
 
 // Mirrors electron/updates/updateStatus.ts's UpdateStatus / AutoUpdatePreference.

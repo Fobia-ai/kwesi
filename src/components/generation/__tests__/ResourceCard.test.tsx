@@ -5,13 +5,15 @@ import { ResourceCard, type ResourceCheck } from "../ResourceCard";
 
 const check: ResourceCheck = {
   resources: {
-    gpu: { available: true, name: "Test GPU", totalVramGb: 24, usedVramGb: 4, freeVramGb: 20, utilizationPct: 0 },
+    gpu: { available: true, kind: "nvidia", name: "Test GPU", totalVramGb: 24, usedVramGb: 4, freeVramGb: 20, utilizationPct: 0 },
     ram: { totalGb: 64, freeGb: 40 },
     loadedModelIds: [],
+    loadedModelDevices: {},
+    devicePreference: "auto",
   },
   serverStatus: "stopped",
   requiredVramGb: 6,
-  verdict: { level: "ok", headline: "Your GPU can handle this", detail: "It needs about 6 GB, and 20 GB is free." },
+  verdict: { level: "ok", headline: "Your GPU can handle this", detail: "It needs about 6 GB, and 20 GB is free.", device: "nvidia" },
 };
 
 describe("ResourceCard", () => {
@@ -21,6 +23,32 @@ describe("ResourceCard", () => {
     expect(screen.getByText("4 GB of 24 GB used · needs 6 GB")).toBeInTheDocument();
     expect(screen.getByText("24 GB of 64 GB used")).toBeInTheDocument();
     expect(screen.getByText(/Not loaded yet/)).toBeInTheDocument();
+    expect(screen.getByText("NVIDIA GPU")).toBeInTheDocument();
+  });
+
+  it("shows one shared memory meter on Apple silicon", () => {
+    render(
+      <ResourceCard
+        check={{
+          ...check,
+          resources: {
+            ...check.resources!,
+            gpu: { available: true, kind: "apple", name: "Apple GPU (Metal)", totalVramGb: 32, usedVramGb: 12, freeVramGb: 20, utilizationPct: null },
+          },
+          verdict: { level: "ok", headline: "Your Mac's GPU can handle this", device: "apple" },
+        }}
+      />,
+    );
+    expect(screen.getByText("Memory")).toBeInTheDocument();
+    expect(screen.getByText("shared with the GPU")).toBeInTheDocument();
+    expect(screen.queryByText("System memory")).not.toBeInTheDocument();
+    expect(screen.getByText("Apple GPU")).toBeInTheDocument();
+  });
+
+  it("drops the needed share when the track will run on the CPU", () => {
+    render(<ResourceCard check={{ ...check, verdict: { level: "ok", headline: "Runs on your CPU", device: "cpu" } }} />);
+    expect(screen.getByText("4 GB of 24 GB used")).toBeInTheDocument();
+    expect(screen.getByText("CPU")).toBeInTheDocument();
   });
 
   it("raises a problem as an alert with its explanation", () => {
@@ -36,10 +64,10 @@ describe("ResourceCard", () => {
   it("says so when there is no GPU", () => {
     render(
       <ResourceCard
-        check={{ ...check, resources: { ...check.resources!, gpu: { available: false, totalVramGb: 0, usedVramGb: 0, freeVramGb: 0, utilizationPct: null } } }}
+        check={{ ...check, resources: { ...check.resources!, gpu: { available: false, kind: "none", totalVramGb: 0, usedVramGb: 0, freeVramGb: 0, utilizationPct: null } } }}
       />,
     );
-    expect(screen.getByText("No NVIDIA GPU detected")).toBeInTheDocument();
+    expect(screen.getByText("No GPU detected")).toBeInTheDocument();
   });
 
   it("follows the model through loading while a track is queued", () => {

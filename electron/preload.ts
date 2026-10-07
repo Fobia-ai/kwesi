@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld("kwesi", {
   hardware: {
     gpuVram: () => ipcRenderer.invoke("kwesi:hardware:gpuVram"),
     resources: () => ipcRenderer.invoke("kwesi:hardware:resources"),
+    getDevicePreference: () => ipcRenderer.invoke("kwesi:hardware:getDevicePreference"),
+    setDevicePreference: (preference: "auto" | "cpu") => ipcRenderer.invoke("kwesi:hardware:setDevicePreference", preference),
   },
   training: {
     submit: (params: unknown) => ipcRenderer.invoke("kwesi:training:submit", params),

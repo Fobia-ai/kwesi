@@ -146,6 +146,24 @@ For end users of a packaged build, the same prerequisites apply to installing mo
 
 ---
 
+### Which device a model runs on
+
+Kwesi picks the best device each model supports, and the resource card on the new-track form shows which one that is and whether it has enough memory.
+
+| Model | NVIDIA GPU | Apple GPU (Metal) | CPU |
+|---|---|---|---|
+| ACE-Step 1.5 | Yes | Yes (upstream support) | Yes, slowly |
+| MusicGen | Yes | Tried first; falls back to the CPU if Metal fails | Slowly |
+| YuE2 | Yes | No (upstream is Linux-only) | Unverified |
+| MuseCoco | Yes, with GPU acceleration built | No | Yes |
+| Museformer | Yes | No | Yes |
+| RAVE | Not needed | Not needed | Yes (fast) |
+
+- **CPU only.** Settings → System → *Run models on* → **CPU only** keeps every model on the CPU, for machines whose GPU is only good for driving a display. Verified on Linux with ACE-Step and MuseCoco.
+- **Apple silicon.** The GPU shares the system's memory, so the resource card shows one memory meter there. The Mac paths (Metal selection, the macOS PyTorch install) are written but have **not been run on a Mac** from this repo.
+- **AMD and Intel GPUs.** Only ACE-Step's upstream server knows how to use them, and Kwesi doesn't set them up; the other models run on the CPU there.
+- Training isn't affected by the *Run models on* setting.
+
 ## Install
 
 ```bash

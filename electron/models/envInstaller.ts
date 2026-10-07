@@ -191,8 +191,15 @@ function uvVenv(modelId: string, pythonVersion: string, onOutput: OnOutput): Pro
   return runCommand("uv", ["venv", "--python", pythonVersion, venvDir(modelId)], { onOutput });
 }
 
+// Several requirements files list PyTorch's NVIDIA (or CPU-only) wheel index
+// first, and uv only looks at the first index that has a package. Those
+// indexes carry no macOS builds, so on a Mac the install could never
+// resolve; letting uv weigh PyPI too picks the regular macOS wheel, which
+// includes Apple's Metal backend. Both indexes are PyTorch's own and PyPI.
+const UV_PLATFORM_ARGS = process.platform === "darwin" ? ["--index-strategy", "unsafe-best-match"] : [];
+
 function uvPipInstall(modelId: string, args: string[], onOutput: OnOutput): Promise<void> {
-  return runCommand("uv", ["pip", "install", "--python", venvPythonPath(modelId), ...args], { onOutput });
+  return runCommand("uv", ["pip", "install", "--python", venvPythonPath(modelId), ...UV_PLATFORM_ARGS, ...args], { onOutput });
 }
 
 async function installRave(onOutput: OnOutput): Promise<void> {

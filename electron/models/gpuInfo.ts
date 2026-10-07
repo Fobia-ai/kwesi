@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 
@@ -64,6 +64,9 @@ export async function queryGpuVram(): Promise<GpuVramInfo> {
 export interface SystemResources {
   gpu: {
     available: boolean;
+    // "apple": Apple silicon's built-in GPU, which shares system memory, so
+    // its total/used/free are the machine's RAM figures.
+    kind: "nvidia" | "apple" | "none";
     name?: string;
     totalVramGb: number;
     usedVramGb: number;
@@ -82,7 +85,30 @@ const GB = 1024 ** 3;
  * which the kernel gives back on demand, so a machine with plenty of room
  * would look almost full.
  */
+/**
+ * Free + inactive + speculative pages from `vm_stat`: what macOS can hand
+ * out without swapping. os.freemem() there counts only the truly idle pages
+ * and reads as nearly full on a healthy machine.
+ */
+export function parseVmStatAvailableBytes(output: string): number | null {
+  const pageSize = Number(output.match(/page size of (\d+) bytes/)?.[1]);
+  const pages = (label: string) => Number(output.match(new RegExp(`^${label}:\\s+(\\d+)\\.`, "m"))?.[1]);
+  const free = pages("Pages free");
+  const inactive = pages("Pages inactive");
+  if (!Number.isFinite(pageSize) || !Number.isFinite(free) || !Number.isFinite(inactive)) return null;
+  const speculative = pages("Pages speculative");
+  return (free + inactive + (Number.isFinite(speculative) ? speculative : 0)) * pageSize;
+}
+
 function availableRamBytes(): number {
+  if (process.platform === "darwin") {
+    try {
+      const parsed = parseVmStatAvailableBytes(execFileSync("vm_stat", { encoding: "utf8", timeout: 2000 }));
+      if (parsed !== null) return parsed;
+    } catch {
+      // fall through to os.freemem()
+    }
+  }
   if (process.platform === "linux") {
     try {
       const match = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+)\s+kB/m);
@@ -101,7 +127,22 @@ function availableRamBytes(): number {
  */
 export async function querySystemResources(): Promise<SystemResources> {
   const ram = { totalGb: os.totalmem() / GB, freeGb: availableRamBytes() / GB };
-  const noGpu = { available: false, totalVramGb: 0, usedVramGb: 0, freeVramGb: 0, utilizationPct: null };
+  const noGpu = { available: false, kind: "none" as const, totalVramGb: 0, usedVramGb: 0, freeVramGb: 0, utilizationPct: null };
+
+  if (process.platform === "darwin" && process.arch === "arm64") {
+    return {
+      gpu: {
+        available: true,
+        kind: "apple",
+        name: "Apple GPU (Metal)",
+        totalVramGb: ram.totalGb,
+        usedVramGb: ram.totalGb - ram.freeGb,
+        freeVramGb: ram.freeGb,
+        utilizationPct: null,
+      },
+      ram,
+    };
+  }
 
   let stdout: string;
   try {
@@ -124,6 +165,7 @@ export async function querySystemResources(): Promise<SystemResources> {
   return {
     gpu: {
       available: true,
+      kind: "nvidia",
       name: parts[0],
       totalVramGb: totalMb / 1024,
       usedVramGb: usedMb / 1024,

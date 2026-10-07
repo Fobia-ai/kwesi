@@ -17,9 +17,17 @@ vi.mock("../../../lib/hardware", async (importOriginal) => {
 
 function gpuResources(gpu: { available: boolean; totalVramGb: number; freeVramGb: number }) {
   return {
-    gpu: { ...gpu, name: "Mock GPU", usedVramGb: gpu.totalVramGb - gpu.freeVramGb, utilizationPct: 0 },
+    gpu: {
+      ...gpu,
+      kind: gpu.available ? ("nvidia" as const) : ("none" as const),
+      name: "Mock GPU",
+      usedVramGb: gpu.totalVramGb - gpu.freeVramGb,
+      utilizationPct: 0,
+    },
     ram: { totalGb: 64, freeGb: 40 },
     loadedModelIds: [],
+    loadedModelDevices: {},
+    devicePreference: "auto" as const,
   };
 }
 

@@ -17,13 +17,28 @@ log = logging.getLogger("musicgen")
 app = FastAPI()
 
 _models: dict[str, "object"] = {}
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def pick_device() -> str:
+    """Where to run. KWESI_DEVICE=cpu (the app's "CPU only" setting) forces
+    the CPU; otherwise an NVIDIA GPU, then Apple's GPU (Metal), then the CPU."""
+    if os.environ.get("KWESI_DEVICE", "auto").strip().lower() == "cpu":
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+DEVICE = pick_device()
 if DEVICE == "cpu":
-    log.warning(
-        "CUDA not available — falling back to CPU. This path is not exercised on the "
-        "dev machine this server was built against (an RTX 3090 is always present there), "
-        "so treat CPU generation as functionally plausible but unverified for real timing."
-    )
+    log.warning("Running on the CPU. MusicGen works there, but much more slowly than on a GPU.")
+elif DEVICE == "mps":
+    # Not proven on a real Mac from this repo: generate() falls back to the
+    # CPU if anything fails on Metal.
+    log.info("Running on Apple's GPU (Metal).")
 
 
 def models_dir() -> str:
@@ -67,14 +82,10 @@ def health():
     return {"status": "ok", "device": DEVICE, "loaded_variants": list(_models.keys())}
 
 
-@app.post("/generate", response_model=GenerateResponse)
-def generate(req: GenerateRequest):
-    from audiocraft.data.audio import audio_write
-
+def _generate_wav(req: GenerateRequest):
     model = get_model(req.variant)
     model.set_generation_params(duration=max(1.0, min(req.duration_sec, 30.0)))
 
-    t0 = time.time()
     if req.melody_audio_path and os.path.isfile(req.melody_audio_path):
         import torchaudio
 
@@ -87,6 +98,28 @@ def generate(req: GenerateRequest):
         wav = model.generate([req.prompt], progress=False)
     else:
         wav = model.generate([req.prompt], progress=False)
+    return model, wav
+
+
+@app.post("/generate", response_model=GenerateResponse)
+def generate(req: GenerateRequest):
+    global DEVICE
+    from audiocraft.data.audio import audio_write
+
+    t0 = time.time()
+    try:
+        model, wav = _generate_wav(req)
+    except HTTPException:
+        raise
+    except Exception:
+        # Metal doesn't implement every operation audiocraft uses. Rather
+        # than fail the track, drop to the CPU for the rest of this process.
+        if DEVICE != "mps":
+            raise
+        log.exception("generation failed on Apple's GPU (Metal) -- retrying on the CPU")
+        _models.clear()
+        DEVICE = "cpu"
+        model, wav = _generate_wav(req)
 
     elapsed_ms = int((time.time() - t0) * 1000)
 

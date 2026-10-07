@@ -4,9 +4,11 @@ import type { SystemResources } from "../hardware";
 
 function resources(gpu: Partial<SystemResources["gpu"]> = {}): SystemResources {
   return {
-    gpu: { available: true, name: "Test GPU", totalVramGb: 24, usedVramGb: 4, freeVramGb: 20, utilizationPct: 0, ...gpu },
+    gpu: { available: true, kind: "nvidia", name: "Test GPU", totalVramGb: 24, usedVramGb: 4, freeVramGb: 20, utilizationPct: 0, ...gpu },
     ram: { totalGb: 64, freeGb: 40 },
     loadedModelIds: [],
+    loadedModelDevices: {},
+    devicePreference: "auto",
   };
 }
 
@@ -58,7 +60,7 @@ describe("assessResources", () => {
   });
 
   it("blocks only when there is no GPU and no CPU path", () => {
-    const noGpu = resources({ available: false, totalVramGb: 0, usedVramGb: 0, freeVramGb: 0 });
+    const noGpu = resources({ available: false, kind: "none", totalVramGb: 0, usedVramGb: 0, freeVramGb: 0 });
     expect(assess({ resources: noGpu }).level).toBe("block");
     expect(assess({ resources: noGpu, cpuFallback: true }).level).toBe("warn");
     expect(assess({ resources: noGpu, cpuFallback: true }).headline).toMatch(/CPU/);
@@ -70,6 +72,49 @@ describe("assessResources", () => {
 
   it("reports generating instead of a pre-flight answer once the track runs", () => {
     expect(assess({ generating: true, modelLoaded: true }).headline).toBe("ACE-Step 1.5 is generating");
+  });
+});
+
+describe("assessResources: choosing a device", () => {
+  const mac = resources({ kind: "apple", name: "Apple GPU (Metal)", totalVramGb: 32, usedVramGb: 12, freeVramGb: 20, utilizationPct: null });
+
+  it("plans on the NVIDIA GPU by default", () => {
+    expect(assess().device).toBe("nvidia");
+  });
+
+  it("keeps everything on the CPU when the user chose CPU only", () => {
+    const fine = assess({ devicePreference: "cpu", cpuFallback: true });
+    expect(fine.level).toBe("ok");
+    expect(fine.device).toBe("cpu");
+    expect(fine.headline).toBe("Runs on your CPU");
+
+    const risky = assess({ devicePreference: "cpu", cpuFallback: false });
+    expect(risky.level).toBe("warn");
+    expect(risky.detail).toContain("made for a GPU");
+  });
+
+  it("uses a Mac's GPU for a model that supports Metal, against shared memory", () => {
+    const verdict = assess({ resources: mac, appleGpu: true });
+    expect(verdict.level).toBe("ok");
+    expect(verdict.device).toBe("apple");
+    expect(verdict.headline).toBe("Your Mac's GPU can handle this");
+
+    const full = assess({ resources: { ...mac, gpu: { ...mac.gpu, usedVramGb: 29, freeVramGb: 3 } }, appleGpu: true });
+    expect(full.level).toBe("warn");
+    expect(full.headline).toBe("Not enough free memory right now");
+  });
+
+  it("falls back to the CPU on a Mac for a model that can't use Metal", () => {
+    const verdict = assess({ resources: mac, cpuFallback: true });
+    expect(verdict.level).toBe("warn");
+    expect(verdict.device).toBe("cpu");
+    expect(verdict.headline).toBe("Runs on the CPU on this Mac");
+    expect(assess({ resources: mac, cpuFallback: false }).level).toBe("block");
+  });
+
+  it("reports what a loaded model says it's actually on", () => {
+    expect(assess({ modelLoaded: true, loadedDevice: "cpu" }).device).toBe("cpu");
+    expect(assess({ modelLoaded: true, loadedDevice: "mps", resources: mac, appleGpu: true }).device).toBe("apple");
   });
 });
 

@@ -14,12 +14,13 @@ import {
   TrashIcon,
 } from "../components/ui/icons";
 import { EnvironmentTab } from "../components/settings/EnvironmentTab";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { UpdatesSection } from "../components/settings/UpdatesSection";
 import { openExternal } from "../lib/kwesiBridge";
 import { kwesiProfile } from "../lib/profile";
 import { kwesiSecurity } from "../lib/security";
 import { kwesiArtistProfiles, type ArtistProfile } from "../lib/artistProfiles";
-import { kwesiHardware, type GpuVramInfo } from "../lib/hardware";
+import { kwesiHardware, type DevicePreference, type SystemResources } from "../lib/hardware";
 import { kwesiModels } from "../lib/models";
 import { kwesiSettings, type ResetCategory } from "../lib/settings";
 import { formatBytes } from "../lib/format";
@@ -481,7 +482,9 @@ function SystemRow({ label, value }: { label: string; value: string }) {
 // workspace header), free space where models install, and where the app
 // keeps everything on disk.
 function SystemTab() {
-  const [gpu, setGpu] = useState<GpuVramInfo | null>(null);
+  const [resources, setResources] = useState<SystemResources | null>(null);
+  const [devicePreference, setDevicePreference] = useState<DevicePreference | null>(null);
+  const [deviceBusy, setDeviceBusy] = useState(false);
   const [freeBytes, setFreeBytes] = useState<number | null | undefined>(undefined);
   const [env, setEnv] = useState<Record<string, string | number> | null>(null);
   const [exportsDir, setExportsDir] = useState<string | null>(null);
@@ -500,7 +503,8 @@ function SystemTab() {
   }
 
   useEffect(() => {
-    kwesiHardware.gpuVram().then(setGpu);
+    kwesiHardware.resources().then(setResources);
+    kwesiHardware.getDevicePreference().then(setDevicePreference);
     kwesiModels.diskFreeBytes().then(setFreeBytes);
     if (window.kwesi) window.kwesi.getEnv().then(setEnv);
     refreshExportsDir();
@@ -567,6 +571,18 @@ function SystemTab() {
     setTimeout(() => setModelsChangeStatus(null), 6000);
   }
 
+  async function handleDevicePreference(next: DevicePreference) {
+    if (next === devicePreference) return;
+    setDeviceBusy(true);
+    try {
+      setDevicePreference(await kwesiHardware.setDevicePreference(next));
+    } finally {
+      setDeviceBusy(false);
+    }
+  }
+
+  const gpu = resources?.gpu ?? null;
+
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       <section>
@@ -574,11 +590,46 @@ function SystemTab() {
         {gpu === null ? (
           <p className="text-xs text-ink-muted">Checking…</p>
         ) : !gpu.available ? (
-          <p className="text-sm">No NVIDIA GPU detected — models with a CPU fallback will still run, slowly.</p>
+          <p className="border-b border-ink/[0.07] py-2.5 text-sm">
+            No GPU detected — models that can run on the CPU will still work, slowly.
+          </p>
+        ) : gpu.kind === "apple" ? (
+          <div>
+            <SystemRow label="GPU" value="Apple GPU (Metal)" />
+            <SystemRow
+              label="Memory"
+              value={`${gpu.freeVramGb.toFixed(1)} GB free of ${gpu.totalVramGb.toFixed(1)} GB, shared with the GPU`}
+            />
+          </div>
         ) : (
           <div>
-            <SystemRow label="GPU" value={gpu.gpuName ?? "NVIDIA GPU"} />
+            <SystemRow label="GPU" value={gpu.name ?? "NVIDIA GPU"} />
             <SystemRow label="VRAM" value={`${gpu.freeVramGb.toFixed(1)} GB free of ${gpu.totalVramGb.toFixed(1)} GB`} />
+          </div>
+        )}
+        {devicePreference !== null && (
+          <div className="flex items-start justify-between gap-4 border-b border-ink/[0.07] py-3">
+            <div className="min-w-0">
+              <p className="text-sm">Run models on</p>
+              <p className="text-xs text-ink-muted">
+                {devicePreference === "cpu"
+                  ? "Every model generates on the CPU, even if a GPU is present. Slower, but useful when the GPU is weak."
+                  : "Each model uses the best it supports: an NVIDIA GPU, then Apple's GPU, then the CPU."}{" "}
+                Changing this unloads idle models; the next track uses the new choice. Training isn't affected.
+              </p>
+            </div>
+            {/* shrink-0: the control wraps its own pills when squeezed. */}
+            <div className="shrink-0">
+              <SegmentedControl
+                ariaLabel="Run models on"
+                options={[
+                  { value: "auto", label: "Automatic" },
+                  { value: "cpu", label: "CPU only" },
+                ]}
+                value={devicePreference}
+                onChange={(value) => !deviceBusy && void handleDevicePreference(value)}
+              />
+            </div>
           </div>
         )}
       </section>
