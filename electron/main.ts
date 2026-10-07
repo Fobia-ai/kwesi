@@ -77,7 +77,8 @@ initServersPaths(kwesiEnv.KWESI_SERVERS_DIR);
 // requirements.txt, ...) as extraResources; copy them into the writable
 // serversRoot so pip-based installs and server spawns can find them beside
 // the runtime-cloned vendor/. No-op in dev. See syncShippedServers.
-syncShippedServers(path.join(process.resourcesPath, "servers"));
+// ponytail: dev runs (electron .) ship nothing in resourcesPath; copy the repo servers/ instead.
+syncShippedServers(path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), "servers"));
 initLogsPaths(kwesiEnv.KWESI_LOGS_DIR);
 initTrainedModelsPaths(kwesiEnv.KWESI_TRAINED_MODELS_DIR);
 initArtistAvatarsPaths(kwesiEnv.KWESI_ARTIST_AVATARS_DIR);

@@ -188,7 +188,9 @@ async function ensureGitClone(url: string, dest: string, onOutput: OnOutput, com
 const ACE_STEP_COMMIT = "ca1e85fe9430179831e6bc6be790c332190a3866";
 
 function uvVenv(modelId: string, pythonVersion: string, onOutput: OnOutput): Promise<void> {
-  return runCommand("uv", ["venv", "--python", pythonVersion, venvDir(modelId)], { onOutput });
+  // --allow-existing: a retry after a failed install hit "venv already exists"
+  // and left an empty venv behind (seen with musecoco).
+  return runCommand("uv", ["venv", "--allow-existing", "--python", pythonVersion, venvDir(modelId)], { onOutput });
 }
 
 // Several requirements files list PyTorch's NVIDIA (or CPU-only) wheel index
@@ -249,7 +251,17 @@ async function installMusecoco(onOutput: OnOutput): Promise<void> {
   // install step that used --index-url was brittle: it hid PyPI from uv,
   // and it didn't give pytorch-fast-transformers (builds from source) the
   // torch/numpy build environment it needs in one pass.
-  await uvPipInstall("musecoco", ["-r", path.join(serverDir("musecoco"), "requirements.txt")], onOutput);
+  // torch must already be in the venv: pytorch-fast-transformers' setup.py
+  // imports it, and an isolated build env does not have it.
+  await uvPipInstall("musecoco", ["setuptools<70", "wheel"], onOutput);
+  await uvPipInstall("musecoco", ["--index-url", "https://download.pytorch.org/whl/cu113", "torch==1.11.0"], onOutput);
+  if (process.platform === "linux") {
+    // glibc >= 2.41 refuses to load torch 1.11's libtorch_cpu.so, which is
+    // marked as needing an executable stack. Clear that flag.
+    const lib = path.join(venvDir("musecoco"), "lib", "python3.8", "site-packages", "torch", "lib", "libtorch_cpu.so");
+    await runCommand("uv", ["tool", "run", "--from", "patchelf", "patchelf", "--clear-execstack", lib], { onOutput });
+  }
+  await uvPipInstall("musecoco", ["--no-build-isolation-package", "pytorch-fast-transformers", "-r", path.join(serverDir("musecoco"), "requirements.txt")], onOutput);
 
   // Symlink (not copy) the checkpoint into the vendored layout the code
   // expects -- created even if the weight file doesn't exist yet (Model
