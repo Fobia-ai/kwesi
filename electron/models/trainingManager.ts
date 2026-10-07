@@ -926,7 +926,11 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
         // ponytail: 12 GB GPUs OOM at the default 30s segments with full attention; 10s + xformers fits small (~11.5 GB peak).
         "dataset.segment_duration=10",
         "transformer_lm.memory_efficient=true",
-        ...(Number.isFinite(learningRateRaw) && learningRateRaw > 0 ? [`optim.lr=${learningRateRaw}`] : []),
+        // ponytail: base config is dadam + 4000-step warmup (built for 500x2000 updates). Small datasets get ~2 updates/epoch, so the LR
+        // never leaves warmup and the export comes out identical to base. Plain AdamW at a constant LR actually fine-tunes.
+        "optim.optimizer=adamw",
+        "schedule.lr_scheduler=null",
+        `optim.lr=${Number.isFinite(learningRateRaw) && learningRateRaw > 0 ? learningRateRaw : 1e-5}`,
       ],
       workDir,
       appendLogAndCapture,
@@ -958,6 +962,12 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
         "torch.load = _patched_load",
         "from audiocraft.utils import export",
         `export.export_lm(${JSON.stringify(checkpointPath)}, ${JSON.stringify(path.join(exportDir, "state_dict.bin"))})`,
+        // ponytail: training uses 10s segments to fit 12 GB, but that also sets the exported model's max_duration, and MusicGen
+        // can't even load below its 18s default extend_stride. Restore the base model's 30s in the exported config.
+        "from omegaconf import OmegaConf",
+        `_sd = ${JSON.stringify(path.join(exportDir, "state_dict.bin"))}`,
+        // ponytail: best_state is the EMA/best-valid snapshot, which on tiny runs still equals the base weights; ship the final trained weights.
+        `_p = torch.load(_sd); _p['best_state'] = torch.load(${JSON.stringify(checkpointPath)})['model']; _c = OmegaConf.create(_p['xp.cfg']); _c.dataset.segment_duration = 30; _p['xp.cfg'] = OmegaConf.to_yaml(_c); torch.save(_p, _sd)`,
         `export.export_pretrained_compression_model("facebook/encodec_32khz", ${JSON.stringify(path.join(exportDir, "compression_state_dict.bin"))})`,
         "print('export complete')",
       ].join("\n"),
