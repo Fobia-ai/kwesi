@@ -923,6 +923,9 @@ async function runMusicGenTrainingPipeline(params: SubmitTrainingRunParams, runI
         // samples still run and prove real end-to-end generation.
         "generate.lm.prompted_samples=false",
         "logging.log_updates=1",
+        // ponytail: 12 GB GPUs OOM at the default 30s segments with full attention; 10s + xformers fits small (~11.5 GB peak).
+        "dataset.segment_duration=10",
+        "transformer_lm.memory_efficient=true",
         ...(Number.isFinite(learningRateRaw) && learningRateRaw > 0 ? [`optim.lr=${learningRateRaw}`] : []),
       ],
       workDir,
